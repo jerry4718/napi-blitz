@@ -59,16 +59,16 @@ impl EventHandler for SimpleEventHandler {
         _event_state: &mut EventState,
     ) {
         for (node_id, kind, handler) in &self.listeners {
-            if !matches!(kind, DomEventKind::MouseMove)
-                && !matches!(event.data, DomEventData::MouseMove(_))
-            {
-                println!("Handling event {:?} from {}", event, node_id);
-            }
             if event.target != *node_id {
                 continue;
             }
             if event.data.kind() != *kind {
                 continue;
+            }
+            if !matches!(kind, DomEventKind::MouseMove)
+                && !matches!(event.data, DomEventData::MouseMove(_))
+            {
+                println!("Handling from {} event {:?}", node_id, event);
             }
             println!("matched event ========================================================");
             handler.borrow_mut()(*node_id, chain, event, mutr)
