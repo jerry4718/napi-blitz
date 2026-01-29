@@ -1,12 +1,12 @@
 {
-  "name": "@napi-rs/package-template-pnpm",
+  "name": "@ylcc/napi-blitz",
   "version": "1.1.1",
-  "description": "Template project for writing node package with napi-rs",
+  "description": "blitz napi bindings",
+  "type": "commonjs",
   "main": "index.js",
   "types": "index.d.ts",
-  "browser": "browser.js",
   "repository": {
-    "url": "git+ssh://git@github.com/napi-rs/package-template-pnpm.git",
+    "url": "git+ssh://git@github.com/jerry4718/napi-blitz.git",
     "type": "git"
   },
   "license": "MIT",
@@ -14,17 +14,16 @@
     "napi-rs",
     "NAPI",
     "N-API",
-    "Rust",
     "node-addon",
-    "node-addon-api"
+    "node-addon-api",
+    "blitz"
   ],
   "files": [
     "index.d.ts",
-    "index.js",
-    "browser.js"
+    "index.js"
   ],
   "napi": {
-    "binaryName": "package-template",
+    "binaryName": "napi-blitz",
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",
@@ -34,12 +33,9 @@
       "aarch64-unknown-linux-gnu",
       "i686-pc-windows-msvc",
       "armv7-unknown-linux-gnueabihf",
-      "aarch64-linux-android",
       "x86_64-unknown-freebsd",
       "aarch64-unknown-linux-musl",
-      "aarch64-pc-windows-msvc",
-      "armv7-linux-androideabi",
-      "wasm32-wasi-preview1-threads"
+      "aarch64-pc-windows-msvc"
     ]
   },
   "engines": {
@@ -52,46 +48,17 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
-    "format": "run-p format:prettier format:rs format:toml",
-    "format:prettier": "prettier . -w",
-    "format:toml": "taplo format",
-    "format:rs": "cargo fmt",
-    "lint": "oxlint",
+    "build": "napi build --platform --release --strip",
+    "build:debug": "napi build --platform --strip",
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "version": "napi version"
   },
   "devDependencies": {
-    "@emnapi/core": "^1.5.0",
-    "@emnapi/runtime": "^1.5.0",
-    "@napi-rs/cli": "^3.2.0",
-    "@napi-rs/wasm-runtime": "^1.0.4",
     "@oxc-node/core": "^0.0.34",
-    "@taplo/cli": "^0.7.0",
-    "@tybys/wasm-util": "^0.10.0",
+    "@napi-rs/cli": "^3.4.1",
     "ava": "^6.4.1",
-    "chalk": "^5.6.2",
-    "emnapi": "^1.5.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.1.6",
-    "npm-run-all2": "^8.0.4",
-    "oxlint": "^1.14.0",
-    "prettier": "^3.6.2",
-    "tinybench": "^5.0.1",
-    "typescript": "^5.9.2"
-  },
-  "lint-staged": {
-    "*.@(js|ts|tsx)": [
-      "oxlint --fix"
-    ],
-    "*.@(js|ts|tsx|yml|yaml|md|json)": [
-      "prettier --write"
-    ],
-    "*.toml": [
-      "taplo format"
-    ]
+    "typescript": "^5.9.3"
   },
   "ava": {
     "extensions": {
@@ -106,13 +73,6 @@
       "--import",
       "@oxc-node/core/register"
     ]
-  },
-  "prettier": {
-    "printWidth": 120,
-    "semi": false,
-    "trailingComma": "all",
-    "singleQuote": true,
-    "arrowParens": "always"
   },
   "packageManager": "pnpm@10.22.0"
 }
