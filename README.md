@@ -1,21 +1,15 @@
 # `@ylcc/napi-blitz`
 
-![https://github.com/napi-rs/napi-blitz/actions](https://github.com/napi-rs/napi-blitz/workflows/CI/badge.svg)
-
-> Template project for writing node packages with napi-rs.
-
-# Usage
-
-1. Click **Use this template**.
-2. **Clone** your project.
-3. Run `pnpm install` to install dependencies.
-4. Run `npx napi rename -n [name]` command under the project folder to rename your package.
+![https://github.com/jerry4718/napi-blitz/actions](https://github.com/jerry4718/napi-blitz/workflows/CI/badge.svg)
 
 ## Install this test package
 
 ```
 pnpm add @ylcc/napi-blitz
 ```
+
+## Screenshot
+![screenshot](https://raw.githubusercontent.com/jerry4718/napi-blitz/main/screenshots/demo-counter.png)
 
 ## Usage
 

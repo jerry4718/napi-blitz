@@ -1,28 +1,81 @@
+
 [package]
 authors = ["ZhangChao <jerry4718@qq.com>"]
 edition = "2021"
-name = "napi-blitz"
+name = "napi_blitz"
 version = "0.1.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3.8.2", features = ["napi6", "async"] }
 napi-derive = "3.5.1"
-taffy = "0.9.2"
-lazy_static = "1.5.0"
-style = { package = "stylo", version = "0.8" }
-anyrender = "0.6.2"
-anyrender_vello = "0.6.1"
-winit = "0.30.12"
 tokio = "1.48.0"
+lazy_static = "1.5.0"
+winit = "0.31.0-beta.2"
+
+[dependencies.napi]
+version = "3.8.2"
+features = ["napi6","async"]
+
+[dependencies.style]
+version = "0.11.0"
+package = "stylo"
+
+[dependencies.style_traits]
+version = "0.11.0"
+package = "stylo_traits"
+
+[dependencies.style_atoms]
+version = "0.11.0"
+package = "stylo_atoms"
+
+[dependencies.style_config]
+version = "0.11.0"
+package = "stylo_config"
+
+[dependencies.style_dom]
+version = "0.11.0"
+package = "stylo_dom"
+
+[dependencies.anyrender]
+version = "0.7"
+
+[dependencies.anyrender_vello]
+version = "0.7"
+
+[dependencies.anyrender_vello_cpu]
+version = "0.9"
+
+[dependencies.anyrender_vello_hybrid]
+version = "0.2"
+
+[dependencies.anyrender_skia]
+version = "0.4"
+
+[dependencies.anyrender_svg]
+version = "0.8"
 
 [dependencies.blitz]
-version = "0.2.1"
-features = []
+git = "https://github.com/DioxusLabs/blitz"
+rev = "15fe8cc"
+
+[dependencies.blitz-dom]
+git = "https://github.com/DioxusLabs/blitz"
+rev = "15fe8cc"
+features = ["default"]
+
+[dependencies.taffy]
+git = "https://github.com/DioxusLabs/taffy"
+rev = "25759dad44d8350743a4e866fee54962f996895a"
+default-features = false
+features = ["std","flexbox","grid","block_layout","content_size","calc","detailed_layout_info"]
+
+[dependencies.parley]
+git = "https://github.com/linebender/parley"
+rev = "f6a8485c35367b581b03bd6da55c8465f24e16ef"
+default-features = false
+features = ["std"]
 
 [build-dependencies]
 napi-build = "2.3.1"

@@ -8,6 +8,7 @@ export const Hello = defineComponent({
   props: {
     text: { type: String },
   },
+  emits: ['emit'],
   setup(props, ctx) {
     const hello = ref('hellp')
 
@@ -21,20 +22,23 @@ export const Hello = defineComponent({
     function setRandomColor() {
       state.color = randomColor()
       state.backgroundColor = randomColor()
+      ctx.emit('emit')
     }
 
     return () => {
       return <div
         class={'hello-container'}
         style={{
-          color: color.value,
-          backgroundColor: backgroundColor.value, display: 'inline-block',
           width: '100px',
           height: '100px',
+          transition: '.25s',
+          color: color.value,
+          backgroundColor: backgroundColor.value,
         }}
         onClick={setRandomColor}
       >
-        {ctx.slots.default?.()}
+        <button onClick={() => {}}>{ctx.slots.default?.()}</button>
+        <checkbox></checkbox>
         {hello.value}{'=>'}{props.text},<br />
         {ctx.slots.someSlot?.()}
       </div>

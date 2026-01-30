@@ -20,7 +20,8 @@
   ],
   "files": [
     "index.d.ts",
-    "index.js"
+    "index.js",
+    "*.node"
   ],
   "napi": {
     "binaryName": "napi-blitz",
@@ -74,5 +75,5 @@
       "@oxc-node/core/register"
     ]
   },
-  "packageManager": "pnpm@10.22.0"
+  "packageManager": "pnpm@10.28.2"
 }

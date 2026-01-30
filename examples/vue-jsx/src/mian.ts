@@ -2,31 +2,30 @@ import { ComponentInternalInstance, createRenderer, ElementNamespace, VNodeProps
 import { BlitzApp, Document, Node } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
 import process from 'node:process'
+import fs from 'node:fs'
+import path from 'node:path'
 
 const HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
+<title>💗️Hello Blitz(napi-rs Demo)~~~</title>
 <style>
     html, body { border: 0; margin: 0; padding: 0; }
-    body { border: 1px solid red; }
-    body {
-     min-height: 252px;
-     max-height: calc(100vh - 2px);
-     overflow: scroll;
-    }
-    * {
-      font-size: 13px;
-    }
 </style>
 </head>
-<body id="body">
-<h1 style="color: #000; font-size: 24px">Hello World</h1>
-<h1>napi Demo</h1>
+<body>
 </body>
 </html>
 `
 
-const document = new Document(HTML)
+const DEFAULT_CSS = fs.readFileSync(path.resolve('assets/default.css'), { encoding: 'utf-8' })
+
+const document = new Document([
+  DEFAULT_CSS,
+  'body { background: #ccc }',
+  'div { display: block }',
+])
+document.loadHtml(HTML)
 
 function styleKey(key: string) {
   if (/^--/.test(key)) return key
@@ -69,7 +68,7 @@ const { createApp } = createRenderer<Node, Node>({
   patchProp(
     el: Node,
     key: string,
-    _prevValue: any,
+    prevValue: any,
     nextValue: any,
     _namespace: ElementNamespace | undefined,
     _parentComponent: ComponentInternalInstance | null | undefined,
@@ -81,15 +80,21 @@ const { createApp } = createRenderer<Node, Node>({
       }
       return
     }
-    console.log('patchProp', { key, nextValue })
-    if (key === 'onClick') {
-      el.addEventListener('click', nextValue)
+    if (/^on(Click|Mouse(move|down|up)|Key(press|down|up)|Input)$/.test(key)) {
+      const event = key.replace(/^on/, '').toLowerCase()
+      console.log('addEventListener', { event, listener: nextValue })
+      if (prevValue) {
+        el.removeEventListener(event, prevValue)
+      }
+      el.addEventListener(event, nextValue)
       return
     }
     if (typeof nextValue === 'string') {
+      console.log('patchProp', { key, nextValue })
       document.patchProp(el, key, nextValue)
       return
     }
+    console.log('unknownProp', { key, nextValue })
     el.selfProp(key, nextValue)
   },
   querySelector(selector: string): Node | null {
@@ -115,6 +120,7 @@ function randomHex() {
 
 export async function bootstrap() {
   const blitz = BlitzApp.create()
+  document.loadHtml(HTML)
   blitz.openWindow(document)
 
   const head = document.querySelector('head')
@@ -133,7 +139,7 @@ export async function bootstrap() {
     const div = document.createElement('div', [{ name: 'class', value: className }])
     const style = document.createElement('style', [])
     const styleText = document.createTextNode(
-      `.${className} { background-color: #${hex}; display: block; height: 50px; }`,
+      `.${className} { background-color: #${hex}; height: 50px; }`,
     )
     document.insert(styleText, style)
     document.insert(style, head)
@@ -143,8 +149,7 @@ export async function bootstrap() {
   while (true) {
     const pump = blitz.pumpAppEvents(0)
     if (pump.exit) {
-      process.exit(pump.code)
-      return
+      return process.exit(pump.code)
     }
     await new Promise(resolve => setTimeout(resolve, 16))
   }

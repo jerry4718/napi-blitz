@@ -2,22 +2,22 @@
 
 use crate::dom::{Document, DocumentHolder};
 use anyrender_vello::VelloWindowRenderer;
-use blitz::dom::Document as BlitzDocument;
-use blitz::shell::{create_default_event_loop, BlitzApplication, BlitzShellEvent, WindowConfig};
+use blitz::{
+    dom::Document as BlitzDocument,
+    shell::{create_default_event_loop, BlitzApplication, BlitzShellProxy, WindowConfig},
+};
 use napi_derive::napi;
-use std::ops::Deref;
-use std::time::Duration;
-use winit::event_loop::EventLoop;
-use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+use std::{ops::Deref, time::Duration};
+use winit::event_loop::{
+    pump_events::{EventLoopExtPumpEvents, PumpStatus},
+    EventLoop,
+};
 
 mod dom;
 
-unsafe impl Send for Document {}
-unsafe impl Sync for Document {}
-
 #[napi]
 pub struct BlitzApp {
-    event_loop: EventLoop<BlitzShellEvent>,
+    event_loop: EventLoop,
     application: BlitzApplication<VelloWindowRenderer>,
 }
 
@@ -33,8 +33,9 @@ impl BlitzApp {
     #[napi]
     pub fn create() -> Self {
         let event_loop = create_default_event_loop();
+        let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         // Create application
-        let application = BlitzApplication::new(event_loop.create_proxy());
+        let application = BlitzApplication::new(proxy, receiver);
 
         Self {
             event_loop,

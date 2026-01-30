@@ -4,17 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node --import @oxc-node/core/register index.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.22.0",
+  "packageManager": "pnpm@10.28.2",
   "dependencies": {
-    "vue": "^3.5.27",
-    "@ylcc/napi-blitz": "file:../../"
+    "@ylcc/napi-blitz": "file:../../",
+    "colord": "^2.9.3",
+    "vue": "^3.5.27"
   },
   "devDependencies": {
+    "@oxc-node/core": "^0.0.35",
     "@types/node": "^22.7.4"
   }
 }

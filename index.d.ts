@@ -7,9 +7,12 @@ export declare class BlitzApp {
 }
 
 export declare class Document {
-  constructor(html?: string | undefined | null)
+  constructor(uaStylesheets?: Array<string> | undefined | null)
+  loadHtml(html: string): void
+  resolve(currentTimeForAnimations: number): void
   getNode(id: number): Node | null
   deepCloneNode(node: Node): Node
+  createElement2(name: string, attrs: Record<string, string>): Node
   createElement(name: string, attrs: Array<Attribute>): Node
   createTextNode(text: string): Node
   createCommentNode(): Node
@@ -30,6 +33,7 @@ export declare class Node {
   printTree(level?: number | undefined | null): void
   selfProp(name: string, value: object): void
   addEventListener(eventType: string, handler: () => void): void
+  removeEventListener(eventType: string, handler: () => void): void
 }
 
 export declare class PumpResult {

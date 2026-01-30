@@ -1,20 +1,23 @@
-use blitz::dom::{
-    ns, Attribute as BlitzAttribute, BaseDocument, Document as BlitzDocument, DocumentConfig,
-    DocumentMutator, EventDriver, EventHandler, LocalName, Node as BlitzNode, NodeData, QualName,
-    DEFAULT_CSS,
+use blitz::{
+    dom::{
+        ns, Attribute as BlitzAttribute, BaseDocument, DocGuard, DocGuardMut,
+        Document as BlitzDocument, DocumentConfig, DocumentMutator, EventDriver, EventHandler,
+        FontContext, LocalName, QualName, BULLET_FONT, DEFAULT_CSS,
+    },
+    html::{DocumentHtmlParser, HtmlProvider},
+    traits::events::{DomEvent, DomEventData, DomEventKind, EventState, UiEvent},
 };
-use blitz::html::{DocumentHtmlParser, HtmlProvider};
-use blitz::traits::events::{DomEvent, DomEventData, DomEventKind, EventState, UiEvent};
-use napi::bindgen_prelude::*;
-use napi::threadsafe_function::ThreadsafeFunctionCallMode;
-use napi::Env;
+use napi::{bindgen_prelude::*, threadsafe_function::ThreadsafeFunctionCallMode, Env};
 use napi_derive::napi;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
-use std::sync::Arc;
+use parley::fontique::Blob;
+use std::str::FromStr;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::Arc,
+};
 
 #[napi]
 pub struct Document {
@@ -43,54 +46,65 @@ impl DerefMut for DocumentHolder {
 
 #[derive(Default, Clone)]
 pub struct SimpleEventHandler {
-    pub(crate) listeners: Vec<(
-        usize,
-        DomEventKind,
-        Rc<RefCell<dyn FnMut(usize, &[usize], &mut DomEvent, &mut DocumentMutator)>>,
-    )>,
+    pub(crate) listeners: HashMap<ListenerKey, Vec<Rc<(Env, FunctionRef<(), ()>)>>>,
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+struct ListenerKey(usize, u8);
 
 impl EventHandler for SimpleEventHandler {
     fn handle_event(
         &mut self,
-        chain: &[usize],
+        _chain: &[usize],
         event: &mut DomEvent,
-        mutr: &mut DocumentMutator<'_>,
+        _doc: &mut dyn BlitzDocument,
         _event_state: &mut EventState,
     ) {
-        for (node_id, kind, handler) in &self.listeners {
-            if event.target != *node_id {
-                continue;
-            }
-            if event.data.kind() != *kind {
-                continue;
-            }
-            if !matches!(kind, DomEventKind::MouseMove)
-                && !matches!(event.data, DomEventData::MouseMove(_))
-            {
-                println!("Handling from {} event {:?}", node_id, event);
-            }
-            println!("matched event ========================================================");
-            handler.borrow_mut()(*node_id, chain, event, mutr)
+        let Some(handles) = self
+            .listeners
+            .get(&ListenerKey(event.target, event.data.kind().discriminant()))
+        else {
+            return;
+        };
+
+        println!(
+            "Matched ========== node_id: {} event {:?}",
+            event.target, event
+        );
+
+        for pair in handles {
+            let (env, handler) = pair.as_ref();
+            let Err(e) = handler
+                .borrow_back(env)
+                .map(|handler| handler.call(()))
+                .flatten()
+            else {
+                return;
+            };
+            eprintln!("{}", e.reason)
         }
     }
 }
 
 impl BlitzDocument for DocumentHolder {
+    fn inner(&self) -> DocGuard<'_> {
+        self.base.inner()
+    }
+
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        self.base.inner_mut()
+    }
+
     fn handle_ui_event(&mut self, event: UiEvent) {
-        if !matches!(event, UiEvent::MouseMove(_)) {
+        if !matches!(event, UiEvent::PointerMove(_)) {
             println!("handle ui event: {:?}", event);
         }
-        EventDriver::new(self.base.mutate(), self.event_handler.clone()).handle_ui_event(event);
+        EventDriver::new(&mut self.base, self.event_handler.clone()).handle_ui_event(event);
     }
 
     /*fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
         todo!()
     }*/
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
 
     /*fn id(&self) -> usize {
         todo!()
@@ -118,30 +132,26 @@ static BASE_HTML: &str = r#"<!DOCTYPE html>
 "#;
 
 impl Document {
-    pub(crate) fn construct(env: Env, html: String) -> Document {
-        let config = DocumentConfig::default();
+    pub(crate) fn construct(env: Env, ua_stylesheets: Vec<String>) -> Document {
+        let mut font_ctx = FontContext::new();
+        font_ctx
+            .collection
+            .register_fonts(Blob::new(Arc::new(BULLET_FONT) as _), None);
 
-        let mut base = BaseDocument::new(DocumentConfig {
+        let config = DocumentConfig {
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
-            ua_stylesheets: Some(vec![DEFAULT_CSS.to_string()]),
-            ..config
-        });
+            ua_stylesheets: Some(ua_stylesheets),
+            ..DocumentConfig::default()
+        };
 
-        let mut mutr = base.mutate();
-        DocumentHtmlParser::parse_into_mutator(&mut mutr, html.as_str());
-        drop(mutr);
-        base.resolve(0.0);
-
-        let event_handler = SimpleEventHandler::default();
-
-        let doc = Rc::new(RefCell::new(DocumentHolder {
-            base,
-            event_handler,
-        }));
+        let holder = DocumentHolder {
+            base: BaseDocument::new(config),
+            event_handler: SimpleEventHandler::default(),
+        };
 
         Document {
             env,
-            doc,
+            doc: Rc::new(RefCell::new(holder)),
             nodes: Default::default(),
         }
     }
@@ -150,13 +160,27 @@ impl Document {
 #[napi]
 impl Document {
     #[napi(constructor)]
-    pub fn new(env: Env, html: Option<String>) -> Document {
-        Self::construct(env, html.unwrap_or(BASE_HTML.to_string()))
+    pub fn new(env: Env, ua_stylesheets: Option<Vec<String>>) -> Document {
+        Self::construct(env, ua_stylesheets.unwrap_or(vec![DEFAULT_CSS.to_string()]))
     }
 }
 
 #[napi]
 impl Document {
+    #[napi]
+    pub fn load_html(&mut self, html: String) {
+        let base = &mut self.doc.borrow_mut().base;
+        let mut mutr = base.mutate();
+        DocumentHtmlParser::parse_into_mutator(&mut mutr, html.as_str());
+        drop(mutr);
+        base.resolve(0.0);
+    }
+
+    #[napi]
+    pub fn resolve(&mut self, current_time_for_animations: f64) {
+        self.doc.borrow_mut().resolve(current_time_for_animations);
+    }
+
     fn node_reference(&mut self, node_id: usize) -> Result<Reference<Node>> {
         let node = Node {
             id: node_id,
@@ -191,6 +215,20 @@ impl Document {
     #[napi]
     pub fn deep_clone_node(&mut self, node: Reference<Node>) -> Result<Reference<Node>> {
         let id = self.doc.borrow_mut().deep_clone_node(node.id);
+        self.node_reference(id)
+    }
+
+    #[napi]
+    pub fn create_element2(
+        &mut self,
+        name: String,
+        attrs: HashMap<String, String>,
+    ) -> Result<Reference<Node>> {
+        let attrs = attrs
+            .into_iter()
+            .map(|(name, value)| Attribute { name, value })
+            .collect::<Vec<_>>();
+        let id = self.doc.borrow_mut().create_element(name, attrs);
         self.node_reference(id)
     }
 
@@ -304,6 +342,10 @@ impl Document {
 }
 
 impl DocumentHolder {
+    pub fn resolve(&mut self, current_time_for_animations: f64) {
+        self.base.resolve(current_time_for_animations);
+    }
+
     pub fn get_node(&self, id: usize) -> Option<usize> {
         let node = self.base.get_node(id).unwrap();
 
@@ -388,6 +430,7 @@ impl DocumentHolder {
         self.base
             .mutate()
             .set_style_property(node_id, &name, &value);
+        println!("set style property {} = {}", name, value);
     }
 
     pub fn query_selector(&mut self, selector: String) -> Result<Option<usize>> {
@@ -436,13 +479,31 @@ impl DocumentHolder {
         }
     }
 
-    pub fn add_event_listener<F>(&mut self, node: usize, kind: DomEventKind, event_handler: F)
-    where
-        F: FnMut(usize, &[usize], &mut DomEvent, &mut DocumentMutator) + 'static,
-    {
+    pub fn add_event_listener(
+        &mut self,
+        node: usize,
+        kind: DomEventKind,
+        env: Env,
+        event_handler: FunctionRef<(), ()>,
+    ) {
+        let pair = &Rc::new((env, event_handler));
         self.event_handler
             .listeners
-            .push((node, kind, Rc::new(RefCell::new(event_handler))));
+            .entry(ListenerKey(node, kind.discriminant()))
+            .and_modify(|pairs| pairs.append(&mut vec![Rc::clone(pair)]))
+            .or_insert(vec![Rc::clone(pair)]);
+    }
+
+    pub fn remove_event_listener(
+        &mut self,
+        node: usize,
+        kind: DomEventKind,
+        event_handler: FunctionRef<(), ()>,
+    ) {
+        self.event_handler
+            .listeners
+            .remove(&ListenerKey(node, kind.discriminant()));
+        // todo: remove by same function
     }
 }
 
@@ -471,7 +532,28 @@ impl Node {
         event_type: String,
         handler: FunctionRef<(), ()>,
     ) {
-        let event_kind = match event_type.as_str() {
+        let Some(event_kind) = Self::judge_event_type(&event_type) else {
+            return eprintln!("unsupported event type {}", event_type);
+        };
+
+        self.doc
+            .borrow_mut()
+            .add_event_listener(self.id, event_kind, env, handler);
+    }
+
+    #[napi]
+    pub fn remove_event_listener(&mut self, event_type: String, handler: FunctionRef<(), ()>) {
+        let Ok(event_kind) = DomEventKind::from_str(&event_type) else {
+            return eprintln!("unsupported event type {}", event_type);
+        };
+
+        self.doc
+            .borrow_mut()
+            .remove_event_listener(self.id, event_kind, handler);
+    }
+
+    fn judge_event_type(event_type: &str) -> Option<DomEventKind> {
+        Some(match event_type {
             "click" => DomEventKind::Click,
             "mousemove" => DomEventKind::MouseMove,
             "mousedown" => DomEventKind::MouseDown,
@@ -480,25 +562,7 @@ impl Node {
             "keydown" => DomEventKind::KeyDown,
             "keyup" => DomEventKind::KeyUp,
             "input" => DomEventKind::Input,
-            _ => return,
-        };
-        let handler = handler
-            .borrow_back(&env)
-            .unwrap()
-            .build_threadsafe_function()
-            .build()
-            .unwrap();
-
-        self.doc.borrow_mut().add_event_listener(
-            self.id,
-            event_kind,
-            move |node_id: usize,
-                  chain_id: &[usize],
-                  event: &mut DomEvent,
-                  mutr: &mut DocumentMutator| {
-                print!("event: {:?}, on: {}", event, node_id);
-                handler.call((), ThreadsafeFunctionCallMode::NonBlocking);
-            },
-        );
+            _ => return None,
+        })
     }
 }
