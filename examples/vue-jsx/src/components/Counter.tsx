@@ -4,7 +4,7 @@ import { Btn } from './Btn.tsx'
 export const Counter = defineComponent(() => {
   const count = ref(0)
 
-  return () => <>
+  return () => (
     <div
       style={{
         display: 'flex',
@@ -43,5 +43,5 @@ export const Counter = defineComponent(() => {
         {{ default: () => 'Reset' }}
       </Btn>
     </div>
-  </>
+  )
 })

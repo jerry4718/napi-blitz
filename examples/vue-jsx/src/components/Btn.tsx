@@ -1,4 +1,4 @@
-import { computed, defineComponent, PropType, StyleValue } from 'vue'
+import { defineComponent, StyleValue } from 'vue'
 
 const defaultStyle: StyleValue = {
   padding: '7px 21px',
@@ -9,19 +9,14 @@ const defaultStyle: StyleValue = {
 }
 
 export const Btn = defineComponent({
-  props: {
-    style: { type: Object as PropType<StyleValue>, default: () => ({}) },
-  },
   emits: ['click'],
-  setup(props, ctx) {
-    const mergedStyle = computed(() => Object.assign({}, defaultStyle, props.style))
-
-    return () => <>
+  setup(_, ctx) {
+    return () => (
       <div
-        style={mergedStyle.value}
+        style={defaultStyle}
         onClick={() => ctx.emit('click')}>
         {ctx.slots.default?.()}
       </div>
-    </>
+    )
   },
 })
