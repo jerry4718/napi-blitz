@@ -7,13 +7,13 @@ export declare class BlitzApp {
 }
 
 export declare class Document {
-  constructor(uaStylesheets?: Array<string> | undefined | null)
+  constructor(initConfig?: DocumentInitConfig | undefined | null)
   loadHtml(html: string): void
   resolve(currentTimeForAnimations: number): void
   getNode(id: number): Node | null
   deepCloneNode(node: Node): Node
-  createElement2(name: string, attrs: Record<string, string>): Node
-  createElement(name: string, attrs: Array<Attribute>): Node
+  createElement2(name: string, namespace: string | undefined | null, attrs: Record<string, string>): Node
+  createElement(name: string, namespace: string | undefined | null, attrs: Array<Attribute>): Node
   createTextNode(text: string): Node
   createCommentNode(): Node
   createCommentNodeWithContent(content: string): Node
@@ -21,7 +21,7 @@ export declare class Document {
   nextSibling(node: Node): Node | null
   previousSibling(node: Node): Node | null
   parentNode(node: Node): Node | null
-  patchProp(node: Node, name: string, value: string): void
+  patchProp(node: Node, name: string, value: string, namespace?: string | undefined | null): void
   setStyleProperty(node: Node, name: string, value: string): void
   removeStyleProperty(node: Node, name: string): void
   querySelector(selector: string): Node | null
@@ -46,4 +46,9 @@ export declare class PumpResult {
 export interface Attribute {
   name: string
   value: string
+}
+
+export interface DocumentInitConfig {
+  uaStylesheets?: Array<string>
+  baseHtml?: string
 }

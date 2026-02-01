@@ -2,8 +2,6 @@ import { ComponentInternalInstance, createRenderer, ElementNamespace, VNodeProps
 import { BlitzApp, Document, Node } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
 import process from 'node:process'
-import fs from 'node:fs'
-import path from 'node:path'
 
 const HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -40,11 +38,11 @@ const { createApp } = createRenderer<Node, Node>({
   },
   createElement(
     type: string,
-    _namespace: ElementNamespace | undefined,
+    namespace: ElementNamespace | undefined,
     _isCustomizedBuiltIn: string | undefined,
     _vNodeProps: (VNodeProps & { [p: string]: any }) | null | undefined,
   ): Node {
-    return document.createElement(type, [])
+    return document.createElement(type, namespace, [])
   },
   createText(text: string): Node {
     return document.createTextNode(text)
@@ -67,9 +65,10 @@ const { createApp } = createRenderer<Node, Node>({
     key: string,
     prevValue: any,
     nextValue: any,
-    _namespace: ElementNamespace | undefined,
+    namespace: ElementNamespace | undefined,
     _parentComponent: ComponentInternalInstance | null | undefined,
   ): void {
+    if (prevValue === nextValue) return;
     if (key === 'style') {
       const prevKeys = prevValue ? Object.keys(prevValue) : [];
 
@@ -85,7 +84,7 @@ const { createApp } = createRenderer<Node, Node>({
       }
       return
     }
-    if (/^on(Click|Mouse(move|down|up)|Key(press|down|up)|Input)$/.test(key)) {
+    if (/^on[A-Z]/.test(key)) {
       const event = key.replace(/^on/, '').toLowerCase()
       console.log('addEventListener', { event, listener: nextValue })
       if (prevValue) {
@@ -96,7 +95,7 @@ const { createApp } = createRenderer<Node, Node>({
     }
     if (typeof nextValue === 'string') {
       console.log('patchProp', { key, nextValue })
-      document.patchProp(el, key, nextValue)
+      document.patchProp(el, key, nextValue, namespace)
       return
     }
     console.log('unknownProp', { key, nextValue })
@@ -126,7 +125,7 @@ function randomHex() {
 export async function bootstrap() {
   const head = document.querySelector('head')
   const body = document.querySelector('body')
-  const app = document.createElement('div', [{ name: 'id', value: 'app' }])
+  const app = document.createElement('div', 'html', [{ name: 'id', value: 'app' }])
   document.insert(app, body)
   createApp(App).mount(app)
 
@@ -137,8 +136,8 @@ export async function bootstrap() {
   body?.addEventListener('click', () => {
     const hex = randomHex()
     const className = `class-${hex}`
-    const div = document.createElement('div', [{ name: 'class', value: className }])
-    const style = document.createElement('style', [])
+    const div = document.createElement('div', 'html', [{ name: 'class', value: className }])
+    const style = document.createElement('style', 'html', [])
     const styleText = document.createTextNode(
       `.${className} { background-color: #${hex}; height: 50px; }`,
     )

@@ -1,13 +1,13 @@
 use blitz::{
     dom::{
         ns, Attribute as BlitzAttribute, BaseDocument, DocGuard, DocGuardMut,
-        Document as BlitzDocument, DocumentConfig, DocumentMutator, EventDriver, EventHandler,
+        Document as BlitzDocument, DocumentConfig, EventDriver, EventHandler,
         FontContext, LocalName, Namespace, QualName, BULLET_FONT, DEFAULT_CSS,
     },
     html::{DocumentHtmlParser, HtmlProvider},
-    traits::events::{DomEvent, DomEventData, DomEventKind, EventState, UiEvent},
+    traits::events::{DomEvent, DomEventKind, EventState, UiEvent},
 };
-use napi::{bindgen_prelude::*, threadsafe_function::ThreadsafeFunctionCallMode, Env};
+use napi::{bindgen_prelude::*, Env};
 use napi_derive::napi;
 use parley::fontique::Blob;
 use std::{
@@ -24,6 +24,30 @@ pub struct Document {
     pub(crate) env: Env,
     pub(crate) doc: Rc<RefCell<DocumentHolder>>,
     pub(crate) nodes: HashMap<usize, Reference<Node>>,
+}
+
+#[napi(object)]
+pub struct DocumentInitConfig {
+    pub ua_stylesheets: Option<Vec<String>>,
+    pub base_html: Option<String>,
+}
+
+pub(crate) struct DocumentInitConfigFinal {
+    pub ua_stylesheets: Vec<String>,
+    pub base_html: String,
+}
+
+impl From<Option<DocumentInitConfig>> for DocumentInitConfigFinal {
+    fn from(value: Option<DocumentInitConfig>) -> Self {
+        let value = value.unwrap_or(DocumentInitConfig {
+            ua_stylesheets: None,
+            base_html: None,
+        });
+        DocumentInitConfigFinal {
+            ua_stylesheets: value.ua_stylesheets.unwrap_or(vec![DEFAULT_CSS.to_string()]),
+            base_html: value.base_html.unwrap_or(String::from(BASE_HTML)),
+        }
+    }
 }
 
 pub struct DocumentHolder {
@@ -50,7 +74,7 @@ pub struct SimpleEventHandler {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-struct ListenerKey(usize, u8);
+pub(crate) struct ListenerKey(usize, u8);
 
 impl EventHandler for SimpleEventHandler {
     fn handle_event(
@@ -132,7 +156,7 @@ static BASE_HTML: &str = r#"<!DOCTYPE html>
 "#;
 
 impl Document {
-    pub(crate) fn construct(env: Env, ua_stylesheets: Vec<String>) -> Document {
+    pub(crate) fn construct(env: Env, init_config: DocumentInitConfigFinal) -> Document {
         let mut font_ctx = FontContext::new();
         font_ctx
             .collection
@@ -140,7 +164,7 @@ impl Document {
 
         let config = DocumentConfig {
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
-            ua_stylesheets: Some(ua_stylesheets),
+            ua_stylesheets: Some(init_config.ua_stylesheets),
             ..DocumentConfig::default()
         };
 
@@ -160,8 +184,8 @@ impl Document {
 #[napi]
 impl Document {
     #[napi(constructor)]
-    pub fn new(env: Env, ua_stylesheets: Option<Vec<String>>) -> Document {
-        Self::construct(env, ua_stylesheets.unwrap_or(vec![DEFAULT_CSS.to_string()]))
+    pub fn new(env: Env, init_config: Option<DocumentInitConfig>) -> Document {
+        Self::construct(env, init_config.into())
     }
 }
 
@@ -222,13 +246,14 @@ impl Document {
     pub fn create_element2(
         &mut self,
         name: String,
+        namespace: Option<String>,
         attrs: HashMap<String, String>,
     ) -> Result<Reference<Node>> {
         let attrs = attrs
             .into_iter()
             .map(|(name, value)| Attribute { name, value })
             .collect::<Vec<_>>();
-        let id = self.doc.borrow_mut().create_element(name, attrs);
+        let id = self.doc.borrow_mut().create_element(name, namespace, attrs);
         self.node_reference(id)
     }
 
@@ -236,9 +261,10 @@ impl Document {
     pub fn create_element(
         &mut self,
         name: String,
+        namespace: Option<String>,
         attrs: Vec<Attribute>,
     ) -> Result<Reference<Node>> {
-        let id = self.doc.borrow_mut().create_element(name, attrs);
+        let id = self.doc.borrow_mut().create_element(name, namespace, attrs);
         self.node_reference(id)
     }
 
@@ -305,8 +331,8 @@ impl Document {
     }
 
     #[napi]
-    pub fn patch_prop(&mut self, node: Reference<Node>, name: String, value: String) {
-        self.doc.borrow_mut().patch_prop(node.id, name, value);
+    pub fn patch_prop(&mut self, node: Reference<Node>, name: String, value: String, namespace: Option<String>) {
+        self.doc.borrow_mut().patch_prop(node.id, name, value, namespace);
     }
 
     #[napi]
@@ -367,13 +393,13 @@ impl DocumentHolder {
         Some(node.id)
     }
 
-    pub fn create_element(&mut self, name: String, attrs: Vec<Attribute>) -> usize {
+    pub fn create_element(&mut self, name: String, namespace: Option<String>, attrs: Vec<Attribute>) -> usize {
         self.base.mutate().create_element(
-            qual_name(&name, None),
+            qual_name(&name, namespace.as_deref()),
             attrs
                 .iter()
                 .map(|attr| BlitzAttribute {
-                    name: qual_name(&attr.name, None),
+                    name: qual_name(&attr.name, namespace.as_deref()),
                     value: attr.value.clone(),
                 })
                 .collect(),
@@ -433,10 +459,10 @@ impl DocumentHolder {
         self.base.mutate().parent_id(node_id)
     }
 
-    pub fn patch_prop(&mut self, node_id: usize, name: String, value: String) {
+    pub fn patch_prop(&mut self, node_id: usize, name: String, value: String, namespace: Option<String>) {
         self.base.mutate().set_attribute(
             node_id,
-            QualName::new(None, ns!(), LocalName::from(name.as_str())),
+            qual_name(&name, namespace.as_deref()),
             &value,
         );
     }
@@ -520,7 +546,7 @@ impl DocumentHolder {
         &mut self,
         node: usize,
         kind: DomEventKind,
-        event_handler: FunctionRef<(), ()>,
+        _event_handler: FunctionRef<(), ()>,
     ) {
         self.event_handler
             .listeners
@@ -572,19 +598,5 @@ impl Node {
         self.doc
             .borrow_mut()
             .remove_event_listener(self.id, event_kind, handler);
-    }
-
-    fn judge_event_type(event_type: &str) -> Option<DomEventKind> {
-        Some(match event_type {
-            "click" => DomEventKind::Click,
-            "mousemove" => DomEventKind::MouseMove,
-            "mousedown" => DomEventKind::MouseDown,
-            "mouseup" => DomEventKind::MouseUp,
-            "keypress" => DomEventKind::KeyPress,
-            "keydown" => DomEventKind::KeyDown,
-            "keyup" => DomEventKind::KeyUp,
-            "input" => DomEventKind::Input,
-            _ => return None,
-        })
     }
 }
