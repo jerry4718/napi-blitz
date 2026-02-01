@@ -1,10 +1,10 @@
 import { computed, defineComponent, ref } from 'vue'
-import { random as randomColord } from 'colord'
+import { randomColor } from './utils/color.ts'
 import { Counter } from './components/Counter.tsx'
 
 export const App = defineComponent({
   setup() {
-    const colors = ref([randomColord(), randomColord(), randomColord()])
+    const colors = ref([randomColor(), randomColor(), randomColor()])
 
     const background = computed(() => {
       const [color1, color2, color3] = colors.value
@@ -15,7 +15,7 @@ export const App = defineComponent({
     })
 
     function changeColors() {
-      colors.value = [randomColord(), randomColord(), randomColord()]
+      colors.value = [randomColor(), randomColor(), randomColor()]
     }
 
     return () => {
@@ -30,9 +30,9 @@ export const App = defineComponent({
         }}
         onClick={changeColors}
       >
-        <div style={{ textAlign: 'center', fontSize: '50px', fontWeight: 'bold' }}>
+        <h1 style={{ textAlign: 'center', fontSize: '50px' }}>
           Hello Blitz
-        </div>
+        </h1>
         <Counter />
       </div>
     }

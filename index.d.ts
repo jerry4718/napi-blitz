@@ -23,6 +23,7 @@ export declare class Document {
   parentNode(node: Node): Node | null
   patchProp(node: Node, name: string, value: string): void
   setStyleProperty(node: Node, name: string, value: string): void
+  removeStyleProperty(node: Node, name: string): void
   querySelector(selector: string): Node | null
   remove(node: Node): void
   setElementText(node: Node, text: string): void

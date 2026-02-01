@@ -59,11 +59,26 @@ version = "0.8"
 [dependencies.blitz]
 git = "https://github.com/DioxusLabs/blitz"
 rev = "15fe8cc"
+default-features = false
+features = [ "net" ]
 
 [dependencies.blitz-dom]
 git = "https://github.com/DioxusLabs/blitz"
 rev = "15fe8cc"
-features = ["default"]
+default-features = false
+features = [
+    "svg",
+    "woff-rust",
+    #"accessibility",
+    "system_fonts",
+    "file_input",
+]
+
+[dependencies.blitz-shell]
+git = "https://github.com/DioxusLabs/blitz"
+rev = "15fe8cc"
+default-features = false
+features = []
 
 [dependencies.taffy]
 git = "https://github.com/DioxusLabs/taffy"

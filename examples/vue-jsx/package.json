@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node --import @oxc-node/core/register index.ts"
+    "start": "cross-env RUST_BACKTRACE=full node --import @oxc-node/core/register index.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@oxc-node/core": "^0.0.35",
-    "@types/node": "^22.7.4"
+    "@types/node": "^22.7.4",
+    "cross-env": "^10.1.0"
   }
 }

@@ -18,14 +18,11 @@ const HTML = `<!DOCTYPE html>
 </html>
 `
 
-const DEFAULT_CSS = fs.readFileSync(path.resolve('assets/default.css'), { encoding: 'utf-8' })
+const document = new Document()
 
-const document = new Document([
-  DEFAULT_CSS,
-  'body { background: #ccc }',
-  'div { display: block }',
-])
 document.loadHtml(HTML)
+const blitz = BlitzApp.create()
+blitz.openWindow(document)
 
 function styleKey(key: string) {
   if (/^--/.test(key)) return key
@@ -74,8 +71,16 @@ const { createApp } = createRenderer<Node, Node>({
     _parentComponent: ComponentInternalInstance | null | undefined,
   ): void {
     if (key === 'style') {
+      const prevKeys = prevValue ? Object.keys(prevValue) : [];
+
+      for (const key of prevKeys) {
+        if (nextValue[key]) continue;
+        document.removeStyleProperty(el, styleKey(key));
+      }
+
+      console.log('setStyle', nextValue)
       for (const [key, value] of Object.entries(nextValue)) {
-        // console.log('setStyle', { key, value })
+        if (prevValue?.[key] === value) continue;
         document.setStyleProperty(el, styleKey(key), value as string)
       }
       return
@@ -119,10 +124,6 @@ function randomHex() {
 }
 
 export async function bootstrap() {
-  const blitz = BlitzApp.create()
-  document.loadHtml(HTML)
-  blitz.openWindow(document)
-
   const head = document.querySelector('head')
   const body = document.querySelector('body')
   const app = document.createElement('div', [{ name: 'id', value: 'app' }])
@@ -145,7 +146,10 @@ export async function bootstrap() {
     document.insert(style, head)
     document.insert(div, app)
   })
+  void pump();
+}
 
+async function pump() {
   while (true) {
     const pump = blitz.pumpAppEvents(0)
     if (pump.exit) {

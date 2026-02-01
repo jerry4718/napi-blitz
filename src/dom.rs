@@ -2,7 +2,7 @@ use blitz::{
     dom::{
         ns, Attribute as BlitzAttribute, BaseDocument, DocGuard, DocGuardMut,
         Document as BlitzDocument, DocumentConfig, DocumentMutator, EventDriver, EventHandler,
-        FontContext, LocalName, QualName, BULLET_FONT, DEFAULT_CSS,
+        FontContext, LocalName, Namespace, QualName, BULLET_FONT, DEFAULT_CSS,
     },
     html::{DocumentHtmlParser, HtmlProvider},
     traits::events::{DomEvent, DomEventData, DomEventKind, EventState, UiEvent},
@@ -10,12 +10,12 @@ use blitz::{
 use napi::{bindgen_prelude::*, threadsafe_function::ThreadsafeFunctionCallMode, Env};
 use napi_derive::napi;
 use parley::fontique::Blob;
-use std::str::FromStr;
 use std::{
     cell::RefCell,
     collections::HashMap,
     ops::{Deref, DerefMut},
     rc::Rc,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -317,6 +317,13 @@ impl Document {
     }
 
     #[napi]
+    pub fn remove_style_property(&mut self, node: Reference<Node>, name: String) {
+        self.doc
+            .borrow_mut()
+            .remove_style_property(node.id, name);
+    }
+
+    #[napi]
     pub fn query_selector(&mut self, selector: String) -> Result<Option<Reference<Node>>> {
         let id = self.doc.borrow_mut().query_selector(selector)?;
         Ok(match id {
@@ -341,6 +348,14 @@ impl Document {
     }
 }
 
+pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
+    QualName {
+        prefix: None,
+        ns: namespace.map(Namespace::from).unwrap_or(ns!(html)),
+        local: LocalName::from(local_name),
+    }
+}
+
 impl DocumentHolder {
     pub fn resolve(&mut self, current_time_for_animations: f64) {
         self.base.resolve(current_time_for_animations);
@@ -354,11 +369,11 @@ impl DocumentHolder {
 
     pub fn create_element(&mut self, name: String, attrs: Vec<Attribute>) -> usize {
         self.base.mutate().create_element(
-            QualName::new(None, ns!(), LocalName::from(name.as_str())),
+            qual_name(&name, None),
             attrs
                 .iter()
                 .map(|attr| BlitzAttribute {
-                    name: QualName::new(None, ns!(), LocalName::from(attr.name.as_str())),
+                    name: qual_name(&attr.name, None),
                     value: attr.value.clone(),
                 })
                 .collect(),
@@ -431,6 +446,13 @@ impl DocumentHolder {
             .mutate()
             .set_style_property(node_id, &name, &value);
         println!("set style property {} = {}", name, value);
+    }
+
+    pub fn remove_style_property(&mut self, node_id: usize, name: String) {
+        self.base
+            .mutate()
+            .remove_style_property(node_id, &name);
+        println!("remove style property {}", name);
     }
 
     pub fn query_selector(&mut self, selector: String) -> Result<Option<usize>> {
@@ -532,7 +554,7 @@ impl Node {
         event_type: String,
         handler: FunctionRef<(), ()>,
     ) {
-        let Some(event_kind) = Self::judge_event_type(&event_type) else {
+        let Ok(event_kind) = DomEventKind::from_str(&event_type) else {
             return eprintln!("unsupported event type {}", event_type);
         };
 
