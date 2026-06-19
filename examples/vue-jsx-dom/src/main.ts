@@ -220,8 +220,8 @@ function randomHex(): string {
 async function pump(app: BlitzApp) {
   while (true) {
     const result = app.pumpAppEvents(0)
-    if (result.exit) {
-      process.exit(result.code)
+    if (result.exited) {
+      process.exit(result.code ?? 0)
     }
     await new Promise((resolve) => setTimeout(resolve, 16))
   }
