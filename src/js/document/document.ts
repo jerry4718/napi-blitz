@@ -23,6 +23,7 @@ import { Element } from "../element/element";
 import { Text } from "../base/text";
 import { Comment } from "../base/comment";
 import { buildEvent } from "../events/events";
+import { FontFaceSet } from "../fonts/font-face-set";
 import type { DocumentInternals } from "../internal/internal";
 
 export interface DocumentInit {
@@ -43,6 +44,9 @@ export abstract class Document extends Node implements DocumentInternals {
 
   /** Tells the native side when a wrapper has been GC'd. */
   private readonly _finalizer: FinalizationRegistry<number>;
+
+  /** Lazily-built `FontFaceSet` exposed via `document.fonts`. */
+  private _fontsSet: FontFaceSet | null = null;
 
   protected constructor(init: DocumentInit = {}) {
     // Bootstrap: native handle wants the dispatch callback up front, but
@@ -268,6 +272,29 @@ export abstract class Document extends Node implements DocumentInternals {
   /** Recompute style and layout. Drives CSS animations via `timeMs`. */
   resolve(timeMs = 0): void {
     this._native.resolve(timeMs);
+  }
+
+  // ----- Fonts ------------------------------------------------------------
+
+  /**
+   * The CSS Font Loading API `FontFaceSet` for this document. Use it
+   * to register `FontFace` instances whose source is a buffer:
+   *
+   * ```ts
+   * const face = new FontFace("MyFamily", buffer, { weight: "400" });
+   * await face.load();
+   * document.fonts.add(face);
+   * ```
+   *
+   * URL-source `@font-face` rules are still handled by the engine's
+   * stylesheet path; this API is only for runtime registration of
+   * fonts that already exist in memory.
+   */
+  get fonts(): FontFaceSet {
+    if (this._fontsSet === null) {
+      this._fontsSet = new FontFaceSet(this._native);
+    }
+    return this._fontsSet;
   }
 
   // ----- Native event dispatch -------------------------------------------

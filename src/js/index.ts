@@ -20,6 +20,15 @@ export { HTMLElement } from "./element/html-element";
 
 export type { AttributesMap } from "./element/attributes";
 
+export { FontFace } from "./fonts/font-face";
+export type {
+  FontFaceDescriptors,
+  FontFaceLoadStatus,
+  FontFaceSource,
+} from "./fonts/font-face";
+export { FontFaceSet } from "./fonts/font-face-set";
+export type { FontFaceSetLoadStatus } from "./fonts/font-face-set";
+
 export {
   BlitzDomEvent,
   BlitzPointerEvent,
