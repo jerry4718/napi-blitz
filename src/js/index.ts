@@ -19,6 +19,7 @@ export { Element } from "./element/element";
 export { HTMLElement } from "./element/html-element";
 
 export type { AttributesMap } from "./element/attributes";
+export type { StyleDeclaration } from "./element/style";
 
 export { FontFace } from "./fonts/font-face";
 export type {

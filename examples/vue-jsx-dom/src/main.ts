@@ -31,12 +31,6 @@ const BASE_HTML = `<!DOCTYPE html>
 <body></body>
 </html>`
 
-/** Convert a camelCase style key to kebab-case. */
-function styleKey(key: string): string {
-  if (key.startsWith('--')) return key
-  return key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
-}
-
 const { createApp } = createRenderer<Node, Node>({
   cloneNode(node: Node): Node {
     return node.cloneNode(true)
@@ -88,6 +82,9 @@ const { createApp } = createRenderer<Node, Node>({
     // Inline styles: Vue passes an object. Diff key-by-key against the
     // previous value, removing stale properties and setting new ones.
     if (key === 'style') {
+      // Vue gives us camelCase keys (`backgroundColor`); the web
+      // `CSSStyleDeclaration` proxy converts those to kebab-case
+      // internally, so we just set/delete by key directly.
       const htmlEl = el as unknown as HTMLElement
       const prev = (prevValue ?? {}) as Record<string, string>
       const next = (nextValue ?? {}) as Record<string, string>
@@ -95,13 +92,13 @@ const { createApp } = createRenderer<Node, Node>({
       // Remove keys that disappeared or changed.
       for (const k of Object.keys(prev)) {
         if (next[k] === undefined) {
-          htmlEl.removeStyle(styleKey(k))
+          delete htmlEl.style[k]
         }
       }
       // Set new / changed keys.
       for (const [k, v] of Object.entries(next)) {
         if (v !== prev[k]) {
-          htmlEl.setStyle(styleKey(k), String(v))
+          htmlEl.style[k] = String(v)
         }
       }
       return

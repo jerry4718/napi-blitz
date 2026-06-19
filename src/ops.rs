@@ -7,6 +7,7 @@ use blitz::dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, lo
 use blitz::html::DocumentHtmlParser;
 use napi::{Error, Result};
 use napi_derive::napi;
+use style::properties::PropertyId;
 
 use crate::doc::DocHandle;
 
@@ -379,6 +380,83 @@ impl DocHandle {
     pub fn remove_style_property(&mut self, node_id: u32, name: String) {
         let mut state = self.base.0.borrow_mut();
         state.remove_style_property(node_id as usize, &name);
+    }
+
+    /// Read a single inline style property's serialized value, or
+    /// `null` if the property is not set on this element.
+    ///
+    /// Implements CSSOM `CSSStyleDeclaration.getPropertyValue`:
+    /// the value is rendered through stylo's `property_value_to_css`,
+    /// which handles both longhands and shorthands. An unknown
+    /// property name (one stylo doesn't recognize) also returns `null`
+    /// rather than throwing — matching browser semantics.
+    #[napi]
+    pub fn get_style_property(&self, node_id: u32, name: String) -> Option<String> {
+        let state = self.base.0.borrow();
+        let element_data = state.get_node(node_id as usize)?.element_data()?;
+        let block = element_data.style_attribute.as_ref()?;
+        let property_id = PropertyId::parse_enabled_for_all_content(&name).ok()?;
+
+        let guard = state.guard().read();
+        let block = block.read_with(&guard);
+        let mut buf = String::new();
+        // `property_value_to_css` writes nothing when the property is
+        // not present. Distinguish "set to empty" from "absent" via
+        // `block.declarations()` would be more rigorous, but the
+        // browser behavior of `getPropertyValue` is also "" for
+        // unset, so we collapse the two: an empty result means absent.
+        block.property_value_to_css(&property_id, &mut buf).ok()?;
+        if buf.is_empty() { None } else { Some(buf) }
+    }
+
+    /// List the long-hand names of every property currently in this
+    /// element's inline style block.
+    ///
+    /// Used by the JS-side `style` Proxy to implement `Object.keys`,
+    /// `for...in`, and `length`. The names are stylo's longhand
+    /// identifiers (e.g. `"color"`, `"margin-top"`). Custom properties
+    /// (`--foo`) are included as-is.
+    #[napi]
+    pub fn get_style_property_names(&self, node_id: u32) -> Vec<String> {
+        let state = self.base.0.borrow();
+        let Some(element_data) = state
+            .get_node(node_id as usize)
+            .and_then(|n| n.element_data())
+        else {
+            return Vec::new();
+        };
+        let Some(block) = element_data.style_attribute.as_ref() else {
+            return Vec::new();
+        };
+        let guard = state.guard().read();
+        let block = block.read_with(&guard);
+        block
+            .declarations()
+            .iter()
+            .map(|d| d.id().name().into_owned())
+            .collect()
+    }
+
+    /// Read the entire `style` attribute as a single CSS string. Used
+    /// to back `CSSStyleDeclaration.cssText`. Returns the empty string
+    /// when the element has no inline style at all.
+    #[napi]
+    pub fn get_style_attribute(&self, node_id: u32) -> String {
+        let state = self.base.0.borrow();
+        let Some(element_data) = state
+            .get_node(node_id as usize)
+            .and_then(|n| n.element_data())
+        else {
+            return String::new();
+        };
+        let Some(block) = element_data.style_attribute.as_ref() else {
+            return String::new();
+        };
+        let guard = state.guard().read();
+        let block = block.read_with(&guard);
+        let mut buf = String::new();
+        let _ = block.to_css(&mut buf);
+        buf
     }
 
     /// Replace this node's text content. For elements this resets to a single

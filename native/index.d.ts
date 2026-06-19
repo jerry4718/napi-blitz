@@ -190,6 +190,33 @@ export declare class DocHandle {
   /** Remove a single inline style property. */
   removeStyleProperty(nodeId: number, name: string): void
   /**
+   * Read a single inline style property's serialized value, or
+   * `null` if the property is not set on this element.
+   *
+   * Implements CSSOM `CSSStyleDeclaration.getPropertyValue`:
+   * the value is rendered through stylo's `property_value_to_css`,
+   * which handles both longhands and shorthands. An unknown
+   * property name (one stylo doesn't recognize) also returns `null`
+   * rather than throwing — matching browser semantics.
+   */
+  getStyleProperty(nodeId: number, name: string): string | null
+  /**
+   * List the long-hand names of every property currently in this
+   * element's inline style block.
+   *
+   * Used by the JS-side `style` Proxy to implement `Object.keys`,
+   * `for...in`, and `length`. The names are stylo's longhand
+   * identifiers (e.g. `"color"`, `"margin-top"`). Custom properties
+   * (`--foo`) are included as-is.
+   */
+  getStylePropertyNames(nodeId: number): Array<string>
+  /**
+   * Read the entire `style` attribute as a single CSS string. Used
+   * to back `CSSStyleDeclaration.cssText`. Returns the empty string
+   * when the element has no inline style at all.
+   */
+  getStyleAttribute(nodeId: number): string
+  /**
    * Replace this node's text content. For elements this resets to a single
    * text-node child; for text/comment nodes this updates their content.
    */
