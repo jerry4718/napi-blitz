@@ -152,9 +152,16 @@ export abstract class Document extends Node implements DocumentInternals {
     return this._wrap(id) as Text;
   }
 
-  createComment(): Comment {
+  createComment(data?: string): Comment {
     const id = this._native.createCommentNode();
-    return this._wrap(id) as Comment;
+    const comment = this._wrap(id) as Comment;
+    if (data !== undefined && data !== "") {
+      // Standard signature is `createComment(data)` with `data` non-optional;
+      // we accept undefined for ergonomics. Setter triggers the one-shot
+      // warning if blitz's Comment payload is still absent.
+      comment.data = data;
+    }
+    return comment;
   }
 
   // ----- Queries ----------------------------------------------------------

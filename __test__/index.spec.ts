@@ -68,13 +68,25 @@ test("createTextNode returns a Text wrapper", (t) => {
 
 test("createComment returns a Comment wrapper", (t) => {
   const doc = new HTMLDocument();
-  const c = doc.createComment();
-  t.true(c instanceof Comment);
-  // NOTE: blitz's `NodeData::Comment` is currently a unit variant and
-  // does not store text. Setting `data` is a no-op until blitz grows a
-  // Comment payload. We still exercise the API surface.
-  c.data = "note";
-  t.is(typeof c.data, "string");
+  // Standard API: createComment accepts optional initial data. The
+  // native side ignores it (blitz has no Comment payload yet); the JS
+  // wrapper logs a one-shot warning. Silence it for the duration of
+  // this test.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-console
+  const origWarn = console.warn;
+  // eslint-disable-next-line no-console
+  console.warn = () => {};
+  try {
+    const c = doc.createComment("note");
+    t.true(c instanceof Comment);
+    // blitz drops the content; data round-trips as the empty string.
+    t.is(c.data, "");
+    c.data = "again";
+    t.is(c.data, "");
+  } finally {
+    // eslint-disable-next-line no-console
+    console.warn = origWarn;
+  }
 });
 
 // ---------------------------------------------------------------------------
