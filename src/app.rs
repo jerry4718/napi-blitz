@@ -26,10 +26,10 @@ use crate::window::{Window, WindowOptions};
 #[napi(object)]
 pub struct PumpResult {
     /// The loop is still running. Caller should pump again later.
-    pub running: bool,
+    pub r#continue: bool,
     /// The loop has exited (e.g. all windows closed).
-    pub exited: bool,
-    /// Exit code, if `exited`.
+    pub exit: bool,
+    /// Exit code, if `exit`.
     pub code: Option<i32>,
 }
 
@@ -205,13 +205,13 @@ impl BlitzApp {
             .pump_app_events(timeout, &mut self.application)
         {
             PumpStatus::Continue => PumpResult {
-                running: true,
-                exited: false,
+                r#continue: true,
+                exit: false,
                 code: None,
             },
             PumpStatus::Exit(code) => PumpResult {
-                running: false,
-                exited: true,
+                r#continue: false,
+                exit: true,
                 code: Some(code),
             },
         }

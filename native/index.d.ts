@@ -377,10 +377,10 @@ export interface PointerData {
 /** Result of one `pumpAppEvents` call. */
 export interface PumpResult {
   /** The loop is still running. Caller should pump again later. */
-  running: boolean
+  continue: boolean
   /** The loop has exited (e.g. all windows closed). */
-  exited: boolean
-  /** Exit code, if `exited`. */
+  exit: boolean
+  /** Exit code, if `exit`. */
   code?: number
 }
 
