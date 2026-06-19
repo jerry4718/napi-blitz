@@ -20,6 +20,15 @@ version = "=0.3.0-alpha.5"
 default-features = false
 features = ["net"]
 
+# Depend on blitz-dom directly with `system_fonts` enabled. Cargo unifies
+# features across all dependents, so the `blitz` crate's internal
+# `blitz-dom` dependency picks up `system_fonts` too. Without this,
+# fontique does not register system fonts and text renders as empty boxes.
+[dependencies.blitz-dom]
+version = "=0.3.0-alpha.5"
+default-features = false
+features = ["system_fonts"]
+
 # Stylo / selectors, pinned to the same versions blitz uses so the
 # trait impls in blitz-dom's private `stylo` module (which are written
 # against `&Node`) line up with the crates we call directly. The stylo
