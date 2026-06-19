@@ -84,6 +84,27 @@ apk add --no-cache fontconfig
 pkg install -y fontconfig
 ```
 
+## Supported platforms
+
+The package publishes prebuilt N-API binaries for the platforms that pass the CI build matrix. Linux and FreeBSD builds load `fontconfig` at runtime for system font discovery.
+
+| Target | Status | Notes |
+| --- | --- | --- |
+| `x86_64-apple-darwin` | Supported | macOS x64. |
+| `aarch64-apple-darwin` | Supported | macOS Apple Silicon. |
+| `x86_64-pc-windows-msvc` | Supported | Windows x64. |
+| `aarch64-pc-windows-msvc` | Supported | Windows ARM64 build artifact. |
+| `x86_64-unknown-linux-gnu` | Supported | Built with napi-cross. Requires `fontconfig` at runtime. |
+| `x86_64-unknown-linux-musl` | Supported | Built with zig/cargo-zigbuild. Requires `fontconfig` at runtime. |
+| `aarch64-unknown-linux-gnu` | Supported | Cross-compiled with napi-cross. Requires `fontconfig` at runtime. |
+| `aarch64-unknown-linux-musl` | Supported | Cross-compiled with zig/cargo-zigbuild. Requires `fontconfig` at runtime. |
+| `x86_64-unknown-freebsd` | Supported | Built in a FreeBSD VM. Requires `fontconfig` and `python3` while building from source. |
+| `i686-pc-windows-msvc` | Temporarily disabled | Blocked by a 32-bit `anyrender` `FilterEffect` size assertion. See the local `ci-32bit-anyrender-patch` branch for the experimental patched build. |
+| `armv7-unknown-linux-gnueabihf` | Temporarily disabled | Blocked by the same 32-bit `anyrender` assertion. See the local `ci-32bit-anyrender-patch` branch for the experimental patched build. |
+| `wasm32-wasip1-threads` | Disabled | Kept in CI comments until the WASI build/test path is fixed. |
+
+When building Linux targets from source, the CI enables vendored OpenSSL and runtime-loaded fontconfig to avoid cross `pkg-config` sysroot requirements.
+
 ## Quick start
 
 ### Open a window

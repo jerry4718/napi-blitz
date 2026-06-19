@@ -84,6 +84,27 @@ apk add --no-cache fontconfig
 pkg install -y fontconfig
 ```
 
+## 支持平台
+
+本包会为通过 CI 构建矩阵的平台发布预编译 N-API 二进制。Linux 和 FreeBSD 构建会在运行时加载 `fontconfig`，用于系统字体发现。
+
+| Target | 状态 | 说明 |
+| --- | --- | --- |
+| `x86_64-apple-darwin` | 支持 | macOS x64。 |
+| `aarch64-apple-darwin` | 支持 | macOS Apple Silicon。 |
+| `x86_64-pc-windows-msvc` | 支持 | Windows x64。 |
+| `aarch64-pc-windows-msvc` | 支持 | Windows ARM64 构建产物。 |
+| `x86_64-unknown-linux-gnu` | 支持 | 通过 napi-cross 构建。运行时需要 `fontconfig`。 |
+| `x86_64-unknown-linux-musl` | 支持 | 通过 zig/cargo-zigbuild 构建。运行时需要 `fontconfig`。 |
+| `aarch64-unknown-linux-gnu` | 支持 | 通过 napi-cross 交叉编译。运行时需要 `fontconfig`。 |
+| `aarch64-unknown-linux-musl` | 支持 | 通过 zig/cargo-zigbuild 交叉编译。运行时需要 `fontconfig`。 |
+| `x86_64-unknown-freebsd` | 支持 | 在 FreeBSD VM 中构建。从源码构建时需要 `fontconfig` 和 `python3`。 |
+| `i686-pc-windows-msvc` | 暂时禁用 | 受 `anyrender` 32 位 `FilterEffect` size assertion 阻塞。本地 `ci-32bit-anyrender-patch` 分支保留了实验性的 patched build。 |
+| `armv7-unknown-linux-gnueabihf` | 暂时禁用 | 受同一个 `anyrender` 32 位断言阻塞。本地 `ci-32bit-anyrender-patch` 分支保留了实验性的 patched build。 |
+| `wasm32-wasip1-threads` | 禁用 | 保留在 CI 注释里，等待 WASI build/test 流程修复后再启用。 |
+
+从源码构建 Linux targets 时，CI 会启用 vendored OpenSSL，并让 fontconfig 走运行时加载，以避免交叉编译时配置 `pkg-config` sysroot。
+
 ## 快速开始
 
 ### 打开一个窗口
