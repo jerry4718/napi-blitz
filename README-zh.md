@@ -67,6 +67,23 @@ const { BlitzApp } = napiBlitz;
 deno run --allow-ffi --allow-env --allow-read main.ts
 ```
 
+## 运行时依赖
+
+Linux 和 FreeBSD 构建会使用 Blitz 的系统字体集成，所以在精简运行时镜像里需要有 `fontconfig`。`pkg-config` 和开发头文件只在从源码构建时需要，运行时不需要。
+
+大多数桌面 Linux 发行版默认已经带有这些库，但 slim 容器通常没有。
+
+```bash
+# Debian / Ubuntu 运行时镜像
+apt-get install -y fontconfig libfontconfig1
+
+# Alpine 运行时镜像
+apk add --no-cache fontconfig
+
+# FreeBSD
+pkg install -y fontconfig
+```
+
 ## 快速开始
 
 ### 打开一个窗口

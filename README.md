@@ -67,6 +67,23 @@ const { BlitzApp } = napiBlitz;
 deno run --allow-ffi --allow-env --allow-read main.ts
 ```
 
+## Runtime dependencies
+
+Linux and FreeBSD builds use Blitz system font integration, so minimal runtime images need `fontconfig` available at runtime. `pkg-config` and development headers are only needed when building from source.
+
+Most desktop Linux distributions already include these libraries. Slim containers usually do not.
+
+```bash
+# Debian / Ubuntu runtime images
+apt-get install -y fontconfig libfontconfig1
+
+# Alpine runtime images
+apk add --no-cache fontconfig
+
+# FreeBSD
+pkg install -y fontconfig
+```
+
 ## Quick start
 
 ### Open a window
