@@ -2,31 +2,31 @@
 
 ![CI](https://github.com/jerry4718/napi-blitz/workflows/CI/badge.svg)
 
-A Node.js native binding for [Blitz](https://github.com/DioxusLabs/blitz), built with [napi-rs](https://napi.rs/), exposing a small browser-like DOM API that can render HTML/CSS into native desktop windows.
+`@ylcc/napi-blitz` 是 [Blitz](https://github.com/DioxusLabs/blitz) 的 Node.js 原生绑定，基于 [napi-rs](https://napi.rs/) 构建，提供一套类似浏览器 DOM 的 JavaScript API，用来把 HTML/CSS 渲染到原生桌面窗口。
 
-[中文文档](./README-zh.md)
+[English README](./README.md)
 
-## What is this?
+## 这是什么？
 
-`@ylcc/napi-blitz` lets JavaScript create and mutate a Blitz-backed HTML document from Node-compatible runtimes. It is useful for experiments, native UI prototypes, DOM renderer adapters, and testing Blitz layout/event behavior without embedding a browser engine.
+它允许你在 Node 兼容运行时里创建 Blitz 文档、打开原生窗口，并通过 DOM API 修改界面。适合做原生 UI 实验、DOM renderer 适配、Blitz 布局/事件调试，或不想嵌入完整浏览器引擎的桌面原型。
 
-Highlights:
+主要特性：
 
-- `Native OS windows` driven by Blitz and winit.
-- `Single-file startup`: after installing the dependency, a single `JS/TS file` is enough to open a native window, build DOM nodes, and run the event loop. Handy for `lightweight`, `low-stakes` tools and prototypes.
-- No `Electron-style IPC` layer and no `Tauri-style WebView`: your JS calls native DOM bindings directly.
-- Standard-ish DOM wrappers: `document.createElement`, `appendChild`, `textContent`, `setAttribute`, `querySelector`, event listeners, inline styles, etc.
-- `Multiple windows` from one `BlitzApp`.
-- Prebuilt N-API packages for supported platforms.
-- TypeScript declarations included.
+- 基于 Blitz + winit 的 `原生 OS 窗口`。
+- `单文件启动`：安装好依赖以后，只需要写一个 `JS/TS 文件`，就能打开原生窗口、构建 DOM、跑事件循环，适合一些 `轻量`、`不那么敏感` 的小工具和原型场景。
+- 不是 `Electron IPC` 方案，也不是 `Tauri WebView` 方案：JS 直接调用原生 DOM 绑定。
+- 类浏览器 DOM 封装：`document.createElement`、`appendChild`、`textContent`、`setAttribute`、`querySelector`、事件监听、内联样式等。
+- 一个 `BlitzApp` 可管理 `多个窗口`。
+- 发布平台对应的 N-API 预编译包。
+- 内置 TypeScript 类型声明。
 
-> This is not a browser shell. It does not embed Chromium/WebKit/WebView, and it does not shuttle UI updates through an IPC bridge like Electron. Your application code runs in Node/Bun/Deno and mutates the Blitz-backed native DOM objects directly.
+> 它不是浏览器壳，不嵌入 Chromium/WebKit/WebView，也不会像 Electron 那样通过 IPC 桥转发 UI 更新。你的应用代码运行在 Node/Bun/Deno 中，并直接操作 Blitz-backed 原生 DOM 对象。
 
-## Screenshot
+## 截图
 
 ![screenshot](https://raw.githubusercontent.com/jerry4718/napi-blitz/main/screenshots/demo-counter.png)
 
-## Installation
+## 安装
 
 ### npm
 
@@ -54,7 +54,7 @@ bun add @ylcc/napi-blitz
 
 ### Deno
 
-Deno can load npm packages with native Node-API addons, but it needs FFI permission:
+Deno 可以加载 npm 包里的原生 Node-API addon，但运行时需要开启 FFI 权限：
 
 ```ts
 // main.ts
@@ -67,9 +67,9 @@ const { BlitzApp } = napiBlitz;
 deno run --allow-ffi --allow-env --allow-read main.ts
 ```
 
-## Quick start
+## 快速开始
 
-### Open a window
+### 打开一个窗口
 
 ```ts
 import { BlitzApp } from "@ylcc/napi-blitz";
@@ -124,7 +124,7 @@ while (!win.closed) {
 }
 ```
 
-### DOM mutation and style
+### DOM 修改和样式
 
 ```ts
 import { BlitzApp } from "@ylcc/napi-blitz";
@@ -149,7 +149,7 @@ while (!win.closed) {
 }
 ```
 
-### Multiple windows
+### 多窗口
 
 ```ts
 import { BlitzApp } from "@ylcc/napi-blitz";
@@ -166,7 +166,7 @@ while (!a.closed || !b.closed) {
 }
 ```
 
-## Examples in this repository
+## 仓库内示例
 
 ```bash
 pnpm install
@@ -177,19 +177,19 @@ pnpm --dir examples/vue-jsx-dom start
 pnpm --dir examples/vue-jsx-multi-window start
 ```
 
-Examples:
+示例说明：
 
-- `examples/html-tags`: DOM-only HTML tag matrix.
-- `examples/vue-jsx-dom`: Vue 3 custom renderer targeting the napi-blitz DOM API.
-- `examples/vue-jsx-multi-window`: multi-window Vue renderer demo.
+- `examples/html-tags`：纯 DOM API 的 HTML 标签矩阵。
+- `examples/vue-jsx-dom`：Vue 3 custom renderer，渲染目标是 napi-blitz DOM API。
+- `examples/vue-jsx-multi-window`：多窗口 Vue renderer demo。
 
-## Development
+## 开发
 
-Requirements:
+环境要求：
 
 - Rust toolchain
-- Node.js with Node-API support
-- pnpm via Corepack
+- 支持 Node-API 的 Node.js
+- 通过 Corepack 使用 pnpm
 
 ```bash
 corepack enable
@@ -198,7 +198,7 @@ pnpm run build:debug
 pnpm test
 ```
 
-Useful scripts:
+常用脚本：
 
 ```bash
 pnpm run fmt
@@ -208,9 +208,9 @@ pnpm run build:debug
 pnpm test
 ```
 
-## Acknowledgements
+## 致谢
 
-This project exists on top of a lot of serious work from the Rust UI and web-platform ecosystem, especially [Blitz](https://github.com/DioxusLabs/blitz), [winit](https://github.com/rust-windowing/winit), [napi-rs](https://github.com/napi-rs/napi-rs), [Servo](https://github.com/servo/servo), [Stylo](https://github.com/servo/servo/tree/main/components/style), and [Rust](https://github.com/rust-lang/rust) itself.
+这个项目建立在 Rust UI 和 Web Platform 生态的大量基础工作之上，尤其是 [Blitz](https://github.com/DioxusLabs/blitz)、[winit](https://github.com/rust-windowing/winit)、[napi-rs](https://github.com/napi-rs/napi-rs)、[Servo](https://github.com/servo/servo)、[Stylo](https://github.com/servo/servo/tree/main/components/style)，以及 [Rust](https://github.com/rust-lang/rust) 本身。
 
 ## License
 
