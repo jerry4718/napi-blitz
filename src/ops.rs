@@ -72,6 +72,20 @@ impl DocHandle {
             .map(|id| id as u32)
     }
 
+    /// Find the document's `<title>` element id, or None if no title
+    /// element exists in the tree. Faster than `querySelector("title")`
+    /// because blitz keeps a tree-traversal helper that short-circuits
+    /// on the first match.
+    #[napi]
+    pub fn find_title_node_id(&self) -> Option<u32> {
+        self.state
+            .0
+            .borrow()
+            .base
+            .find_title_node()
+            .map(|node| node.id as u32)
+    }
+
     /// True iff the given node id currently exists in the document.
     #[napi]
     pub fn has_node(&self, id: u32) -> bool {

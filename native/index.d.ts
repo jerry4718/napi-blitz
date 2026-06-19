@@ -9,12 +9,17 @@ export declare class BlitzApp {
    * this call (it shares state with the window via Rc<RefCell<...>>), so
    * JS can keep mutating the DOM after `openWindow`.
    *
+   * `options` maps directly to a winit `WindowAttributes`. If the document
+   * carries a `<title>` element, blitz's mutator-flush will overwrite the
+   * title shortly after open; this is expected, with the document treated
+   * as the source of truth for window-title content.
+   *
    * The returned `Window` carries the `doc_id` of the attached document,
    * which we use as the napi-side window identifier. Note that winit's
    * real `WindowId` is only minted on the next `pump_app_events` call,
    * so the doc_id is what we key on for synchronous open/close.
    */
-  openWindow(doc: DocHandle): Window
+  openWindow(doc: DocHandle, options?: WindowOptions | undefined | null): Window
   /**
    * Synchronously close the given window. Removes it from the
    * application's window map (or from our pending queue if it has not
@@ -25,6 +30,26 @@ export declare class BlitzApp {
    * does not close the OS window. Callers must invoke this explicitly.
    */
   closeWindow(window: Window): void
+  /**
+   * winit `Window::request_surface_size`. The actual size that the
+   * platform settles on can differ from the request; callers should
+   * rely on the `surface-resize` events (driven by winit) to reflect
+   * the truth.
+   */
+  setWindowInnerSize(window: Window, width: number, height: number): void
+  /**
+   * winit `Window::surface_size`. Returns `[width, height]` in
+   * physical pixels, or `None` if the window has not been created
+   * yet or has been closed.
+   */
+  getWindowInnerSize(window: Window): Array<number> | null
+  /** winit `Window::set_resizable`. */
+  setWindowResizable(window: Window, resizable: boolean): void
+  /**
+   * winit `Window::is_resizable`. Returns `None` if the window has
+   * not been created yet or has been closed.
+   */
+  getWindowResizable(window: Window): boolean | null
   /**
    * Pump pending winit events for at most `millis` milliseconds. JS should
    * call this in a loop (typically once per animation frame) to drive the
@@ -72,6 +97,13 @@ export declare class DocHandle {
   querySelectorAll(selector: string): Array<number>
   /** Lookup by `id=` attribute, like `document.getElementById`. */
   getElementById(id: string): number | null
+  /**
+   * Find the document's `<title>` element id, or None if no title
+   * element exists in the tree. Faster than `querySelector("title")`
+   * because blitz keeps a tree-traversal helper that short-circuits
+   * on the first match.
+   */
+  findTitleNodeId(): number | null
   /** True iff the given node id currently exists in the document. */
   hasNode(id: number): boolean
   /**
@@ -303,4 +335,28 @@ export interface WheelData {
   clientY: number
   buttons: number
   modsBits: number
+}
+
+/**
+ * Options accepted by `BlitzApp.openWindow`. All fields are optional and
+ * map directly to winit `WindowAttributes` (0.31). Naming follows winit
+ * where it diverges from web (e.g. `surface_size` rather than
+ * `inner_size` — winit 0.31 renamed inner -> surface).
+ */
+export interface WindowOptions {
+  /**
+   * Initial window title. May be transient: if the document carries a
+   * `<title>` element, blitz will overwrite the title on the next
+   * mutator flush. Without a `<title>` element this title persists.
+   */
+  title?: string
+  /** Initial surface width in physical pixels. */
+  width?: number
+  /** Initial surface height in physical pixels. */
+  height?: number
+  /**
+   * Whether the window is initially resizable. Defaults to winit's
+   * platform default (typically `true`).
+   */
+  resizable?: boolean
 }

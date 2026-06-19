@@ -18,15 +18,31 @@ import {
   type NativeBlitzApp,
   type PumpResult,
   type Window as NativeWindow,
+  type WindowOptions,
 } from "../native";
 import { HTMLDocument } from "../document/html-document";
 import { Window, pluckWindow } from "./window";
 import type { DocumentInit } from "../document/document";
 
-/** Options when opening a new window. Future winit options land here. */
+/**
+ * Options when opening a new window. Combines document-init fields
+ * (e.g. `baseHtml`, `uaStylesheets`) with winit-style window attributes.
+ *
+ * Title behaviour: if the document carries a `<title>` element, blitz
+ * will overwrite the window title shortly after open via its mutator-
+ * flush plumbing. The `title` option here only takes effect while the
+ * document has no `<title>`. To control the title programmatically over
+ * time, set `document.title` (which manipulates the `<title>` element).
+ */
 export interface OpenWindowInit extends DocumentInit {
-  // Reserved for: title?: string, size?: { width: number; height: number },
-  //               resizable?: boolean, ...
+  /** Initial window title. May be overwritten by the document's `<title>`. */
+  title?: string;
+  /** Initial surface width, physical pixels. Pair with `height`. */
+  width?: number;
+  /** Initial surface height, physical pixels. Pair with `width`. */
+  height?: number;
+  /** Whether the window is initially resizable by the user. */
+  resizable?: boolean;
 }
 
 /** `Document`'s package-private fields, viewed by `BlitzApp`. */
@@ -60,8 +76,15 @@ export class BlitzApp {
    * the window down.
    */
   openWindow(init: OpenWindowInit = {}): Window {
-    const document = new HTMLDocument(init);
-    const nativeWindow: NativeWindow = this._native.openWindow(pluckDoc(document)._native);
+    const document = new HTMLDocument({
+      uaStylesheets: init.uaStylesheets,
+      baseHtml: init.baseHtml,
+    });
+    const options = buildWindowOptions(init);
+    const nativeWindow: NativeWindow = this._native.openWindow(
+      pluckDoc(document)._native,
+      options,
+    );
     const window = new Window(this, nativeWindow, document);
     this._windows.add(window);
     return window;
@@ -87,4 +110,23 @@ export class BlitzApp {
   pumpAppEvents(millis: number): PumpResult {
     return this._native.pumpAppEvents(millis);
   }
+}
+
+/**
+ * Pick the window-attribute fields out of an `OpenWindowInit` and shape
+ * them as the `WindowOptions` napi object. Returns `undefined` if no
+ * window-level options were specified, so the native side can fall back
+ * to winit's defaults without us having to construct a placeholder.
+ */
+function buildWindowOptions(init: OpenWindowInit): WindowOptions | undefined {
+  const { title, width, height, resizable } = init;
+  if (
+    title === undefined &&
+    width === undefined &&
+    height === undefined &&
+    resizable === undefined
+  ) {
+    return undefined;
+  }
+  return { title, width, height, resizable };
 }

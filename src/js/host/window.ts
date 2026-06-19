@@ -1,6 +1,15 @@
 // `Window` — JS-side handle for one open OS window. Mirrors the web
 // `Window` interface in the parts that make sense for a non-browser
-// embedding: it exposes the document and a `close()` action.
+// embedding: it exposes the document, runtime size/resizable controls,
+// and a `close()` action.
+//
+// Naming convention:
+//   - JS-side method names follow web conventions where reasonable
+//     (`resize`, `innerSize`, `resizable`).
+//   - The underlying native methods follow winit's naming
+//     (`setWindowInnerSize` etc.) and live on `BlitzApp`, since the
+//     napi `Window` handle does not own a back-reference to the live
+//     winit `Arc<dyn Window>`.
 //
 // We deliberately do NOT close the OS window in a `FinalizationRegistry`
 // callback. GC timing is unpredictable, and a user calling `close()`
@@ -38,6 +47,39 @@ export class Window {
    */
   close(): void {
     this._app.closeWindow(this);
+  }
+
+  /**
+   * Current surface size in physical pixels, as `[width, height]`.
+   * Returns `null` if the window has not been initialised yet (no
+   * `pumpAppEvents` has run since open) or has been closed.
+   */
+  get innerSize(): [number, number] | null {
+    const dims = this._app._native.getWindowInnerSize(this._nativeWindow);
+    if (dims === null) return null;
+    return [dims[0], dims[1]];
+  }
+
+  /**
+   * Request a new surface size. winit may settle on a different size
+   * depending on the platform's window manager; observe `resize`
+   * events on the document for the actual outcome.
+   */
+  resize(width: number, height: number): void {
+    this._app._native.setWindowInnerSize(this._nativeWindow, width, height);
+  }
+
+  /**
+   * Whether the window can currently be resized by the user. Returns
+   * `null` while the window is uninitialised (e.g. before the first
+   * `pumpAppEvents`).
+   */
+  get resizable(): boolean | null {
+    return this._app._native.getWindowResizable(this._nativeWindow);
+  }
+
+  set resizable(value: boolean) {
+    this._app._native.setWindowResizable(this._nativeWindow, value);
   }
 }
 

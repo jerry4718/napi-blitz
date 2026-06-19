@@ -44,6 +44,30 @@ test("HTMLDocument has documentElement / head / body", (t) => {
   t.is(doc.body?.tagName, "body");
 });
 
+test("document.title round-trips through <title> element", (t) => {
+  const doc = new HTMLDocument();
+
+  // Empty document: no <title>, getter is "".
+  t.is(doc.title, "");
+
+  // Setter creates a <title> in <head>.
+  doc.title = "Hello";
+  t.is(doc.title, "Hello");
+  const titleEl = doc.head!.childNodes.find(
+    (n): n is Element => n instanceof Element && n.tagName === "title",
+  );
+  t.truthy(titleEl);
+  t.is(titleEl!.textContent, "Hello");
+
+  // Setting again updates the existing element rather than creating a new one.
+  doc.title = "World";
+  t.is(doc.title, "World");
+  const titles = doc.head!.childNodes.filter(
+    (n) => n instanceof Element && n.tagName === "title",
+  );
+  t.is(titles.length, 1);
+});
+
 test("createElement returns an HTMLElement; identity is stable", (t) => {
   const doc = new HTMLDocument();
   const div = doc.createElement("div");

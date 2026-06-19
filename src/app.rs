@@ -15,10 +15,12 @@ use blitz::shell::{
 };
 use napi::{Error, Result};
 use napi_derive::napi;
+use winit::dpi::PhysicalSize;
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+use winit::window::WindowAttributes;
 
 use crate::doc::{DocHandle, make_window_document};
-use crate::window::Window;
+use crate::window::{Window, WindowOptions};
 
 /// Result of one `pumpAppEvents` call.
 #[napi(object)]
@@ -63,12 +65,21 @@ impl BlitzApp {
     /// this call (it shares state with the window via Rc<RefCell<...>>), so
     /// JS can keep mutating the DOM after `openWindow`.
     ///
+    /// `options` maps directly to a winit `WindowAttributes`. If the document
+    /// carries a `<title>` element, blitz's mutator-flush will overwrite the
+    /// title shortly after open; this is expected, with the document treated
+    /// as the source of truth for window-title content.
+    ///
     /// The returned `Window` carries the `doc_id` of the attached document,
     /// which we use as the napi-side window identifier. Note that winit's
     /// real `WindowId` is only minted on the next `pump_app_events` call,
     /// so the doc_id is what we key on for synchronous open/close.
     #[napi]
-    pub fn open_window(&mut self, doc: &mut DocHandle) -> Result<Window> {
+    pub fn open_window(
+        &mut self,
+        doc: &mut DocHandle,
+        options: Option<WindowOptions>,
+    ) -> Result<Window> {
         if !doc.mark_attached() {
             return Err(Error::from_reason(
                 "DocHandle has already been attached to a window".to_string(),
@@ -76,7 +87,9 @@ impl BlitzApp {
         }
         let doc_id = doc.doc_id();
         let window_doc = make_window_document(doc);
-        let config = WindowConfig::new(window_doc, VelloWindowRenderer::new());
+        let attributes = build_window_attributes(options);
+        let config =
+            WindowConfig::with_attributes(window_doc, VelloWindowRenderer::new(), attributes);
         self.pending.push((doc_id, config));
         Ok(Window {
             doc_id,
@@ -109,6 +122,70 @@ impl BlitzApp {
         window.closed = true;
     }
 
+    // -- Per-window runtime configuration -----------------------------------
+    //
+    // The napi `Window` handle does not own a reference to the live winit
+    // `Arc<dyn Window>`; the `BlitzApplication` does. So all per-window
+    // setters/getters live on `BlitzApp` and look the view up by doc_id.
+    // The JS-side `Window` class delegates through these.
+
+    /// winit `Window::request_surface_size`. The actual size that the
+    /// platform settles on can differ from the request; callers should
+    /// rely on the `surface-resize` events (driven by winit) to reflect
+    /// the truth.
+    #[napi]
+    pub fn set_window_inner_size(&mut self, window: &Window, width: u32, height: u32) {
+        if let Some(view) = self.window_view(window) {
+            let _ = view
+                .window
+                .request_surface_size(PhysicalSize::new(width, height).into());
+        }
+    }
+
+    /// winit `Window::surface_size`. Returns `[width, height]` in
+    /// physical pixels, or `None` if the window has not been created
+    /// yet or has been closed.
+    #[napi]
+    pub fn get_window_inner_size(&self, window: &Window) -> Option<Vec<u32>> {
+        let view = self.window_view_ref(window)?;
+        let size = view.window.surface_size();
+        Some(vec![size.width, size.height])
+    }
+
+    /// winit `Window::set_resizable`.
+    #[napi]
+    pub fn set_window_resizable(&mut self, window: &Window, resizable: bool) {
+        if let Some(view) = self.window_view(window) {
+            view.window.set_resizable(resizable);
+        }
+    }
+
+    /// winit `Window::is_resizable`. Returns `None` if the window has
+    /// not been created yet or has been closed.
+    #[napi]
+    pub fn get_window_resizable(&self, window: &Window) -> Option<bool> {
+        Some(self.window_view_ref(window)?.window.is_resizable())
+    }
+
+    /// Look up the live `View` for a `Window` handle, by doc id.
+    fn window_view(
+        &mut self,
+        window: &Window,
+    ) -> Option<&mut blitz::shell::View<VelloWindowRenderer>> {
+        self.application
+            .windows
+            .values_mut()
+            .find(|v| v.doc.id() == window.doc_id)
+    }
+
+    /// Read-only counterpart to `window_view`.
+    fn window_view_ref(&self, window: &Window) -> Option<&blitz::shell::View<VelloWindowRenderer>> {
+        self.application
+            .windows
+            .values()
+            .find(|v| v.doc.id() == window.doc_id)
+    }
+
     /// Pump pending winit events for at most `millis` milliseconds. JS should
     /// call this in a loop (typically once per animation frame) to drive the
     /// renderer and event handling.
@@ -139,4 +216,22 @@ impl BlitzApp {
             },
         }
     }
+}
+
+/// Translate `WindowOptions` into a winit `WindowAttributes`. Skipped
+/// fields fall back to winit's platform default.
+fn build_window_attributes(options: Option<WindowOptions>) -> WindowAttributes {
+    let mut attrs = WindowAttributes::default();
+    let Some(options) = options else { return attrs };
+
+    if let Some(title) = options.title {
+        attrs = attrs.with_title(title);
+    }
+    if let (Some(w), Some(h)) = (options.width, options.height) {
+        attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
+    }
+    if let Some(resizable) = options.resizable {
+        attrs = attrs.with_resizable(resizable);
+    }
+    attrs
 }

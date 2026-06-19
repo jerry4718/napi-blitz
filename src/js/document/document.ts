@@ -102,6 +102,40 @@ export abstract class Document extends Node implements DocumentInternals {
     return this.querySelector("head");
   }
 
+  /**
+   * Document title. Reads the textContent of the `<title>` element if
+   * one exists; returns `""` otherwise. Setting the title finds the
+   * existing `<title>` and updates it, or creates a fresh one inside
+   * `<head>`. Mirrors the standard DOM `document.title`.
+   *
+   * Lookup uses blitz's `find_title_node_id`, which is a single
+   * short-circuiting tree traversal — cheaper than a CSS-selector
+   * dispatch.
+   *
+   * blitz observes the `<title>` element on each mutator-flush and
+   * synchronously calls `winit_window.set_title(...)`, so the OS window
+   * title updates within the same frame as the property write.
+   */
+  get title(): string {
+    const id = this._native.findTitleNodeId();
+    if (id === null) return "";
+    return (this._wrap(id) as Element).textContent ?? "";
+  }
+  set title(value: string) {
+    const existingId = this._native.findTitleNodeId();
+    if (existingId !== null) {
+      (this._wrap(existingId) as Element).textContent = value;
+      return;
+    }
+    // No <title> yet: create one and append to <head>. If <head> is
+    // also missing (unusual for HTML documents) fall back to
+    // documentElement so the element at least lives in the tree.
+    const titleEl = this.createElement("title");
+    titleEl.textContent = value;
+    const head = this.head ?? this.documentElement;
+    head.appendChild(titleEl);
+  }
+
   // ----- Node registry ----------------------------------------------------
 
   /**

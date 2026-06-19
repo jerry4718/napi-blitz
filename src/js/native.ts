@@ -25,6 +25,7 @@ import type {
   PumpResult,
   WheelData,
   Window as NativeWindow,
+  WindowOptions as NativeWindowOptions,
 } from "../../native";
 
 interface NativeModuleShape {
@@ -56,4 +57,5 @@ export type {
   NativeBlitzApp,
   NativeDocHandle,
   NativeWindow as Window,
+  NativeWindowOptions as WindowOptions,
 };

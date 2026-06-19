@@ -9,8 +9,32 @@
 //! Closing is synchronous: `BlitzApp.close_window` mutates the application's
 //! `windows` map directly. We do NOT rely on JS GC to drop windows — the JS
 //! side must call `window.close()` (or `app.closeWindow(window)`) explicitly.
+//!
+//! Runtime configuration (size, resizable, ...) lives on `BlitzApp` rather
+//! than `Window` itself, because the napi `Window` handle does not own a
+//! reference back to the live winit `Arc<dyn Window>` — the application
+//! does. The JS layer's `Window` class delegates these calls to the app.
 
 use napi_derive::napi;
+
+/// Options accepted by `BlitzApp.openWindow`. All fields are optional and
+/// map directly to winit `WindowAttributes` (0.31). Naming follows winit
+/// where it diverges from web (e.g. `surface_size` rather than
+/// `inner_size` — winit 0.31 renamed inner -> surface).
+#[napi(object)]
+pub struct WindowOptions {
+    /// Initial window title. May be transient: if the document carries a
+    /// `<title>` element, blitz will overwrite the title on the next
+    /// mutator flush. Without a `<title>` element this title persists.
+    pub title: Option<String>,
+    /// Initial surface width in physical pixels.
+    pub width: Option<u32>,
+    /// Initial surface height in physical pixels.
+    pub height: Option<u32>,
+    /// Whether the window is initially resizable. Defaults to winit's
+    /// platform default (typically `true`).
+    pub resizable: Option<bool>,
+}
 
 /// Handle to an open window. Construct via `BlitzApp.openWindow`.
 #[napi]
