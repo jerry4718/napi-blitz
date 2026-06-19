@@ -45,6 +45,11 @@ export declare class BlitzApp {
    * platform settles on can differ from the request; callers should
    * rely on the `surface-resize` events (driven by winit) to reflect
    * the truth.
+   *
+   * The JS-facing boundary intentionally accepts `f64`, matching JS
+   * `number`, instead of `u32`: napi's unsigned integer conversion would
+   * silently apply ToUint32 semantics to negatives/fractions. We validate
+   * the double ourselves and only then pass a `PhysicalSize<u32>` to winit.
    */
   setWindowInnerSize(window: Window, width: number, height: number): void
   /**
@@ -547,9 +552,18 @@ export interface WindowOptions {
    * mutator flush. Without a `<title>` element this title persists.
    */
   title?: string
-  /** Initial surface width in physical pixels. */
+  /**
+   * Initial surface width in physical pixels.
+   *
+   * JS `number` values arrive as doubles. Keep this as `f64` at the
+   * N-API boundary so we can explicitly reject negatives, fractions,
+   * NaN, and Infinity before converting to winit's `u32` size type.
+   */
   width?: number
-  /** Initial surface height in physical pixels. */
+  /**
+   * Initial surface height in physical pixels. See `width` for why the
+   * boundary type is `f64` rather than `u32`.
+   */
   height?: number
   /**
    * Whether the window is initially resizable. Defaults to winit's

@@ -137,7 +137,7 @@ impl BlitzApp {
         }
         let doc_id = doc.doc_id();
         let window_doc = make_window_document(doc);
-        let attributes = build_window_attributes(options);
+        let attributes = build_window_attributes(options)?;
         let config =
             WindowConfig::with_attributes(window_doc, VelloWindowRenderer::new(), attributes);
         self.pending.push((doc_id, config));
@@ -216,13 +216,27 @@ impl BlitzApp {
     /// platform settles on can differ from the request; callers should
     /// rely on the `surface-resize` events (driven by winit) to reflect
     /// the truth.
+    ///
+    /// The JS-facing boundary intentionally accepts `f64`, matching JS
+    /// `number`, instead of `u32`: napi's unsigned integer conversion would
+    /// silently apply ToUint32 semantics to negatives/fractions. We validate
+    /// the double ourselves and only then pass a `PhysicalSize<u32>` to winit.
     #[napi]
-    pub fn set_window_inner_size(&mut self, window: &Window, width: u32, height: u32) {
+    pub fn set_window_inner_size(
+        &mut self,
+        window: &Window,
+        width: f64,
+        height: f64,
+    ) -> Result<()> {
+        let width = parse_surface_dimension("width", width)?;
+        let height = parse_surface_dimension("height", height)?;
+
         if let Some(view) = self.window_view(window) {
             let _ = view
                 .window
                 .request_surface_size(PhysicalSize::new(width, height).into());
         }
+        Ok(())
     }
 
     /// winit `Window::surface_size`. Returns `[width, height]` in
@@ -382,18 +396,46 @@ impl BlitzApp {
 
 /// Translate `WindowOptions` into a winit `WindowAttributes`. Skipped
 /// fields fall back to winit's platform default.
-fn build_window_attributes(options: Option<WindowOptions>) -> WindowAttributes {
+fn build_window_attributes(options: Option<WindowOptions>) -> Result<WindowAttributes> {
     let mut attrs = WindowAttributes::default();
-    let Some(options) = options else { return attrs };
+    let Some(options) = options else {
+        return Ok(attrs);
+    };
 
     if let Some(title) = options.title {
         attrs = attrs.with_title(title);
     }
-    if let (Some(w), Some(h)) = (options.width, options.height) {
-        attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
+    match (options.width, options.height) {
+        (Some(w), Some(h)) => {
+            let w = parse_surface_dimension("width", w)?;
+            let h = parse_surface_dimension("height", h)?;
+            attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
+        }
+        (None, None) => {}
+        _ => {
+            return Err(Error::from_reason(
+                "width and height must be provided together".to_string(),
+            ));
+        }
     }
     if let Some(resizable) = options.resizable {
         attrs = attrs.with_resizable(resizable);
     }
-    attrs
+    Ok(attrs)
+}
+
+fn parse_surface_dimension(name: &str, value: f64) -> Result<u32> {
+    if !value.is_finite() {
+        return Err(Error::from_reason(format!("{name} must be finite")));
+    }
+    if value.fract() != 0.0 {
+        return Err(Error::from_reason(format!("{name} must be an integer")));
+    }
+    if value < 1.0 {
+        return Err(Error::from_reason(format!("{name} must be >= 1")));
+    }
+    if value > u32::MAX as f64 {
+        return Err(Error::from_reason(format!("{name} exceeds u32::MAX")));
+    }
+    Ok(value as u32)
 }

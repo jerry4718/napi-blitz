@@ -28,9 +28,14 @@ pub struct WindowOptions {
     /// mutator flush. Without a `<title>` element this title persists.
     pub title: Option<String>,
     /// Initial surface width in physical pixels.
-    pub width: Option<u32>,
-    /// Initial surface height in physical pixels.
-    pub height: Option<u32>,
+    ///
+    /// JS `number` values arrive as doubles. Keep this as `f64` at the
+    /// N-API boundary so we can explicitly reject negatives, fractions,
+    /// NaN, and Infinity before converting to winit's `u32` size type.
+    pub width: Option<f64>,
+    /// Initial surface height in physical pixels. See `width` for why the
+    /// boundary type is `f64` rather than `u32`.
+    pub height: Option<f64>,
     /// Whether the window is initially resizable. Defaults to winit's
     /// platform default (typically `true`).
     pub resizable: Option<bool>,
