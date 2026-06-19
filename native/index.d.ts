@@ -206,6 +206,28 @@ export declare class DocHandle {
    */
   findAllByLocalName(name: string): Array<number>
   /**
+   * All element ids matching the given local tag name, scoped to the
+   * subtree rooted at `root_id` (exclusive — `root_id` itself is not
+   * checked). Pre-order DFS from `root_id`'s children.
+   */
+  findAllByLocalNameIn(rootId: number, name: string): Array<number>
+  /**
+   * All element ids in the subtree rooted at `root_id` (exclusive),
+   * i.e. every descendant element regardless of tag. Backs
+   * `element.getElementsByTagName("*")`.
+   */
+  findAllElementsIn(rootId: number): Array<number>
+  /**
+   * All element ids whose `class` attribute contains `class_name` as
+   * one of its whitespace-separated tokens. Document-scoped.
+   */
+  findAllByClassName(className: string): Array<number>
+  /**
+   * All element ids whose `class` attribute contains `class_name`,
+   * scoped to the subtree rooted at `root_id` (exclusive).
+   */
+  findAllByClassNameIn(rootId: number, className: string): Array<number>
+  /**
    * `<html>` element id. Uses the `local_name!` macro for a zero-cost
    * atom comparison. Returns None for documents without an `<html>`
    * root (unusual but possible during partial parsing).

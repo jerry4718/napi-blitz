@@ -251,6 +251,18 @@ export abstract class Document extends Node implements DocumentInternals {
       .map((id) => this._wrap(id) as Element);
   }
 
+  /**
+   * All elements carrying the given class name. Uses a fast-path
+   * pre-order DFS: we walk the tree once and test each element's
+   * `class` attribute for a whitespace-separated token match. Snapshot
+   * array, not a live collection.
+   */
+  getElementsByClassName(className: string): Element[] {
+    return this._native
+      .findAllByClassName(className)
+      .map((id) => this._wrap(id) as Element);
+  }
+
   // ----- Layout / lifecycle ----------------------------------------------
 
   /** Recompute style and layout. Drives CSS animations via `timeMs`. */

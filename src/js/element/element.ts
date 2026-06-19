@@ -4,6 +4,7 @@
 
 import { Node } from "../base/node";
 import { makeAttributesProxy, type AttributesMap } from "./attributes";
+import type { Document } from "../document/document";
 
 export class Element extends Node {
   private _attributesProxy: AttributesMap | null = null;
@@ -95,6 +96,37 @@ export class Element extends Node {
   }
 
   // ---- Queries scoped to this element ------------------------------------
+
+  /**
+   * All descendant elements with the given tag name. Per spec the
+   * element itself is not included in the result; our native
+   * `findAllByLocalNameIn` starts the DFS at this element's children,
+   * so that holds. Snapshot array, not a live collection.
+   *
+   * `"*"` matches all descendant elements via `findAllElementsIn`.
+   */
+  getElementsByTagName(name: string): Element[] {
+    const owner = this._ownerDocument as unknown as Document;
+    if (name === "*") {
+      return owner._native
+        .findAllElementsIn(this._nodeId)
+        .map((id) => owner._wrap(id) as Element);
+    }
+    return owner._native
+      .findAllByLocalNameIn(this._nodeId, name.toLowerCase())
+      .map((id) => owner._wrap(id) as Element);
+  }
+
+  /**
+   * All descendant elements carrying the given class name. Element
+   * itself is excluded (DFS starts at children). Snapshot array.
+   */
+  getElementsByClassName(className: string): Element[] {
+    const owner = this._ownerDocument as unknown as Document;
+    return owner._native
+      .findAllByClassNameIn(this._nodeId, className)
+      .map((id) => owner._wrap(id) as Element);
+  }
 
   // TODO: native side currently only exposes document-scoped querySelector.
   // We'll add element-scoped queries when blitz exposes them.

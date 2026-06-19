@@ -477,6 +477,11 @@ impl DocHandle {
     // internal `TreeTraverser` that does the same thing, but it isn't
     // re-exported from `blitz::dom`; our hand-rolled walk is
     // equivalent in cost.
+    //
+    // Document-scoped lookups start at node 0 (the document root).
+    // Element-scoped lookups (`*_in`) start at the element's children,
+    // matching the spec: `element.getElementsByTagName` does not return
+    // the element itself.
 
     /// First element id matching the given local tag name (lowercase),
     /// or None if no element matches. Pre-order traversal from the
@@ -485,7 +490,7 @@ impl DocHandle {
     pub fn find_first_by_local_name(&self, name: String) -> Option<u32> {
         let state = self.state.0.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_find(&state.base, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+        dfs_find(&state.base, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
     }
 
     /// All element ids matching the given local tag name, in tree order.
@@ -495,10 +500,65 @@ impl DocHandle {
     pub fn find_all_by_local_name(&self, name: String) -> Vec<u32> {
         let state = self.state.0.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_collect(&state.base, |n| n.data.is_element_with_tag_name(&needle))
+        dfs_collect(&state.base, 0, |n| n.data.is_element_with_tag_name(&needle))
             .into_iter()
             .map(|id| id as u32)
             .collect()
+    }
+
+    /// All element ids matching the given local tag name, scoped to the
+    /// subtree rooted at `root_id` (exclusive — `root_id` itself is not
+    /// checked). Pre-order DFS from `root_id`'s children.
+    #[napi]
+    pub fn find_all_by_local_name_in(&self, root_id: u32, name: String) -> Vec<u32> {
+        let state = self.state.0.borrow();
+        let needle = LocalName::from(name.as_str());
+        dfs_collect_children(&state.base, root_id as usize, |n| {
+            n.data.is_element_with_tag_name(&needle)
+        })
+        .into_iter()
+        .map(|id| id as u32)
+        .collect()
+    }
+
+    /// All element ids in the subtree rooted at `root_id` (exclusive),
+    /// i.e. every descendant element regardless of tag. Backs
+    /// `element.getElementsByTagName("*")`.
+    #[napi]
+    pub fn find_all_elements_in(&self, root_id: u32) -> Vec<u32> {
+        let state = self.state.0.borrow();
+        dfs_collect_children(&state.base, root_id as usize, |n| {
+            n.data.downcast_element().is_some()
+        })
+        .into_iter()
+        .map(|id| id as u32)
+        .collect()
+    }
+
+    /// All element ids whose `class` attribute contains `class_name` as
+    /// one of its whitespace-separated tokens. Document-scoped.
+    #[napi]
+    pub fn find_all_by_class_name(&self, class_name: String) -> Vec<u32> {
+        let state = self.state.0.borrow();
+        let needle = class_name;
+        dfs_collect(&state.base, 0, |n| node_has_class(n, &needle))
+            .into_iter()
+            .map(|id| id as u32)
+            .collect()
+    }
+
+    /// All element ids whose `class` attribute contains `class_name`,
+    /// scoped to the subtree rooted at `root_id` (exclusive).
+    #[napi]
+    pub fn find_all_by_class_name_in(&self, root_id: u32, class_name: String) -> Vec<u32> {
+        let state = self.state.0.borrow();
+        let needle = class_name;
+        dfs_collect_children(&state.base, root_id as usize, |n| {
+            node_has_class(n, &needle)
+        })
+        .into_iter()
+        .map(|id| id as u32)
+        .collect()
     }
 
     /// `<html>` element id. Uses the `local_name!` macro for a zero-cost
@@ -528,7 +588,7 @@ impl DocHandle {
     /// has to do for the runtime-string case.
     fn find_first_static(&self, needle: LocalName) -> Option<u32> {
         let state = self.state.0.borrow();
-        dfs_find(&state.base, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+        dfs_find(&state.base, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
     }
 }
 
@@ -538,21 +598,35 @@ impl DocHandle {
 // `BaseDocument::get_node` + `Node.children` are both pub, so the walk
 // costs the same as the upstream version: a Vec-backed stack with reversed
 // children pushed per node.
+//
+// `dfs_find` / `dfs_collect` start at `root` and include `root` in the
+// traversal. `dfs_collect_children` starts at `root`'s children, excluding
+// `root` itself — for element-scoped lookups where the spec says the
+// element itself is not part of the result.
 
 use blitz::dom::BaseDocument;
 
-/// Find the first node id (pre-order) where `pred` returns true.
-fn dfs_find<F>(doc: &BaseDocument, pred: F) -> Option<usize>
+/// Check whether a node's `class` attribute contains `class_name` as one
+/// of its whitespace-separated tokens. Returns false for non-elements.
+fn node_has_class(node: &blitz::dom::Node, class_name: &str) -> bool {
+    let Some(class_str) = node.attr(local_name!("class")) else {
+        return false;
+    };
+    class_str.split_whitespace().any(|c| c == class_name)
+}
+
+/// Find the first node id (pre-order, starting from `root` inclusive)
+/// where `pred` returns true.
+fn dfs_find<F>(doc: &BaseDocument, root: usize, pred: F) -> Option<usize>
 where
     F: Fn(&blitz::dom::Node) -> bool,
 {
-    let mut stack: Vec<usize> = vec![0];
+    let mut stack: Vec<usize> = vec![root];
     while let Some(id) = stack.pop() {
         let node = doc.get_node(id)?;
         if pred(node) {
             return Some(id);
         }
-        // Push children in reverse so the first child is visited next.
         for &child in node.children.iter().rev() {
             stack.push(child);
         }
@@ -560,16 +634,44 @@ where
     None
 }
 
-/// Collect every node id (pre-order) where `pred` returns true.
-fn dfs_collect<F>(doc: &BaseDocument, pred: F) -> Vec<usize>
+/// Collect every node id (pre-order, starting from `root` inclusive)
+/// where `pred` returns true.
+fn dfs_collect<F>(doc: &BaseDocument, root: usize, pred: F) -> Vec<usize>
 where
     F: Fn(&blitz::dom::Node) -> bool,
 {
     let mut out = Vec::new();
-    let mut stack: Vec<usize> = vec![0];
+    let mut stack: Vec<usize> = vec![root];
     while let Some(id) = stack.pop() {
         let Some(node) = doc.get_node(id) else {
             break;
+        };
+        if pred(node) {
+            out.push(id);
+        }
+        for &child in node.children.iter().rev() {
+            stack.push(child);
+        }
+    }
+    out
+}
+
+/// Collect every node id (pre-order, starting from `root`'s children,
+/// excluding `root` itself) where `pred` returns true. Used for
+/// element-scoped lookups.
+fn dfs_collect_children<F>(doc: &BaseDocument, root: usize, pred: F) -> Vec<usize>
+where
+    F: Fn(&blitz::dom::Node) -> bool,
+{
+    let root_node = match doc.get_node(root) {
+        Some(n) => n,
+        None => return Vec::new(),
+    };
+    let mut stack: Vec<usize> = root_node.children.iter().rev().copied().collect();
+    let mut out = Vec::new();
+    while let Some(id) = stack.pop() {
+        let Some(node) = doc.get_node(id) else {
+            continue;
         };
         if pred(node) {
             out.push(id);

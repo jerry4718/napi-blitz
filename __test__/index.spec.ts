@@ -87,6 +87,70 @@ test("getElementsByTagName returns a snapshot in tree order", (t) => {
   t.is(doc.getElementsByTagName("nope").length, 0);
 });
 
+test("Document.getElementsByClassName matches class tokens", (t) => {
+  const doc = new HTMLDocument();
+  doc.body!.innerHTML =
+    '<div class="foo bar"></div><span class="foo"></span><p class="bar baz"></p>';
+
+  const foo = doc.getElementsByClassName("foo");
+  t.is(foo.length, 2);
+  t.is(foo[0].tagName, "div");
+  t.is(foo[1].tagName, "span");
+
+  const bar = doc.getElementsByClassName("bar");
+  t.is(bar.length, 2);
+  t.is(bar[0].tagName, "div");
+  t.is(bar[1].tagName, "p");
+
+  // Substring of a token should not match.
+  t.is(doc.getElementsByClassName("ba").length, 0);
+  // Unknown class: empty.
+  t.is(doc.getElementsByClassName("nope").length, 0);
+});
+
+test("Element.getElementsByTagName is scoped to descendants", (t) => {
+  const doc = new HTMLDocument();
+  doc.body!.innerHTML =
+    "<section><div><span></span></div><span></span></section><span id=outer></span>";
+
+  const section = doc.getElementsByTagName("section")[0];
+  // Two spans inside <section>.
+  const spans = section.getElementsByTagName("span");
+  t.is(spans.length, 2);
+
+  // The element itself is not included even if it matches.
+  const sections = section.getElementsByTagName("section");
+  t.is(sections.length, 0);
+
+  // "*" matches all descendant elements.
+  const all = section.getElementsByTagName("*");
+  t.is(all.length, 3); // div + 2 spans
+
+  // Case-folding.
+  const divs = section.getElementsByTagName("DIV");
+  t.is(divs.length, 1);
+  t.is(divs[0].tagName, "div");
+});
+
+test("Element.getElementsByClassName is scoped to descendants", (t) => {
+  const doc = new HTMLDocument();
+  doc.body!.innerHTML =
+    '<div class="root"><span class="foo"></span><p class="foo bar"></p></div>';
+
+  const div = doc.getElementsByTagName("div")[0];
+  // Two descendants carry "foo".
+  const foo = div.getElementsByClassName("foo");
+  t.is(foo.length, 2);
+  t.is(foo[0].tagName, "span");
+  t.is(foo[1].tagName, "p");
+
+  // The root element itself is excluded even though it carries "root".
+  t.is(div.getElementsByClassName("root").length, 0);
+
+  // Unknown class: empty.
+  t.is(div.getElementsByClassName("nope").length, 0);
+});
+
 test("createElement returns an HTMLElement; identity is stable", (t) => {
   const doc = new HTMLDocument();
   const div = doc.createElement("div");
