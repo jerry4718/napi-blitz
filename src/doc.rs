@@ -1,14 +1,20 @@
 //! `DocHandle`: the JS-facing handle to a blitz `BaseDocument`.
 //!
-//! The handle owns an `Rc<RefCell<BaseDocument>>` plus the JS dispatch bridge.
-//! When the document is moved into a window we wrap a clone of that `Rc` in a
-//! [`WindowDocument`] (which implements blitz's `Document` trait) and hand
-//! ownership of the `Box<dyn Document>` to the window. The `Rc` keeps the
-//! same `BaseDocument` accessible from both sides, and the bridge state still
-//! lives on the `DocHandle`.
+//! The handle owns two shared cells:
+//!   - `SharedBaseDoc`: `Rc<RefCell<BaseDocument>>` — the document tree.
+//!   - `SharedBridge`: `Rc<RefCell<JsBridge>>` — the JS event-dispatch bridge.
 //!
-//! All DOM mutation methods on `DocHandle` are flat in JS: they take node ids
-//! (numbers) as arguments. Element classes live in the JS layer.
+//! Splitting them into separate `RefCell`s is deliberate: blitz's
+//! `EventDriver` needs `&mut dyn Document` for the duration of event
+//! dispatch, and during that time the JS callback may fire. The JS
+//! callback must be able to read/mutate the DOM (which borrows
+//! `SharedBaseDoc`) without colliding with the bridge borrow. If both
+//! lived in the same `RefCell<DocState>`, any JS-triggered DOM op
+//! during dispatch would panic with "already mutably borrowed".
+//!
+//! `WindowDocument` implements `Document` by borrowing `SharedBaseDoc`
+//! on each `inner()` / `inner_mut()` call and releasing immediately, so
+//! no borrow spans across the JS callback boundary.
 
 use std::{cell::RefCell, rc::Rc, sync::Arc, task::Context as TaskContext};
 
@@ -45,70 +51,70 @@ pub struct DocHandleConfig<'env> {
     pub on_dispatch: Function<'env, EventPayload, DispatchResult>,
 }
 
-/// The shared state between [`DocHandle`] (JS-owned) and [`WindowDocument`]
-/// (window-owned, when a window is opened on this document).
-pub struct DocState {
-    pub base: BaseDocument,
-    pub bridge: JsBridge,
-}
-
-/// Newtype for `Rc<RefCell<DocState>>`. Both `DocHandle` and `WindowDocument`
-/// hold one of these, sharing the same underlying state.
+/// `Rc<RefCell<BaseDocument>>` — the document tree, shared between
+/// `DocHandle` (JS side) and `WindowDocument` (blitz window side).
 #[derive(Clone)]
-pub struct SharedDocState(pub Rc<RefCell<DocState>>);
+pub struct SharedBaseDoc(pub Rc<RefCell<BaseDocument>>);
 
-impl SharedDocState {
-    pub fn new(state: DocState) -> Self {
-        Self(Rc::new(RefCell::new(state)))
+impl SharedBaseDoc {
+    pub fn new(base: BaseDocument) -> Self {
+        Self(Rc::new(RefCell::new(base)))
     }
 }
 
-/// Adapter that implements blitz's `Document` trait around our shared state.
-/// `WindowConfig::new` takes `Box<dyn Document>`, and the window owns that box
-/// for its lifetime; we keep the same data accessible from JS by sharing the
-/// `Rc<RefCell<...>>`.
+/// `Rc<RefCell<JsBridge>>` — the JS event-dispatch bridge, shared
+/// between `DocHandle` and `WindowDocument`.
+#[derive(Clone)]
+pub struct SharedBridge(pub Rc<RefCell<JsBridge>>);
+
+impl SharedBridge {
+    pub fn new(bridge: JsBridge) -> Self {
+        Self(Rc::new(RefCell::new(bridge)))
+    }
+}
+
+/// Adapter that implements blitz's `Document` trait around our shared
+/// `BaseDocument`. Each `inner()` / `inner_mut()` call borrows the
+/// `RefCell` transiently and releases the guard before returning to the
+/// caller's scope — crucially, no borrow spans across JS callbacks.
 pub struct WindowDocument {
-    pub state: SharedDocState,
+    pub base: SharedBaseDoc,
+    pub bridge: SharedBridge,
 }
 
 impl WindowDocument {
-    pub fn new(state: SharedDocState) -> Self {
-        Self { state }
+    pub fn new(base: SharedBaseDoc, bridge: SharedBridge) -> Self {
+        Self { base, bridge }
     }
 }
 
 impl BlitzDocument for WindowDocument {
     fn inner(&self) -> DocGuard<'_> {
-        // We can't return a `RefCell` guard directly without leaking `Ref`s,
-        // so we use the `RefCell` variant of `DocGuard`. We borrow the
-        // outer `RefCell<DocState>`, then project to the `BaseDocument`.
-        // `DocGuard::RefCell` expects `Ref<'_, BaseDocument>`; we use
-        // `Ref::map` to project from `DocState` to `BaseDocument`.
-        let borrow = self.state.0.borrow();
-        let projected = std::cell::Ref::map(borrow, |s| &s.base);
-        DocGuard::RefCell(projected)
+        let borrow = self.base.0.borrow();
+        DocGuard::RefCell(borrow)
     }
 
     fn inner_mut(&mut self) -> DocGuardMut<'_> {
-        let borrow = self.state.0.borrow_mut();
-        let projected = std::cell::RefMut::map(borrow, |s| &mut s.base);
-        DocGuardMut::RefCell(projected)
+        let borrow = self.base.0.borrow_mut();
+        DocGuardMut::RefCell(borrow)
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
-        // We do the dispatch in two phases so we don't collide on the
-        // RefCell: first take a mut borrow of state to set up the driver,
-        // then run the driver. Since `JsEventHandler` only borrows
-        // `bridge` (and not `base`), and the driver only borrows `base`
-        // through the `Document` trait, we have to split them carefully.
+        // Clone the bridge `Rc` so we can borrow it independently of
+        // `&mut self`. This lets `EventDriver::new(self, handler)` take
+        // `&mut self` (for `inner()` / `inner_mut()` calls) while the
+        // handler holds a separate `RefMut<JsBridge>`.
         //
-        // Strategy: call into base via `DocGuardMut`, but pass the bridge
-        // separately. We achieve this by using a scoped block.
-        let mut state = self.state.0.borrow_mut();
-        let DocState { base, bridge } = &mut *state;
+        // The bridge and base live in *separate* `RefCell`s, so JS
+        // callbacks (triggered inside `driver.handle_ui_event`) can
+        // freely borrow `base` without colliding with the bridge borrow.
+        let bridge_rc = self.bridge.0.clone();
+        let mut bridge = bridge_rc.borrow_mut();
+        let handler = JsEventHandler {
+            bridge: &mut bridge,
+        };
 
-        let handler = JsEventHandler { bridge };
-        let mut driver = EventDriver::new(base, handler);
+        let mut driver = EventDriver::new(self, handler);
         driver.handle_ui_event(event);
     }
 
@@ -117,7 +123,7 @@ impl BlitzDocument for WindowDocument {
     }
 
     fn id(&self) -> usize {
-        self.state.0.borrow().base.id()
+        self.base.0.borrow().id()
     }
 }
 
@@ -125,7 +131,8 @@ impl BlitzDocument for WindowDocument {
 /// nodeId-based DOM API.
 #[napi]
 pub struct DocHandle {
-    pub(crate) state: SharedDocState,
+    pub(crate) base: SharedBaseDoc,
+    pub(crate) bridge: SharedBridge,
     /// Whether ownership of the document has been moved into a window.
     /// After this we still keep the `Rc` so the JS side can keep mutating
     /// the DOM, but we refuse to attach it to a second window.
@@ -133,8 +140,11 @@ pub struct DocHandle {
 }
 
 impl DocHandle {
-    pub(crate) fn share_state(&self) -> SharedDocState {
-        self.state.clone()
+    pub(crate) fn share_base(&self) -> SharedBaseDoc {
+        self.base.clone()
+    }
+    pub(crate) fn share_bridge(&self) -> SharedBridge {
+        self.bridge.clone()
     }
 }
 
@@ -173,11 +183,12 @@ impl DocHandle {
             config.on_dispatch.create_ref()?;
         let bridge = JsBridge::new(env, callback_ref);
 
-        let state = DocState { base, bridge };
-        let shared = SharedDocState::new(state);
+        let shared_base = SharedBaseDoc::new(base);
+        let shared_bridge = SharedBridge::new(bridge);
 
         Ok(Self {
-            state: shared,
+            base: shared_base,
+            bridge: shared_bridge,
             moved_into_window: false,
         })
     }
@@ -196,53 +207,56 @@ impl DocHandle {
     /// blitz-internal `BaseDocument` id. Used by `BlitzApp` to route window
     /// open/close to the right `View`.
     pub(crate) fn doc_id(&self) -> usize {
-        self.state.0.borrow().base.id()
+        self.base.0.borrow().id()
     }
 
     /// Recompute style + layout. Called from JS after batches of mutations or
     /// before painting. `time_ms` drives CSS animations.
     #[napi]
     pub fn resolve(&mut self, time_ms: f64) {
-        self.state.0.borrow_mut().base.resolve(time_ms);
+        self.base.0.borrow_mut().resolve(time_ms);
     }
 
     /// The id of the root node (always 0 for blitz, but expose it for JS).
     #[napi]
     pub fn root_node_id(&self) -> u32 {
-        self.state.0.borrow().base.root_node().id as u32
+        self.base.0.borrow().root_node().id as u32
     }
 
     /// The id of `<html>` (the root *element*).
     #[napi]
     pub fn root_element_id(&self) -> u32 {
-        self.state.0.borrow().base.root_element().id as u32
+        self.base.0.borrow().root_element().id as u32
     }
 
     /// Update the set of node ids JS currently has live wrappers for. Rust
     /// uses this to short-circuit dispatch when no listener could exist.
     #[napi]
     pub fn set_listened_nodes(&mut self, ids: Vec<u32>) {
-        let mut state = self.state.0.borrow_mut();
-        state.bridge.listened_nodes = ids.into_iter().collect();
+        let mut bridge = self.bridge.0.borrow_mut();
+        bridge.listened_nodes = ids.into_iter().collect();
     }
 
     /// Add a single node id to the listened set. Cheaper than calling
     /// `set_listened_nodes` for incremental subscription updates.
     #[napi]
     pub fn add_listened_node(&mut self, id: u32) {
-        self.state.0.borrow_mut().bridge.listened_nodes.insert(id);
+        self.bridge.0.borrow_mut().listened_nodes.insert(id);
     }
 
     /// Remove a node id from the listened set.
     #[napi]
     pub fn remove_listened_node(&mut self, id: u32) {
-        self.state.0.borrow_mut().bridge.listened_nodes.remove(&id);
+        self.bridge.0.borrow_mut().listened_nodes.remove(&id);
     }
 }
 
 /// Internal helper: build a [`WindowDocument`] from a [`DocHandle`] without
-/// transferring the underlying `Rc` away from the handle. The window will
-/// receive `Box<WindowDocument>`; the handle keeps its own clone of the `Rc`.
+/// transferring the underlying `Rc`s away from the handle. The window will
+/// receive `Box<WindowDocument>`; the handle keeps its own clones.
 pub(crate) fn make_window_document(handle: &DocHandle) -> Box<WindowDocument> {
-    Box::new(WindowDocument::new(handle.share_state()))
+    Box::new(WindowDocument::new(
+        handle.share_base(),
+        handle.share_bridge(),
+    ))
 }
