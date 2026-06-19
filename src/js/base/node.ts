@@ -24,7 +24,7 @@ export const NodeTypes = {
 
 export abstract class Node extends EventTarget {
   protected readonly _handle: NativeDocHandle;
-  protected readonly _nodeId: number;
+  protected readonly _nodeId: bigint;
   // Not `readonly`: `Document` patches it to `this` immediately after
   // calling `super()` (a Document is its own owner, but `this` is not
   // available before `super(...)` returns). No other code should
@@ -40,7 +40,7 @@ export abstract class Node extends EventTarget {
    */
   constructor(
     handle: NativeDocHandle,
-    nodeId: number,
+    nodeId: bigint,
     ownerDocument: DocumentInternals,
   ) {
     super();

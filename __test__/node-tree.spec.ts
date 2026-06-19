@@ -3,6 +3,7 @@
 import test from "ava";
 
 import { HTMLDocument } from "../dist/index.js";
+import { pluckDocument } from "./_helpers.ts";
 
 test("appendChild / parentNode / childNodes are on Node", (t) => {
   const doc = new HTMLDocument();
@@ -65,6 +66,15 @@ test("contains walks ancestors", (t) => {
   t.true(body.contains(inner));
   t.true(outer.contains(inner));
   t.false(inner.contains(outer));
+});
+
+test("native node ids are bigint and reject negative ids", (t) => {
+  const doc = new HTMLDocument();
+  const native = pluckDocument(doc)._native;
+
+  t.is(typeof native.rootNodeId(), "bigint");
+  t.false(native.hasNode(-1n));
+  t.is(native.nodeType(-1n), 0);
 });
 
 test("cloneNode(false) shallow-copies a node without children", (t) => {

@@ -117,7 +117,7 @@ const RESERVED = new Set<string | symbol>([
 
 export function makeStyleProxy(
   handle: NativeDocHandle,
-  nodeId: number,
+  nodeId: bigint,
 ): StyleDeclaration {
   // The target carries the spec methods so calls like
   // `el.style.setProperty("color", "x")` resolve via the normal

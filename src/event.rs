@@ -17,7 +17,7 @@ use blitz::{
 };
 use napi::{
     Env,
-    bindgen_prelude::{Function, FunctionRef},
+    bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 
 use crate::payload::{
@@ -32,7 +32,7 @@ pub struct JsBridge {
     /// node ids that JS currently has live wrappers for. We use this to skip
     /// dispatching events to nodes JS no longer cares about (the JS side
     /// updates this set via `DocHandle::set_listened_nodes`).
-    pub listened_nodes: HashSet<u32>,
+    pub listened_nodes: HashSet<usize>,
 }
 
 impl JsBridge {
@@ -53,9 +53,7 @@ impl JsBridge {
             // the document itself may want to observe events.
             return true;
         }
-        chain
-            .iter()
-            .any(|id| self.listened_nodes.contains(&(*id as u32)))
+        chain.iter().any(|id| self.listened_nodes.contains(id))
     }
 }
 
@@ -117,8 +115,8 @@ fn call_dispatch(
 pub fn serialize_event(event: &DomEvent, chain: &[usize]) -> EventPayload {
     EventPayload {
         event_type: event.name().to_string(),
-        target: event.target as u32,
-        chain: chain.iter().map(|id| *id as u32).collect(),
+        target: BigInt::from(event.target as u64),
+        chain: chain.iter().map(|id| BigInt::from(*id as u64)).collect(),
         bubbles: event.bubbles,
         cancelable: event.cancelable,
         pointer: pointer_from(&event.data),

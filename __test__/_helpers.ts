@@ -11,7 +11,7 @@ import type { Node, EventPayload } from "../dist/index.js";
 
 /** Shape of a `Node`'s package-private fields, as seen from test code. */
 interface TestNodeInternals {
-  readonly _nodeId: number;
+  readonly _nodeId: bigint;
 }
 
 /** Read package-private fields off a `Node` instance. */
@@ -20,7 +20,7 @@ export function pluckNode(n: Node): TestNodeInternals {
 }
 
 /** Convenience: just the nodeId. */
-export function nodeIdOf(n: Node): number {
+export function nodeIdOf(n: Node): bigint {
   return pluckNode(n)._nodeId;
 }
 
@@ -30,8 +30,8 @@ export function nodeIdOf(n: Node): number {
  * (but not including) the document.
  */
 export function makeClickPayload(
-  targetId: number,
-  chain: number[],
+  targetId: bigint,
+  chain: bigint[],
 ): EventPayload {
   return {
     eventType: "click",
@@ -52,6 +52,7 @@ export function makeClickPayload(
  * need to drive the dispatch path manually.
  */
 interface TestDocumentInternals {
+  readonly _native: import("../dist/index.js").NativeDocHandle;
   _dispatchFromNative(payload: EventPayload): {
     defaultPrevented: boolean;
     propagationStopped: boolean;

@@ -10,7 +10,7 @@ export class HTMLDocument extends Document {
     super(init);
   }
 
-  protected _makeElementWrapper(nodeId: number): Element {
+  protected _makeElementWrapper(nodeId: bigint): Element {
     return new HTMLElement(this._native, nodeId, this);
   }
 }

@@ -61,10 +61,10 @@ export abstract class Document extends Node implements DocumentInternals {
   readonly _native: NativeDocHandle;
 
   /** nodeId -> WeakRef<Node>. Allows GC to reclaim unused wrappers. */
-  private readonly _nodes: Map<number, WeakRef<Node>> = new Map();
+  private readonly _nodes: Map<bigint, WeakRef<Node>> = new Map();
 
   /** Tells the native side when a wrapper has been GC'd. */
-  private readonly _finalizer: FinalizationRegistry<number>;
+  private readonly _finalizer: FinalizationRegistry<bigint>;
 
   /** Lazily-built `FontFaceSet` exposed via `document.fonts`. */
   private _fontsSet: FontFaceSet | null = null;
@@ -104,7 +104,7 @@ export abstract class Document extends Node implements DocumentInternals {
     // sanctioned hatch for this single use-case.
     this._setOwnerDocument(this);
 
-    this._finalizer = new FinalizationRegistry<number>((nodeId) => {
+    this._finalizer = new FinalizationRegistry<bigint>((nodeId) => {
       const ref = this._nodes.get(nodeId);
       if (ref && ref.deref() === undefined) {
         this._nodes.delete(nodeId);
@@ -191,7 +191,7 @@ export abstract class Document extends Node implements DocumentInternals {
    * Concrete subclasses override `_makeWrapper` to choose Element vs.
    * HTMLElement vs. SVGElement etc.
    */
-  _wrap(nodeId: number): Node {
+  _wrap(nodeId: bigint): Node {
     const cached = this._nodes.get(nodeId)?.deref();
     if (cached) return cached;
 
@@ -207,7 +207,7 @@ export abstract class Document extends Node implements DocumentInternals {
    * Text/Comment and falls back to `Element` for everything else.
    * Subclasses override to specialize element wrapping.
    */
-  protected _makeWrapper(nodeId: number): Node {
+  protected _makeWrapper(nodeId: bigint): Node {
     const type = this._native.nodeType(nodeId);
     if (type === NodeTypes.TEXT_NODE) return new Text(this._native, nodeId, this);
     if (type === NodeTypes.COMMENT_NODE) return new Comment(this._native, nodeId, this);
@@ -215,7 +215,7 @@ export abstract class Document extends Node implements DocumentInternals {
   }
 
   /** Build an Element-class wrapper. Overridden per document type. */
-  protected abstract _makeElementWrapper(nodeId: number): Element;
+  protected abstract _makeElementWrapper(nodeId: bigint): Element;
 
   // ----- Factories --------------------------------------------------------
 

@@ -58,7 +58,7 @@ impl Window {
     /// uses this to map app-event payloads back to the right `Window`
     /// wrapper. Stable for the lifetime of the window.
     #[napi(getter)]
-    pub fn doc_id(&self) -> u32 {
-        self.doc_id as u32
+    pub fn doc_id(&self) -> u64 {
+        self.doc_id as u64
     }
 }

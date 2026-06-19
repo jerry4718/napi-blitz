@@ -12,7 +12,7 @@ export class XMLDocument extends Document {
     super(init);
   }
 
-  protected _makeElementWrapper(nodeId: number): Element {
+  protected _makeElementWrapper(nodeId: bigint): Element {
     return new Element(this._native, nodeId, this);
   }
 }

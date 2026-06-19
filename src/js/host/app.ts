@@ -74,7 +74,7 @@ export class BlitzApp extends EventTarget {
   readonly _native: NativeBlitzApp;
 
   /** Live windows, keyed by their attached document's `docId`. */
-  private readonly _windows: Map<number, Window> = new Map();
+  private readonly _windows: Map<bigint, Window> = new Map();
 
   private constructor(native: NativeBlitzApp) {
     super();

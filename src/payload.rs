@@ -1,7 +1,8 @@
 //! `#[napi(object)]` shapes used to ferry events / responses between Rust and
-//! JS. These intentionally use plain numbers / strings so the binding does not
-//! need any additional serialization layer.
+//! JS. Opaque node ids travel as JS `bigint` values via napi-rs `BigInt`, while
+//! DOM event scalar fields stay as plain JS numbers / strings.
 
+use napi::bindgen_prelude::BigInt;
 use napi_derive::napi;
 
 /// One DomEvent serialized for JS consumption.
@@ -14,9 +15,9 @@ pub struct EventPayload {
     /// Event name in DOM-spec lowercased form, e.g. "click", "pointerdown".
     pub event_type: String,
     /// node id of the original event target.
-    pub target: u32,
+    pub target: BigInt,
     /// node id chain, target first, root last.
-    pub chain: Vec<u32>,
+    pub chain: Vec<BigInt>,
     /// `event.bubbles`
     pub bubbles: bool,
     /// `event.cancelable`

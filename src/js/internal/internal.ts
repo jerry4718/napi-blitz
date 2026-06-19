@@ -13,7 +13,7 @@ import type { NativeDocHandle } from "../native";
 /** Shape of a `Node`'s package-private fields. */
 export interface NodeInternals {
   readonly _handle: NativeDocHandle;
-  readonly _nodeId: number;
+  readonly _nodeId: bigint;
   readonly _ownerDocument: DocumentInternals;
 }
 
@@ -25,7 +25,7 @@ export interface DocumentInternals {
    * concrete Node subclass (Element/Text/Comment/...) wrapped as a
    * generic object; callers cast to the type they need.
    */
-  _wrap(nodeId: number): object;
+  _wrap(nodeId: bigint): object;
 }
 
 /** Read the package-private fields off a `Node` instance. */

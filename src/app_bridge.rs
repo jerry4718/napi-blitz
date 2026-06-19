@@ -21,7 +21,7 @@
 
 use napi::{
     Env,
-    bindgen_prelude::{Function, FunctionRef},
+    bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 use napi_derive::napi;
 
@@ -39,7 +39,7 @@ pub struct AppEventPayload {
     pub event_type: String,
     /// `BaseDocument::id` of the window the event refers to. JS uses
     /// this to map back to the right `Window` wrapper.
-    pub window_doc_id: u32,
+    pub window_doc_id: BigInt,
     /// Whether the JS `Event` constructed from this payload should be
     /// cancelable. Only `close` is cancelable; `closed` is not.
     pub cancelable: bool,

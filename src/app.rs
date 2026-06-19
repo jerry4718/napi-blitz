@@ -16,7 +16,7 @@ use blitz::shell::{
 use blitz::traits::shell::DummyShellProvider;
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{Function, FunctionRef},
+    bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 use napi_derive::napi;
 use std::sync::Arc;
@@ -199,7 +199,7 @@ impl BlitzApp {
         {
             let _ = bridge.dispatch(AppEventPayload {
                 event_type: APP_EVENT_CLOSED.to_string(),
-                window_doc_id: doc_id as u32,
+                window_doc_id: BigInt::from(doc_id as u64),
                 cancelable: false,
             });
         }
@@ -307,7 +307,7 @@ impl BlitzApp {
             if let Some(bridge) = self.bridge.as_ref() {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
-                    window_doc_id: doc_id as u32,
+                    window_doc_id: BigInt::from(doc_id as u64),
                     cancelable: false,
                 });
             }

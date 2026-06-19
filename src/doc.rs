@@ -28,6 +28,7 @@ use blitz::{
 };
 use napi::{
     Env, Error, Result, Status,
+    bindgen_prelude::BigInt,
     bindgen_prelude::{Function, FunctionRef, Uint8Array},
 };
 use napi_derive::napi;
@@ -193,6 +194,14 @@ pub struct DocHandle {
     /// After this we still keep the `Rc` so the JS side can keep mutating
     /// the DOM, but we refuse to attach it to a second window.
     pub(crate) moved_into_window: bool,
+}
+
+fn bigint_to_usize(id: BigInt) -> Option<usize> {
+    let (signed, value, lossless) = id.get_u64();
+    if signed || !lossless {
+        return None;
+    }
+    usize::try_from(value).ok()
 }
 
 impl DocHandle {
@@ -365,35 +374,39 @@ impl DocHandle {
 
     /// The id of the root node (always 0 for blitz, but expose it for JS).
     #[napi]
-    pub fn root_node_id(&self) -> u32 {
-        self.base.0.borrow().root_node().id as u32
+    pub fn root_node_id(&self) -> u64 {
+        self.base.0.borrow().root_node().id as u64
     }
 
     /// The id of `<html>` (the root *element*).
     #[napi]
-    pub fn root_element_id(&self) -> u32 {
-        self.base.0.borrow().root_element().id as u32
+    pub fn root_element_id(&self) -> u64 {
+        self.base.0.borrow().root_element().id as u64
     }
 
     /// Update the set of node ids JS currently has live wrappers for. Rust
     /// uses this to short-circuit dispatch when no listener could exist.
     #[napi]
-    pub fn set_listened_nodes(&mut self, ids: Vec<u32>) {
+    pub fn set_listened_nodes(&mut self, ids: Vec<BigInt>) {
         let mut bridge = self.bridge.0.borrow_mut();
-        bridge.listened_nodes = ids.into_iter().collect();
+        bridge.listened_nodes = ids.into_iter().filter_map(bigint_to_usize).collect();
     }
 
     /// Add a single node id to the listened set. Cheaper than calling
     /// `set_listened_nodes` for incremental subscription updates.
     #[napi]
-    pub fn add_listened_node(&mut self, id: u32) {
-        self.bridge.0.borrow_mut().listened_nodes.insert(id);
+    pub fn add_listened_node(&mut self, id: BigInt) {
+        if let Some(id) = bigint_to_usize(id) {
+            self.bridge.0.borrow_mut().listened_nodes.insert(id);
+        }
     }
 
     /// Remove a node id from the listened set.
     #[napi]
-    pub fn remove_listened_node(&mut self, id: u32) {
-        self.bridge.0.borrow_mut().listened_nodes.remove(&id);
+    pub fn remove_listened_node(&mut self, id: BigInt) {
+        if let Some(id) = bigint_to_usize(id) {
+            self.bridge.0.borrow_mut().listened_nodes.remove(&id);
+        }
     }
 }
 

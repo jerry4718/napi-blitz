@@ -23,7 +23,7 @@ export type AttributesMap = Record<string, string>;
 
 export function makeAttributesProxy(
   handle: NativeDocHandle,
-  nodeId: number,
+  nodeId: bigint,
 ): AttributesMap {
   // The proxy target is just a placeholder object; we route every
   // operation through `handle` so reads always reflect the latest

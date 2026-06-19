@@ -54,7 +54,7 @@ export class Window extends EventTarget {
    * the native `doc_id` and is used by `BlitzApp` to look up windows
    * routed from the OS event handler.
    */
-  get docId(): number {
+  get docId(): bigint {
     return this._nativeWindow.docId;
   }
 

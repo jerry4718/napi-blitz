@@ -1,11 +1,11 @@
 //! Flat, nodeId-based DOM operations exposed to JS as methods on `DocHandle`.
 //!
-//! Every method here takes node ids (`u32`) as input and returns plain
+//! Every method here takes node ids (`u64`) as input and returns plain
 //! values. Element wrapper objects live entirely in the JS layer.
 
 use blitz::dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, local_name, ns};
 use blitz::html::DocumentHtmlParser;
-use napi::{Error, Result};
+use napi::{Error, Result, bindgen_prelude::BigInt};
 use napi_derive::napi;
 use style::properties::PropertyId;
 
@@ -27,6 +27,14 @@ fn make_qual_name(local: &str, namespace: Option<&str>) -> QualName {
     }
 }
 
+fn js_node_id_to_usize(id: &BigInt) -> usize {
+    let (signed, value, lossless) = id.get_u64();
+    if signed || !lossless {
+        return usize::MAX;
+    }
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
 #[napi]
 impl DocHandle {
     /// Replace document content from an HTML string. Useful for tests and
@@ -43,10 +51,10 @@ impl DocHandle {
 
     /// Find a single node by CSS selector. Returns its node id or null.
     #[napi]
-    pub fn query_selector(&self, selector: String) -> Result<Option<u32>> {
+    pub fn query_selector(&self, selector: String) -> Result<Option<u64>> {
         let state = self.base.0.borrow();
         match state.query_selector(&selector) {
-            Ok(Some(id)) => Ok(Some(id as u32)),
+            Ok(Some(id)) => Ok(Some(id as u64)),
             Ok(None) => Ok(None),
             Err(err) => Err(Error::from_reason(format!("query_selector: {err:?}"))),
         }
@@ -54,10 +62,10 @@ impl DocHandle {
 
     /// Find all nodes by CSS selector. Returns a list of node ids.
     #[napi]
-    pub fn query_selector_all(&self, selector: String) -> Result<Vec<u32>> {
+    pub fn query_selector_all(&self, selector: String) -> Result<Vec<u64>> {
         let state = self.base.0.borrow();
         match state.query_selector_all(&selector) {
-            Ok(ids) => Ok(ids.into_iter().map(|id| id as u32).collect()),
+            Ok(ids) => Ok(ids.into_iter().map(|id| id as u64).collect()),
             Err(err) => Err(Error::from_reason(format!("query_selector_all: {err:?}"))),
         }
     }
@@ -70,13 +78,13 @@ impl DocHandle {
     /// the root — bypassing blitz's `query_selector_raw`, which is hardcoded
     /// to `self.root_node()`.
     #[napi]
-    pub fn query_selector_in(&self, root_id: u32, selector: String) -> Result<Option<u32>> {
+    pub fn query_selector_in(&self, root_id: BigInt, selector: String) -> Result<Option<u64>> {
         let state = self.base.0.borrow();
         let selector_list = state
             .try_parse_selector_list(&selector)
             .map_err(|err| Error::from_reason(format!("query_selector_in: {err:?}")))?;
 
-        let Some(root_node) = state.get_node(root_id as usize) else {
+        let Some(root_node) = state.get_node(js_node_id_to_usize(&root_id)) else {
             return Ok(None);
         };
 
@@ -88,19 +96,19 @@ impl DocHandle {
             &mut result,
             style::dom_apis::MayUseInvalidation::Yes,
         );
-        Ok(result.map(|node| node.id as u32))
+        Ok(result.map(|node| node.id as u64))
     }
 
     /// Element-scoped `querySelectorAll`: all matches in the subtree rooted
     /// at `root_id` (exclusive). Same approach as `query_selector_in`.
     #[napi]
-    pub fn query_selector_all_in(&self, root_id: u32, selector: String) -> Result<Vec<u32>> {
+    pub fn query_selector_all_in(&self, root_id: BigInt, selector: String) -> Result<Vec<u64>> {
         let state = self.base.0.borrow();
         let selector_list = state
             .try_parse_selector_list(&selector)
             .map_err(|err| Error::from_reason(format!("query_selector_all_in: {err:?}")))?;
 
-        let Some(root_node) = state.get_node(root_id as usize) else {
+        let Some(root_node) = state.get_node(js_node_id_to_usize(&root_id)) else {
             return Ok(Vec::new());
         };
 
@@ -112,17 +120,17 @@ impl DocHandle {
             &mut results,
             style::dom_apis::MayUseInvalidation::Yes,
         );
-        Ok(results.iter().map(|node| node.id as u32).collect())
+        Ok(results.iter().map(|node| node.id as u64).collect())
     }
 
     /// Lookup by `id=` attribute, like `document.getElementById`.
     #[napi]
-    pub fn get_element_by_id(&self, id: String) -> Option<u32> {
+    pub fn get_element_by_id(&self, id: String) -> Option<u64> {
         self.base
             .0
             .borrow()
             .get_element_by_id(&id)
-            .map(|id| id as u32)
+            .map(|id| id as u64)
     }
 
     /// Find the document's `<title>` element id, or None if no title
@@ -131,14 +139,18 @@ impl DocHandle {
     /// `querySelector("title")` which dispatches through the CSS
     /// selector engine.
     #[napi]
-    pub fn find_title_node_id(&self) -> Option<u32> {
+    pub fn find_title_node_id(&self) -> Option<u64> {
         self.find_first_static(local_name!("title"))
     }
 
     /// True iff the given node id currently exists in the document.
     #[napi]
-    pub fn has_node(&self, id: u32) -> bool {
-        self.base.0.borrow().get_node(id as usize).is_some()
+    pub fn has_node(&self, id: BigInt) -> bool {
+        self.base
+            .0
+            .borrow()
+            .get_node(js_node_id_to_usize(&id))
+            .is_some()
     }
 }
 
@@ -152,7 +164,7 @@ impl DocHandle {
         local_name: String,
         namespace: Option<String>,
         attrs: Option<Vec<AttrInit>>,
-    ) -> u32 {
+    ) -> u64 {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
         let qn = make_qual_name(&local_name, namespace.as_deref());
@@ -164,31 +176,31 @@ impl DocHandle {
                 value: a.value,
             })
             .collect();
-        mutator.create_element(qn, attr_vec) as u32
+        mutator.create_element(qn, attr_vec) as u64
     }
 
     /// Create a text node with the given content.
     #[napi]
-    pub fn create_text_node(&mut self, text: String) -> u32 {
+    pub fn create_text_node(&mut self, text: String) -> u64 {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.create_text_node(&text) as u32
+        mutator.create_text_node(&text) as u64
     }
 
     /// Create an empty comment node.
     #[napi]
-    pub fn create_comment_node(&mut self) -> u32 {
+    pub fn create_comment_node(&mut self) -> u64 {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.create_comment_node() as u32
+        mutator.create_comment_node() as u64
     }
 
     /// Deep-clone an existing node and return the new node's id.
     #[napi]
-    pub fn deep_clone_node(&mut self, node_id: u32) -> u32 {
+    pub fn deep_clone_node(&mut self, node_id: BigInt) -> u64 {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.deep_clone_node(node_id as usize) as u32
+        mutator.deep_clone_node(js_node_id_to_usize(&node_id)) as u64
     }
 
     /// Shallow-clone a node: same data (tag name, attributes, text
@@ -197,19 +209,19 @@ impl DocHandle {
     ///
     /// Cloning a missing nodeId returns 0 (the document root) — the
     /// caller should make sure the source id is valid first. The
-    /// alternative (returning `Option<u32>`) noisily complicates the
+    /// alternative (returning `Option<u64>`) noisily complicates the
     /// JS-side cloneNode wrapper for a case JS code can never trigger.
     #[napi]
-    pub fn shallow_clone_node(&mut self, node_id: u32) -> u32 {
+    pub fn shallow_clone_node(&mut self, node_id: BigInt) -> u64 {
         let mut state = self.base.0.borrow_mut();
-        let Some(source) = state.get_node(node_id as usize) else {
+        let Some(source) = state.get_node(js_node_id_to_usize(&node_id)) else {
             return 0;
         };
         // Cloning `NodeData` deep-copies attributes, text, and the
         // (Arc-shared) parsed `style` declaration block. We never
         // touch `children` / `parent` so the clone starts detached.
         let data = source.data.clone();
-        state.create_node(data) as u32
+        state.create_node(data) as u64
     }
 }
 
@@ -217,68 +229,68 @@ impl DocHandle {
 impl DocHandle {
     /// Parent node id, if any.
     #[napi]
-    pub fn parent_id(&self, node_id: u32) -> Option<u32> {
+    pub fn parent_id(&self, node_id: BigInt) -> Option<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.parent)
-            .map(|id| id as u32)
+            .map(|id| id as u64)
     }
 
     /// First child id, if any.
     #[napi]
-    pub fn first_child_id(&self, node_id: u32) -> Option<u32> {
+    pub fn first_child_id(&self, node_id: BigInt) -> Option<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.children.first().copied())
-            .map(|id| id as u32)
+            .map(|id| id as u64)
     }
 
     /// Last child id, if any.
     #[napi]
-    pub fn last_child_id(&self, node_id: u32) -> Option<u32> {
+    pub fn last_child_id(&self, node_id: BigInt) -> Option<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.children.last().copied())
-            .map(|id| id as u32)
+            .map(|id| id as u64)
     }
 
     /// All children, in document order.
     #[napi]
-    pub fn child_ids(&self, node_id: u32) -> Vec<u32> {
+    pub fn child_ids(&self, node_id: BigInt) -> Vec<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
-            .map(|n| n.children.iter().map(|id| *id as u32).collect())
+            .get_node(js_node_id_to_usize(&node_id))
+            .map(|n| n.children.iter().map(|id| *id as u64).collect())
             .unwrap_or_default()
     }
 
     /// Next sibling id, if any.
     #[napi]
-    pub fn next_sibling_id(&self, node_id: u32) -> Option<u32> {
+    pub fn next_sibling_id(&self, node_id: BigInt) -> Option<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.forward(1))
-            .map(|n| n.id as u32)
+            .map(|n| n.id as u64)
     }
 
     /// Previous sibling id, if any.
     #[napi]
-    pub fn previous_sibling_id(&self, node_id: u32) -> Option<u32> {
+    pub fn previous_sibling_id(&self, node_id: BigInt) -> Option<u64> {
         self.base
             .0
             .borrow()
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.backward(1))
-            .map(|n| n.id as u32)
+            .map(|n| n.id as u64)
     }
 }
 
@@ -293,9 +305,9 @@ const NODE_TYPE_OTHER: u32 = 0;
 impl DocHandle {
     /// DOM-style `nodeType` (1=Element, 3=Text, 8=Comment, 9=Document).
     #[napi]
-    pub fn node_type(&self, node_id: u32) -> u32 {
+    pub fn node_type(&self, node_id: BigInt) -> u32 {
         let state = self.base.0.borrow();
-        let Some(node) = state.get_node(node_id as usize) else {
+        let Some(node) = state.get_node(js_node_id_to_usize(&node_id)) else {
             return NODE_TYPE_OTHER;
         };
         use blitz::dom::NodeData;
@@ -311,10 +323,10 @@ impl DocHandle {
     /// Local element tag name (lowercased), e.g. "div". Returns None for
     /// non-element nodes.
     #[napi]
-    pub fn tag_name(&self, node_id: u32) -> Option<String> {
+    pub fn tag_name(&self, node_id: BigInt) -> Option<String> {
         let state = self.base.0.borrow();
         state
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.element_data())
             .map(|el| el.name.local.to_string())
     }
@@ -322,16 +334,18 @@ impl DocHandle {
     /// Concatenated text content of this node and its descendants. Mirrors
     /// `Node.textContent`.
     #[napi]
-    pub fn text_content(&self, node_id: u32) -> Option<String> {
+    pub fn text_content(&self, node_id: BigInt) -> Option<String> {
         let state = self.base.0.borrow();
-        state.get_node(node_id as usize).map(|n| n.text_content())
+        state
+            .get_node(js_node_id_to_usize(&node_id))
+            .map(|n| n.text_content())
     }
 
     /// Get an attribute value, or None if missing or node is not an element.
     #[napi]
-    pub fn get_attribute(&self, node_id: u32, name: String) -> Option<String> {
+    pub fn get_attribute(&self, node_id: BigInt, name: String) -> Option<String> {
         let state = self.base.0.borrow();
-        let node = state.get_node(node_id as usize)?;
+        let node = state.get_node(js_node_id_to_usize(&node_id))?;
         let local = LocalName::from(name.as_str());
         node.attr(local).map(|s| s.to_string())
     }
@@ -339,9 +353,9 @@ impl DocHandle {
     /// All attribute (name, value) pairs on this node, or empty if not an
     /// element.
     #[napi]
-    pub fn get_attributes(&self, node_id: u32) -> Vec<AttrInit> {
+    pub fn get_attributes(&self, node_id: BigInt) -> Vec<AttrInit> {
         let state = self.base.0.borrow();
-        let Some(node) = state.get_node(node_id as usize) else {
+        let Some(node) = state.get_node(js_node_id_to_usize(&node_id)) else {
             return Vec::new();
         };
         let Some(attrs) = node.attrs() else {
@@ -364,7 +378,7 @@ impl DocHandle {
     #[napi]
     pub fn set_attribute(
         &mut self,
-        node_id: u32,
+        node_id: BigInt,
         name: String,
         value: String,
         namespace: Option<String>,
@@ -372,7 +386,7 @@ impl DocHandle {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
         mutator.set_attribute(
-            node_id as usize,
+            js_node_id_to_usize(&node_id),
             make_qual_name(&name, namespace.as_deref()),
             &value,
         );
@@ -380,27 +394,27 @@ impl DocHandle {
 
     /// Remove an attribute from an element.
     #[napi]
-    pub fn remove_attribute(&mut self, node_id: u32, name: String, namespace: Option<String>) {
+    pub fn remove_attribute(&mut self, node_id: BigInt, name: String, namespace: Option<String>) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
         mutator.clear_attribute(
-            node_id as usize,
+            js_node_id_to_usize(&node_id),
             make_qual_name(&name, namespace.as_deref()),
         );
     }
 
     /// Set a single inline style property (e.g. "color", "#ff0000").
     #[napi]
-    pub fn set_style_property(&mut self, node_id: u32, name: String, value: String) {
+    pub fn set_style_property(&mut self, node_id: BigInt, name: String, value: String) {
         let mut state = self.base.0.borrow_mut();
-        state.set_style_property(node_id as usize, &name, &value);
+        state.set_style_property(js_node_id_to_usize(&node_id), &name, &value);
     }
 
     /// Remove a single inline style property.
     #[napi]
-    pub fn remove_style_property(&mut self, node_id: u32, name: String) {
+    pub fn remove_style_property(&mut self, node_id: BigInt, name: String) {
         let mut state = self.base.0.borrow_mut();
-        state.remove_style_property(node_id as usize, &name);
+        state.remove_style_property(js_node_id_to_usize(&node_id), &name);
     }
 
     /// Read a single inline style property's serialized value, or
@@ -412,9 +426,11 @@ impl DocHandle {
     /// property name (one stylo doesn't recognize) also returns `null`
     /// rather than throwing — matching browser semantics.
     #[napi]
-    pub fn get_style_property(&self, node_id: u32, name: String) -> Option<String> {
+    pub fn get_style_property(&self, node_id: BigInt, name: String) -> Option<String> {
         let state = self.base.0.borrow();
-        let element_data = state.get_node(node_id as usize)?.element_data()?;
+        let element_data = state
+            .get_node(js_node_id_to_usize(&node_id))?
+            .element_data()?;
         let block = element_data.style_attribute.as_ref()?;
         let property_id = PropertyId::parse_enabled_for_all_content(&name).ok()?;
 
@@ -438,10 +454,10 @@ impl DocHandle {
     /// identifiers (e.g. `"color"`, `"margin-top"`). Custom properties
     /// (`--foo`) are included as-is.
     #[napi]
-    pub fn get_style_property_names(&self, node_id: u32) -> Vec<String> {
+    pub fn get_style_property_names(&self, node_id: BigInt) -> Vec<String> {
         let state = self.base.0.borrow();
         let Some(element_data) = state
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.element_data())
         else {
             return Vec::new();
@@ -462,10 +478,10 @@ impl DocHandle {
     /// to back `CSSStyleDeclaration.cssText`. Returns the empty string
     /// when the element has no inline style at all.
     #[napi]
-    pub fn get_style_attribute(&self, node_id: u32) -> String {
+    pub fn get_style_attribute(&self, node_id: BigInt) -> String {
         let state = self.base.0.borrow();
         let Some(element_data) = state
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .and_then(|n| n.element_data())
         else {
             return String::new();
@@ -483,22 +499,22 @@ impl DocHandle {
     /// Replace this node's text content. For elements this resets to a single
     /// text-node child; for text/comment nodes this updates their content.
     #[napi]
-    pub fn set_text_content(&mut self, node_id: u32, text: String) {
+    pub fn set_text_content(&mut self, node_id: BigInt, text: String) {
         let mut state = self.base.0.borrow_mut();
         // For text/comment nodes we update the existing data.
         let is_text = state
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .map(|n| n.is_text_node())
             .unwrap_or(false);
         if is_text {
             let mut mutator = state.mutate();
-            mutator.set_node_text(node_id as usize, &text);
+            mutator.set_node_text(js_node_id_to_usize(&node_id), &text);
             return;
         }
 
         // Otherwise reset element children to a single text node.
         let children: Vec<usize> = state
-            .get_node(node_id as usize)
+            .get_node(js_node_id_to_usize(&node_id))
             .map(|n| n.children.clone())
             .unwrap_or_default();
         {
@@ -507,7 +523,7 @@ impl DocHandle {
                 mutator.remove_and_drop_node(*c);
             }
             let text_id = mutator.create_text_node(&text);
-            mutator.append_children(node_id as usize, &[text_id]);
+            mutator.append_children(js_node_id_to_usize(&node_id), &[text_id]);
         }
     }
 }
@@ -516,84 +532,101 @@ impl DocHandle {
 impl DocHandle {
     /// Append `child` as the last child of `parent`. Mirrors `Node.appendChild`.
     #[napi]
-    pub fn append_child(&mut self, parent_id: u32, child_id: u32) {
+    pub fn append_child(&mut self, parent_id: BigInt, child_id: BigInt) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.append_children(parent_id as usize, &[child_id as usize]);
+        mutator.append_children(
+            js_node_id_to_usize(&parent_id),
+            &[js_node_id_to_usize(&child_id)],
+        );
     }
 
     /// Insert `node` immediately before `anchor`. If `anchor` is None, behaves
     /// like `appendChild`. Matches `Node.insertBefore`.
     #[napi]
-    pub fn insert_before(&mut self, parent_id: u32, node_id: u32, anchor_id: Option<u32>) {
+    pub fn insert_before(&mut self, parent_id: BigInt, node_id: BigInt, anchor_id: Option<BigInt>) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
         match anchor_id {
             Some(anchor) => {
-                mutator.insert_nodes_before(anchor as usize, &[node_id as usize]);
+                mutator.insert_nodes_before(
+                    js_node_id_to_usize(&anchor),
+                    &[js_node_id_to_usize(&node_id)],
+                );
             }
             None => {
-                mutator.append_children(parent_id as usize, &[node_id as usize]);
+                mutator.append_children(
+                    js_node_id_to_usize(&parent_id),
+                    &[js_node_id_to_usize(&node_id)],
+                );
             }
         }
     }
 
     /// Insert `node` immediately after `anchor`.
     #[napi]
-    pub fn insert_after(&mut self, anchor_id: u32, node_id: u32) {
+    pub fn insert_after(&mut self, anchor_id: BigInt, node_id: BigInt) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.insert_nodes_after(anchor_id as usize, &[node_id as usize]);
+        mutator.insert_nodes_after(
+            js_node_id_to_usize(&anchor_id),
+            &[js_node_id_to_usize(&node_id)],
+        );
     }
 
     /// Detach a node from its parent. The node is kept around (still
     /// addressable by id) so JS wrappers stay valid. Use `drop_node` to
     /// release storage.
     #[napi]
-    pub fn remove(&mut self, node_id: u32) {
+    pub fn remove(&mut self, node_id: BigInt) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.remove_node(node_id as usize);
+        mutator.remove_node(js_node_id_to_usize(&node_id));
     }
 
     /// Detach and free the node.
     #[napi]
-    pub fn drop_node(&mut self, node_id: u32) {
+    pub fn drop_node(&mut self, node_id: BigInt) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.remove_and_drop_node(node_id as usize);
+        mutator.remove_and_drop_node(js_node_id_to_usize(&node_id));
     }
 
     /// Replace `anchor` with `node` in its parent.
     #[napi]
-    pub fn replace_with(&mut self, anchor_id: u32, node_id: u32) {
+    pub fn replace_with(&mut self, anchor_id: BigInt, node_id: BigInt) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.replace_node_with(anchor_id as usize, &[node_id as usize]);
+        mutator.replace_node_with(
+            js_node_id_to_usize(&anchor_id),
+            &[js_node_id_to_usize(&node_id)],
+        );
     }
 
     /// Replace this element's inner HTML.
     #[napi]
-    pub fn set_inner_html(&mut self, node_id: u32, html: String) {
+    pub fn set_inner_html(&mut self, node_id: BigInt, html: String) {
         let mut state = self.base.0.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.set_inner_html(node_id as usize, &html);
+        mutator.set_inner_html(js_node_id_to_usize(&node_id), &html);
     }
 
     /// Serialize this node (including the node itself) to HTML. Mirrors
     /// `Element.outerHTML`. Returns None for unknown nodes.
     #[napi]
-    pub fn outer_html(&self, node_id: u32) -> Option<String> {
+    pub fn outer_html(&self, node_id: BigInt) -> Option<String> {
         let state = self.base.0.borrow();
-        state.get_node(node_id as usize).map(|n| n.outer_html())
+        state
+            .get_node(js_node_id_to_usize(&node_id))
+            .map(|n| n.outer_html())
     }
 
     /// Serialize the children of this node to HTML, without the node's own
     /// open/close tags. Mirrors `Element.innerHTML`.
     #[napi]
-    pub fn inner_html(&self, node_id: u32) -> Option<String> {
+    pub fn inner_html(&self, node_id: BigInt) -> Option<String> {
         let state = self.base.0.borrow();
-        let node = state.get_node(node_id as usize)?;
+        let node = state.get_node(js_node_id_to_usize(&node_id))?;
         let mut out = String::new();
         for &child_id in &node.children {
             if let Some(child) = state.get_node(child_id) {
@@ -621,22 +654,22 @@ impl DocHandle {
     /// or None if no element matches. Pre-order traversal from the
     /// document root.
     #[napi]
-    pub fn find_first_by_local_name(&self, name: String) -> Option<u32> {
+    pub fn find_first_by_local_name(&self, name: String) -> Option<u64> {
         let state = self.base.0.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u64)
     }
 
     /// All element ids matching the given local tag name, in tree order.
     /// Mirrors `getElementsByTagName(name)` minus the live-collection
     /// semantics — JS gets a snapshot.
     #[napi]
-    pub fn find_all_by_local_name(&self, name: String) -> Vec<u32> {
+    pub fn find_all_by_local_name(&self, name: String) -> Vec<u64> {
         let state = self.base.0.borrow();
         let needle = LocalName::from(name.as_str());
         dfs_collect(&state, 0, |n| n.data.is_element_with_tag_name(&needle))
             .into_iter()
-            .map(|id| id as u32)
+            .map(|id| id as u64)
             .collect()
     }
 
@@ -644,14 +677,14 @@ impl DocHandle {
     /// subtree rooted at `root_id` (exclusive — `root_id` itself is not
     /// checked). Pre-order DFS from `root_id`'s children.
     #[napi]
-    pub fn find_all_by_local_name_in(&self, root_id: u32, name: String) -> Vec<u32> {
+    pub fn find_all_by_local_name_in(&self, root_id: BigInt, name: String) -> Vec<u64> {
         let state = self.base.0.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_collect_children(&state, root_id as usize, |n| {
+        dfs_collect_children(&state, js_node_id_to_usize(&root_id), |n| {
             n.data.is_element_with_tag_name(&needle)
         })
         .into_iter()
-        .map(|id| id as u32)
+        .map(|id| id as u64)
         .collect()
     }
 
@@ -659,57 +692,59 @@ impl DocHandle {
     /// i.e. every descendant element regardless of tag. Backs
     /// `element.getElementsByTagName("*")`.
     #[napi]
-    pub fn find_all_elements_in(&self, root_id: u32) -> Vec<u32> {
+    pub fn find_all_elements_in(&self, root_id: BigInt) -> Vec<u64> {
         let state = self.base.0.borrow();
-        dfs_collect_children(&state, root_id as usize, |n| {
+        dfs_collect_children(&state, js_node_id_to_usize(&root_id), |n| {
             n.data.downcast_element().is_some()
         })
         .into_iter()
-        .map(|id| id as u32)
+        .map(|id| id as u64)
         .collect()
     }
 
     /// All element ids whose `class` attribute contains `class_name` as
     /// one of its whitespace-separated tokens. Document-scoped.
     #[napi]
-    pub fn find_all_by_class_name(&self, class_name: String) -> Vec<u32> {
+    pub fn find_all_by_class_name(&self, class_name: String) -> Vec<u64> {
         let state = self.base.0.borrow();
         let needle = class_name;
         dfs_collect(&state, 0, |n| node_has_class(n, &needle))
             .into_iter()
-            .map(|id| id as u32)
+            .map(|id| id as u64)
             .collect()
     }
 
     /// All element ids whose `class` attribute contains `class_name`,
     /// scoped to the subtree rooted at `root_id` (exclusive).
     #[napi]
-    pub fn find_all_by_class_name_in(&self, root_id: u32, class_name: String) -> Vec<u32> {
+    pub fn find_all_by_class_name_in(&self, root_id: BigInt, class_name: String) -> Vec<u64> {
         let state = self.base.0.borrow();
         let needle = class_name;
-        dfs_collect_children(&state, root_id as usize, |n| node_has_class(n, &needle))
-            .into_iter()
-            .map(|id| id as u32)
-            .collect()
+        dfs_collect_children(&state, js_node_id_to_usize(&root_id), |n| {
+            node_has_class(n, &needle)
+        })
+        .into_iter()
+        .map(|id| id as u64)
+        .collect()
     }
 
     /// `<html>` element id. Uses the `local_name!` macro for a zero-cost
     /// atom comparison. Returns None for documents without an `<html>`
     /// root (unusual but possible during partial parsing).
     #[napi]
-    pub fn html_element_id(&self) -> Option<u32> {
+    pub fn html_element_id(&self) -> Option<u64> {
         self.find_first_static(local_name!("html"))
     }
 
     /// `<head>` element id, or None if missing.
     #[napi]
-    pub fn head_element_id(&self) -> Option<u32> {
+    pub fn head_element_id(&self) -> Option<u64> {
         self.find_first_static(local_name!("head"))
     }
 
     /// `<body>` element id, or None if missing.
     #[napi]
-    pub fn body_element_id(&self) -> Option<u32> {
+    pub fn body_element_id(&self) -> Option<u64> {
         self.find_first_static(local_name!("body"))
     }
 }
@@ -718,9 +753,9 @@ impl DocHandle {
     /// Shared fast-path for `local_name!`-constructed atoms. Bypasses the
     /// `LocalName::from(&str)` allocation that `find_first_by_local_name`
     /// has to do for the runtime-string case.
-    fn find_first_static(&self, needle: LocalName) -> Option<u32> {
+    fn find_first_static(&self, needle: LocalName) -> Option<u64> {
         let state = self.base.0.borrow();
-        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u64)
     }
 }
 

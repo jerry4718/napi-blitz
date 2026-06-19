@@ -13,6 +13,7 @@
 use anyrender_vello::VelloWindowRenderer;
 use blitz::shell::{BlitzApplication, View};
 use blitz::traits::shell::DummyShellProvider;
+use napi::bindgen_prelude::BigInt;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop,
@@ -107,7 +108,7 @@ impl<'a> ApplicationHandler for JsAppHandler<'a> {
             if let Some(bridge) = self.bridge {
                 let result = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSE.to_string(),
-                    window_doc_id: doc_id as u32,
+                    window_doc_id: BigInt::from(doc_id as u64),
                     cancelable: true,
                 });
                 if result.default_prevented {
@@ -140,7 +141,7 @@ impl<'a> ApplicationHandler for JsAppHandler<'a> {
             if let Some(bridge) = self.bridge {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
-                    window_doc_id: doc_id as u32,
+                    window_doc_id: BigInt::from(doc_id as u64),
                     cancelable: false,
                 });
             }

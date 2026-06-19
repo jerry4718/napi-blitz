@@ -98,30 +98,30 @@ export declare class DocHandle {
    */
   registerFont(data: Uint8Array, options?: RegisterFontOptions | undefined | null): number
   /** The id of the root node (always 0 for blitz, but expose it for JS). */
-  rootNodeId(): number
+  rootNodeId(): bigint
   /** The id of `<html>` (the root *element*). */
-  rootElementId(): number
+  rootElementId(): bigint
   /**
    * Update the set of node ids JS currently has live wrappers for. Rust
    * uses this to short-circuit dispatch when no listener could exist.
    */
-  setListenedNodes(ids: Array<number>): void
+  setListenedNodes(ids: Array<bigint>): void
   /**
    * Add a single node id to the listened set. Cheaper than calling
    * `set_listened_nodes` for incremental subscription updates.
    */
-  addListenedNode(id: number): void
+  addListenedNode(id: bigint): void
   /** Remove a node id from the listened set. */
-  removeListenedNode(id: number): void
+  removeListenedNode(id: bigint): void
   /**
    * Replace document content from an HTML string. Useful for tests and
    * initial bootstrapping when `base_html` was not enough.
    */
   loadHtml(html: string): void
   /** Find a single node by CSS selector. Returns its node id or null. */
-  querySelector(selector: string): number | null
+  querySelector(selector: string): bigint | null
   /** Find all nodes by CSS selector. Returns a list of node ids. */
-  querySelectorAll(selector: string): Array<number>
+  querySelectorAll(selector: string): Array<bigint>
   /**
    * Element-scoped `querySelector`: first match in the subtree rooted at
    * `root_id` (exclusive — the root element itself is not a candidate,
@@ -131,14 +131,14 @@ export declare class DocHandle {
    * the root — bypassing blitz's `query_selector_raw`, which is hardcoded
    * to `self.root_node()`.
    */
-  querySelectorIn(rootId: number, selector: string): number | null
+  querySelectorIn(rootId: bigint, selector: string): bigint | null
   /**
    * Element-scoped `querySelectorAll`: all matches in the subtree rooted
    * at `root_id` (exclusive). Same approach as `query_selector_in`.
    */
-  querySelectorAllIn(rootId: number, selector: string): Array<number>
+  querySelectorAllIn(rootId: bigint, selector: string): Array<bigint>
   /** Lookup by `id=` attribute, like `document.getElementById`. */
-  getElementById(id: string): number | null
+  getElementById(id: string): bigint | null
   /**
    * Find the document's `<title>` element id, or None if no title
    * element exists in the tree. Uses the same pre-order DFS as the
@@ -146,20 +146,20 @@ export declare class DocHandle {
    * `querySelector("title")` which dispatches through the CSS
    * selector engine.
    */
-  findTitleNodeId(): number | null
+  findTitleNodeId(): bigint | null
   /** True iff the given node id currently exists in the document. */
-  hasNode(id: number): boolean
+  hasNode(id: bigint): boolean
   /**
    * Create an element node. Returns its node id. The element is detached
    * (no parent) until inserted.
    */
-  createElement(localName: string, namespace?: string | undefined | null, attrs?: Array<AttrInit> | undefined | null): number
+  createElement(localName: string, namespace?: string | undefined | null, attrs?: Array<AttrInit> | undefined | null): bigint
   /** Create a text node with the given content. */
-  createTextNode(text: string): number
+  createTextNode(text: string): bigint
   /** Create an empty comment node. */
-  createCommentNode(): number
+  createCommentNode(): bigint
   /** Deep-clone an existing node and return the new node's id. */
-  deepCloneNode(nodeId: number): number
+  deepCloneNode(nodeId: bigint): bigint
   /**
    * Shallow-clone a node: same data (tag name, attributes, text
    * payload, etc.) but no children. The new node has no parent.
@@ -167,49 +167,49 @@ export declare class DocHandle {
    *
    * Cloning a missing nodeId returns 0 (the document root) — the
    * caller should make sure the source id is valid first. The
-   * alternative (returning `Option<u32>`) noisily complicates the
+   * alternative (returning `Option<u64>`) noisily complicates the
    * JS-side cloneNode wrapper for a case JS code can never trigger.
    */
-  shallowCloneNode(nodeId: number): number
+  shallowCloneNode(nodeId: bigint): bigint
   /** Parent node id, if any. */
-  parentId(nodeId: number): number | null
+  parentId(nodeId: bigint): bigint | null
   /** First child id, if any. */
-  firstChildId(nodeId: number): number | null
+  firstChildId(nodeId: bigint): bigint | null
   /** Last child id, if any. */
-  lastChildId(nodeId: number): number | null
+  lastChildId(nodeId: bigint): bigint | null
   /** All children, in document order. */
-  childIds(nodeId: number): Array<number>
+  childIds(nodeId: bigint): Array<bigint>
   /** Next sibling id, if any. */
-  nextSiblingId(nodeId: number): number | null
+  nextSiblingId(nodeId: bigint): bigint | null
   /** Previous sibling id, if any. */
-  previousSiblingId(nodeId: number): number | null
+  previousSiblingId(nodeId: bigint): bigint | null
   /** DOM-style `nodeType` (1=Element, 3=Text, 8=Comment, 9=Document). */
-  nodeType(nodeId: number): number
+  nodeType(nodeId: bigint): number
   /**
    * Local element tag name (lowercased), e.g. "div". Returns None for
    * non-element nodes.
    */
-  tagName(nodeId: number): string | null
+  tagName(nodeId: bigint): string | null
   /**
    * Concatenated text content of this node and its descendants. Mirrors
    * `Node.textContent`.
    */
-  textContent(nodeId: number): string | null
+  textContent(nodeId: bigint): string | null
   /** Get an attribute value, or None if missing or node is not an element. */
-  getAttribute(nodeId: number, name: string): string | null
+  getAttribute(nodeId: bigint, name: string): string | null
   /**
    * All attribute (name, value) pairs on this node, or empty if not an
    * element.
    */
-  getAttributes(nodeId: number): Array<AttrInit>
+  getAttributes(nodeId: bigint): Array<AttrInit>
   /** Set an attribute on an element. */
-  setAttribute(nodeId: number, name: string, value: string, namespace?: string | undefined | null): void
+  setAttribute(nodeId: bigint, name: string, value: string, namespace?: string | undefined | null): void
   /** Remove an attribute from an element. */
-  removeAttribute(nodeId: number, name: string, namespace?: string | undefined | null): void
+  removeAttribute(nodeId: bigint, name: string, namespace?: string | undefined | null): void
   /** Set a single inline style property (e.g. "color", "#ff0000"). */
-  setStyleProperty(nodeId: number, name: string, value: string): void
+  setStyleProperty(nodeId: bigint, name: string, value: string): void
   /** Remove a single inline style property. */
-  removeStyleProperty(nodeId: number, name: string): void
+  removeStyleProperty(nodeId: bigint, name: string): void
   /**
    * Read a single inline style property's serialized value, or
    * `null` if the property is not set on this element.
@@ -220,7 +220,7 @@ export declare class DocHandle {
    * property name (one stylo doesn't recognize) also returns `null`
    * rather than throwing — matching browser semantics.
    */
-  getStyleProperty(nodeId: number, name: string): string | null
+  getStyleProperty(nodeId: bigint, name: string): string | null
   /**
    * List the long-hand names of every property currently in this
    * element's inline style block.
@@ -230,93 +230,93 @@ export declare class DocHandle {
    * identifiers (e.g. `"color"`, `"margin-top"`). Custom properties
    * (`--foo`) are included as-is.
    */
-  getStylePropertyNames(nodeId: number): Array<string>
+  getStylePropertyNames(nodeId: bigint): Array<string>
   /**
    * Read the entire `style` attribute as a single CSS string. Used
    * to back `CSSStyleDeclaration.cssText`. Returns the empty string
    * when the element has no inline style at all.
    */
-  getStyleAttribute(nodeId: number): string
+  getStyleAttribute(nodeId: bigint): string
   /**
    * Replace this node's text content. For elements this resets to a single
    * text-node child; for text/comment nodes this updates their content.
    */
-  setTextContent(nodeId: number, text: string): void
+  setTextContent(nodeId: bigint, text: string): void
   /** Append `child` as the last child of `parent`. Mirrors `Node.appendChild`. */
-  appendChild(parentId: number, childId: number): void
+  appendChild(parentId: bigint, childId: bigint): void
   /**
    * Insert `node` immediately before `anchor`. If `anchor` is None, behaves
    * like `appendChild`. Matches `Node.insertBefore`.
    */
-  insertBefore(parentId: number, nodeId: number, anchorId?: number | undefined | null): void
+  insertBefore(parentId: bigint, nodeId: bigint, anchorId?: bigint | undefined | null): void
   /** Insert `node` immediately after `anchor`. */
-  insertAfter(anchorId: number, nodeId: number): void
+  insertAfter(anchorId: bigint, nodeId: bigint): void
   /**
    * Detach a node from its parent. The node is kept around (still
    * addressable by id) so JS wrappers stay valid. Use `drop_node` to
    * release storage.
    */
-  remove(nodeId: number): void
+  remove(nodeId: bigint): void
   /** Detach and free the node. */
-  dropNode(nodeId: number): void
+  dropNode(nodeId: bigint): void
   /** Replace `anchor` with `node` in its parent. */
-  replaceWith(anchorId: number, nodeId: number): void
+  replaceWith(anchorId: bigint, nodeId: bigint): void
   /** Replace this element's inner HTML. */
-  setInnerHtml(nodeId: number, html: string): void
+  setInnerHtml(nodeId: bigint, html: string): void
   /**
    * Serialize this node (including the node itself) to HTML. Mirrors
    * `Element.outerHTML`. Returns None for unknown nodes.
    */
-  outerHtml(nodeId: number): string | null
+  outerHtml(nodeId: bigint): string | null
   /**
    * Serialize the children of this node to HTML, without the node's own
    * open/close tags. Mirrors `Element.innerHTML`.
    */
-  innerHtml(nodeId: number): string | null
+  innerHtml(nodeId: bigint): string | null
   /**
    * First element id matching the given local tag name (lowercase),
    * or None if no element matches. Pre-order traversal from the
    * document root.
    */
-  findFirstByLocalName(name: string): number | null
+  findFirstByLocalName(name: string): bigint | null
   /**
    * All element ids matching the given local tag name, in tree order.
    * Mirrors `getElementsByTagName(name)` minus the live-collection
    * semantics — JS gets a snapshot.
    */
-  findAllByLocalName(name: string): Array<number>
+  findAllByLocalName(name: string): Array<bigint>
   /**
    * All element ids matching the given local tag name, scoped to the
    * subtree rooted at `root_id` (exclusive — `root_id` itself is not
    * checked). Pre-order DFS from `root_id`'s children.
    */
-  findAllByLocalNameIn(rootId: number, name: string): Array<number>
+  findAllByLocalNameIn(rootId: bigint, name: string): Array<bigint>
   /**
    * All element ids in the subtree rooted at `root_id` (exclusive),
    * i.e. every descendant element regardless of tag. Backs
    * `element.getElementsByTagName("*")`.
    */
-  findAllElementsIn(rootId: number): Array<number>
+  findAllElementsIn(rootId: bigint): Array<bigint>
   /**
    * All element ids whose `class` attribute contains `class_name` as
    * one of its whitespace-separated tokens. Document-scoped.
    */
-  findAllByClassName(className: string): Array<number>
+  findAllByClassName(className: string): Array<bigint>
   /**
    * All element ids whose `class` attribute contains `class_name`,
    * scoped to the subtree rooted at `root_id` (exclusive).
    */
-  findAllByClassNameIn(rootId: number, className: string): Array<number>
+  findAllByClassNameIn(rootId: bigint, className: string): Array<bigint>
   /**
    * `<html>` element id. Uses the `local_name!` macro for a zero-cost
    * atom comparison. Returns None for documents without an `<html>`
    * root (unusual but possible during partial parsing).
    */
-  htmlElementId(): number | null
+  htmlElementId(): bigint | null
   /** `<head>` element id, or None if missing. */
-  headElementId(): number | null
+  headElementId(): bigint | null
   /** `<body>` element id, or None if missing. */
-  bodyElementId(): number | null
+  bodyElementId(): bigint | null
 }
 
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */
@@ -328,7 +328,7 @@ export declare class Window {
    * uses this to map app-event payloads back to the right `Window`
    * wrapper. Stable for the lifetime of the window.
    */
-  get docId(): number
+  get docId(): bigint
 }
 
 /**
@@ -352,7 +352,7 @@ export interface AppEventPayload {
    * `BaseDocument::id` of the window the event refers to. JS uses
    * this to map back to the right `Window` wrapper.
    */
-  windowDocId: number
+  windowDocId: bigint
   /**
    * Whether the JS `Event` constructed from this payload should be
    * cancelable. Only `close` is cancelable; `closed` is not.
@@ -406,9 +406,9 @@ export interface EventPayload {
   /** Event name in DOM-spec lowercased form, e.g. "click", "pointerdown". */
   eventType: string
   /** node id of the original event target. */
-  target: number
+  target: bigint
   /** node id chain, target first, root last. */
-  chain: Array<number>
+  chain: Array<bigint>
   /** `event.bubbles` */
   bubbles: boolean
   /** `event.cancelable` */
