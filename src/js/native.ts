@@ -24,7 +24,8 @@ import type {
   PointerData,
   PumpResult,
   WheelData,
-} from "../../native/index";
+  Window as NativeWindow,
+} from "../../native";
 
 interface NativeModuleShape {
   BlitzApp: typeof NativeBlitzApp;
@@ -54,4 +55,5 @@ export type {
   WheelData,
   NativeBlitzApp,
   NativeDocHandle,
+  NativeWindow as Window,
 };

@@ -18,6 +18,7 @@ use napi_derive::napi;
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
 use crate::doc::{DocHandle, make_window_document};
+use crate::window::Window;
 
 /// Result of one `pumpAppEvents` call.
 #[napi(object)]
@@ -34,6 +35,12 @@ pub struct PumpResult {
 pub struct BlitzApp {
     event_loop: EventLoop,
     application: BlitzApplication<VelloWindowRenderer>,
+    /// Window configs that have been requested via `openWindow` but not yet
+    /// handed to the underlying `BlitzApplication`. We hold them ourselves so
+    /// `closeWindow` can synchronously cancel a window that has not been
+    /// initialised yet (winit's `can_create_surfaces` only runs during
+    /// `pumpAppEvents`). Each entry is `(doc_id, config)`.
+    pending: Vec<(usize, WindowConfig<VelloWindowRenderer>)>,
 }
 
 #[napi]
@@ -47,6 +54,7 @@ impl BlitzApp {
         Self {
             event_loop,
             application,
+            pending: Vec::new(),
         }
     }
 
@@ -54,17 +62,51 @@ impl BlitzApp {
     /// only be attached to one window. The JS DocHandle keeps working after
     /// this call (it shares state with the window via Rc<RefCell<...>>), so
     /// JS can keep mutating the DOM after `openWindow`.
+    ///
+    /// The returned `Window` carries the `doc_id` of the attached document,
+    /// which we use as the napi-side window identifier. Note that winit's
+    /// real `WindowId` is only minted on the next `pump_app_events` call,
+    /// so the doc_id is what we key on for synchronous open/close.
     #[napi]
-    pub fn open_window(&mut self, doc: &mut DocHandle) -> Result<()> {
+    pub fn open_window(&mut self, doc: &mut DocHandle) -> Result<Window> {
         if !doc.mark_attached() {
             return Err(Error::from_reason(
                 "DocHandle has already been attached to a window".to_string(),
             ));
         }
+        let doc_id = doc.doc_id();
         let window_doc = make_window_document(doc);
+        let config = WindowConfig::new(window_doc, VelloWindowRenderer::new());
+        self.pending.push((doc_id, config));
+        Ok(Window {
+            doc_id,
+            closed: false,
+        })
+    }
+
+    /// Synchronously close the given window. Removes it from the
+    /// application's window map (or from our pending queue if it has not
+    /// been initialised yet). The window stops painting and receiving
+    /// events as soon as this call returns.
+    ///
+    /// This is intentionally not GC-driven: dropping the JS `Window` object
+    /// does not close the OS window. Callers must invoke this explicitly.
+    #[napi]
+    pub fn close_window(&mut self, window: &mut Window) {
+        if window.closed {
+            return;
+        }
+        let doc_id = window.doc_id;
+
+        // Drop matching pending config (window opened but never pumped).
+        self.pending.retain(|(id, _)| *id != doc_id);
+
+        // Remove from initialised windows.
         self.application
-            .add_window(WindowConfig::new(window_doc, VelloWindowRenderer::new()));
-        Ok(())
+            .windows
+            .retain(|_, view| view.doc.id() != doc_id);
+
+        window.closed = true;
     }
 
     /// Pump pending winit events for at most `millis` milliseconds. JS should
@@ -72,6 +114,14 @@ impl BlitzApp {
     /// renderer and event handling.
     #[napi]
     pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
+        // Hand any windows that survived `closeWindow` over to the
+        // BlitzApplication. After this they live in `application.windows`
+        // (after the next `can_create_surfaces`) and synchronous close is
+        // routed through `application.windows.retain(...)`.
+        for (_doc_id, config) in self.pending.drain(..) {
+            self.application.add_window(config);
+        }
+
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
         match self
             .event_loop

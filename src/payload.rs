@@ -102,6 +102,7 @@ pub struct ImeData {
 
 /// JS reports back per-event how dispatch went.
 #[napi(object)]
+#[derive(Default)]
 pub struct DispatchResult {
     /// JS called `event.preventDefault()` somewhere.
     pub default_prevented: bool,
@@ -111,14 +112,4 @@ pub struct DispatchResult {
     pub propagation_stopped: bool,
     /// JS wants a redraw; usually because a listener mutated the DOM.
     pub request_redraw: bool,
-}
-
-impl Default for DispatchResult {
-    fn default() -> Self {
-        Self {
-            default_prevented: false,
-            propagation_stopped: false,
-            request_redraw: false,
-        }
-    }
 }

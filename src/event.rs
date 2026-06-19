@@ -53,7 +53,9 @@ impl JsBridge {
             // the document itself may want to observe events.
             return true;
         }
-        chain.iter().any(|id| self.listened_nodes.contains(&(*id as u32)))
+        chain
+            .iter()
+            .any(|id| self.listened_nodes.contains(&(*id as u32)))
     }
 }
 
@@ -172,7 +174,7 @@ fn serialize_pointer(p: &BlitzPointerEvent) -> PointerData {
         tilt_x: p.details.tilt_x as i32,
         tilt_y: p.details.tilt_y as i32,
         twist: p.details.twist as u32,
-        mods_bits: p.mods.bits() as u32,
+        mods_bits: p.mods.bits(),
     }
 }
 
@@ -193,7 +195,7 @@ fn wheel_from(data: &DomEventData) -> Option<WheelData> {
         client_x: w.coords.client_x as f64,
         client_y: w.coords.client_y as f64,
         buttons: w.buttons.bits() as u32,
-        mods_bits: w.mods.bits() as u32,
+        mods_bits: w.mods.bits(),
     })
 }
 
@@ -209,7 +211,7 @@ fn key_from(data: &DomEventData) -> Option<KeyData> {
         key: k.key.to_string(),
         code: k.code.to_string(),
         location: k.location as u32,
-        mods_bits: k.modifiers.bits() as u32,
+        mods_bits: k.modifiers.bits(),
         repeat: k.is_auto_repeating,
         is_composing: k.is_composing,
         state: match k.state {

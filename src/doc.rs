@@ -10,16 +10,11 @@
 //! All DOM mutation methods on `DocHandle` are flat in JS: they take node ids
 //! (numbers) as arguments. Element classes live in the JS layer.
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::Arc,
-    task::Context as TaskContext,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc, task::Context as TaskContext};
 
 use blitz::{
     dom::{
-        BaseDocument, BULLET_FONT, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
+        BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
         DocumentConfig, EventDriver, FontContext,
     },
     html::{DocumentHtmlParser, HtmlProvider},
@@ -157,9 +152,7 @@ impl DocHandle {
         let ua_stylesheets = config
             .ua_stylesheets
             .unwrap_or_else(|| vec![DEFAULT_CSS.to_string()]);
-        let base_html = config
-            .base_html
-            .unwrap_or_else(|| DEFAULT_HTML.to_string());
+        let base_html = config.base_html.unwrap_or_else(|| DEFAULT_HTML.to_string());
 
         let doc_config = DocumentConfig {
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
@@ -176,9 +169,8 @@ impl DocHandle {
         }
         base.resolve(0.0);
 
-        let callback_ref: FunctionRef<EventPayload, DispatchResult> = config
-            .on_dispatch
-            .create_ref()?;
+        let callback_ref: FunctionRef<EventPayload, DispatchResult> =
+            config.on_dispatch.create_ref()?;
         let bridge = JsBridge::new(env, callback_ref);
 
         let state = DocState { base, bridge };
@@ -199,6 +191,12 @@ impl DocHandle {
             self.moved_into_window = true;
             true
         }
+    }
+
+    /// blitz-internal `BaseDocument` id. Used by `BlitzApp` to route window
+    /// open/close to the right `View`.
+    pub(crate) fn doc_id(&self) -> usize {
+        self.state.0.borrow().base.id()
     }
 
     /// Recompute style + layout. Called from JS after batches of mutations or

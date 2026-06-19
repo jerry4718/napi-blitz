@@ -309,7 +309,10 @@ impl DocHandle {
     pub fn remove_attribute(&mut self, node_id: u32, name: String, namespace: Option<String>) {
         let mut state = self.state.0.borrow_mut();
         let mut mutator = state.base.mutate();
-        mutator.clear_attribute(node_id as usize, make_qual_name(&name, namespace.as_deref()));
+        mutator.clear_attribute(
+            node_id as usize,
+            make_qual_name(&name, namespace.as_deref()),
+        );
     }
 
     /// Set a single inline style property (e.g. "color", "#ff0000").

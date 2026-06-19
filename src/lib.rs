@@ -19,7 +19,9 @@ mod doc;
 mod event;
 mod ops;
 mod payload;
+mod window;
 
 pub use app::BlitzApp;
 pub use doc::{DocHandle, DocHandleConfig};
 pub use payload::*;
+pub use window::Window;

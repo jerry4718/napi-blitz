@@ -14,7 +14,7 @@ import type {
   WheelData,
   InputData,
   ImeData,
-} from "./native";
+} from "../native";
 
 /** Forward declaration to avoid an import cycle with `document.ts`. */
 interface DocumentLike {
