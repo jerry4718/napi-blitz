@@ -16,7 +16,12 @@
 //! on each `inner()` / `inner_mut()` call and releasing immediately, so
 //! no borrow spans across the JS callback boundary.
 
-use std::{cell::RefCell, rc::Rc, sync::Arc, task::Context as TaskContext};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::Arc,
+    task::Context as TaskContext,
+};
 
 use blitz::{
     dom::{
@@ -100,14 +105,29 @@ pub struct RegisterFontOptions {
     pub stretch: Option<String>,
 }
 
-/// `Rc<RefCell<BaseDocument>>` — the document tree, shared between
-/// `DocHandle` (JS side) and `WindowDocument` (blitz window side).
+/// `Rc<RefCell<BaseDocument>>` plus a host-dirty flag — the document tree,
+/// shared between `DocHandle` (JS side) and `WindowDocument` (blitz window
+/// side).
 #[derive(Clone)]
-pub struct SharedBaseDoc(pub Rc<RefCell<BaseDocument>>);
+pub struct SharedBaseDoc {
+    pub doc: Rc<RefCell<BaseDocument>>,
+    host_dirty: Rc<Cell<bool>>,
+}
 
 impl SharedBaseDoc {
     pub fn new(base: BaseDocument) -> Self {
-        Self(Rc::new(RefCell::new(base)))
+        Self {
+            doc: Rc::new(RefCell::new(base)),
+            host_dirty: Rc::new(Cell::new(false)),
+        }
+    }
+
+    pub fn mark_host_dirty(&self) {
+        self.host_dirty.set(true);
+    }
+
+    pub fn take_host_dirty(&self) -> bool {
+        self.host_dirty.replace(false)
     }
 }
 
@@ -139,12 +159,12 @@ impl WindowDocument {
 
 impl BlitzDocument for WindowDocument {
     fn inner(&self) -> DocGuard<'_> {
-        let borrow = self.base.0.borrow();
+        let borrow = self.base.doc.borrow();
         DocGuard::RefCell(borrow)
     }
 
     fn inner_mut(&mut self) -> DocGuardMut<'_> {
-        let borrow = self.base.0.borrow_mut();
+        let borrow = self.base.doc.borrow_mut();
         DocGuardMut::RefCell(borrow)
     }
 
@@ -168,11 +188,11 @@ impl BlitzDocument for WindowDocument {
     }
 
     fn poll(&mut self, _task_context: Option<TaskContext>) -> bool {
-        false
+        self.base.take_host_dirty()
     }
 
     fn id(&self) -> usize {
-        self.base.0.borrow().id()
+        self.base.doc.borrow().id()
     }
 }
 
@@ -289,14 +309,14 @@ impl DocHandle {
     /// blitz-internal `BaseDocument` id. Used by `BlitzApp` to route window
     /// open/close to the right `View`.
     pub(crate) fn doc_id(&self) -> usize {
-        self.base.0.borrow().id()
+        self.base.doc.borrow().id()
     }
 
     /// Recompute style + layout. Called from JS after batches of mutations or
     /// before painting. `time_ms` drives CSS animations.
     #[napi]
     pub fn resolve(&mut self, time_ms: f64) {
-        self.base.0.borrow_mut().resolve(time_ms);
+        self.base.doc.borrow_mut().resolve(time_ms);
     }
 
     /// Register a font from a raw byte buffer.
@@ -375,13 +395,13 @@ impl DocHandle {
     /// The id of the root node (always 0 for blitz, but expose it for JS).
     #[napi]
     pub fn root_node_id(&self) -> u64 {
-        self.base.0.borrow().root_node().id as u64
+        self.base.doc.borrow().root_node().id as u64
     }
 
     /// The id of `<html>` (the root *element*).
     #[napi]
     pub fn root_element_id(&self) -> u64 {
-        self.base.0.borrow().root_element().id as u64
+        self.base.doc.borrow().root_element().id as u64
     }
 
     /// Update the set of node ids JS currently has live wrappers for. Rust

@@ -290,6 +290,12 @@ impl BlitzApp {
             .any(|view| view.doc.id() == doc_id)
     }
 
+    fn poll_live_views(&mut self) {
+        for view in self.application.windows.values_mut() {
+            view.poll();
+        }
+    }
+
     fn flush_closing_windows(&mut self) {
         if self.closing_doc_ids.is_empty() {
             return;
@@ -333,6 +339,11 @@ impl BlitzApp {
     /// renderer and event handling.
     #[napi]
     pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
+        // Give host-driven DOM mutations from the previous JS turn a chance to
+        // flow through Blitz's normal `View::poll -> Document::poll ->
+        // request_redraw` path before winit waits for more events.
+        self.poll_live_views();
+
         // Hand any windows that survived `closeWindow` over to the
         // BlitzApplication. After this they live in
         // `application.pending_windows` until the next handler hook
@@ -378,6 +389,9 @@ impl BlitzApp {
         };
         let status = self.event_loop.pump_app_events(timeout, &mut handler);
         self.flush_closing_windows();
+        // Also catch synchronous mutations that happened inside native event
+        // callbacks before returning to JS.
+        self.poll_live_views();
 
         match status {
             PumpStatus::Continue => PumpResult {
