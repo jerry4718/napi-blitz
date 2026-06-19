@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import { BlitzApp } from "../dist/index.js";
+import { BlitzApp } from "../packages/napi-blitz/dist/index.js";
 
 test("window surface dimensions are validated before reaching winit", (t) => {
   const app = BlitzApp.create();

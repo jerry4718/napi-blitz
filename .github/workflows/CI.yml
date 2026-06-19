@@ -185,7 +185,7 @@ jobs:
         if: matrix.settings.target != 'wasm32-wasip1-threads'
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: 'native/*.node'
+          path: 'packages/*/native/*.node'
           if-no-files-found: error
 
       - name: Upload artifact
@@ -193,7 +193,7 @@ jobs:
         if: matrix.settings.target == 'wasm32-wasip1-threads'
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: 'native/*.wasm'
+          path: 'packages/*/native/*.wasm'
           if-no-files-found: error
   build-freebsd:
     runs-on: ubuntu-22.04
@@ -242,7 +242,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: bindings-freebsd
-          path: native/${{ env.APP_NAME }}.*.node
+          path: packages/*/native/*.node
           if-no-files-found: error
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
@@ -284,9 +284,12 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: native
+          path: downloaded-native
       - name: Normalize native artifact path
-        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        run: |
+          mkdir -p packages/napi-blitz/native packages/wasm-blitz/native
+          find downloaded-native -type f \( -name 'napi-blitz.*.node' -o -name 'napi-blitz.*.wasm' \) -exec mv {} packages/napi-blitz/native/ \;
+          find downloaded-native -type f \( -name 'wasm-blitz.*.node' -o -name 'wasm-blitz.*.wasm' \) -exec mv {} packages/wasm-blitz/native/ \;
         shell: bash
       - name: Build TypeScript output
         run: pnpm run build:ts
@@ -352,9 +355,12 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-${{ matrix.target }}
-          path: native
+          path: downloaded-native
       - name: Normalize native artifact path
-        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        run: |
+          mkdir -p packages/napi-blitz/native packages/wasm-blitz/native
+          find downloaded-native -type f \( -name 'napi-blitz.*.node' -o -name 'napi-blitz.*.wasm' \) -exec mv {} packages/napi-blitz/native/ \;
+          find downloaded-native -type f \( -name 'wasm-blitz.*.node' -o -name 'wasm-blitz.*.wasm' \) -exec mv {} packages/wasm-blitz/native/ \;
         shell: bash
       - name: Build TypeScript output
         run: pnpm run build:ts
@@ -404,9 +410,12 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-wasm32-wasip1-threads
-          path: native
+          path: downloaded-native
       - name: Normalize native artifact path
-        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        run: |
+          mkdir -p packages/napi-blitz/native packages/wasm-blitz/native
+          find downloaded-native -type f \( -name 'napi-blitz.*.node' -o -name 'napi-blitz.*.wasm' \) -exec mv {} packages/napi-blitz/native/ \;
+          find downloaded-native -type f \( -name 'wasm-blitz.*.node' -o -name 'wasm-blitz.*.wasm' \) -exec mv {} packages/wasm-blitz/native/ \;
         shell: bash
       - name: List packages
         run: ls -R .
@@ -452,11 +461,11 @@ jobs:
           if git log -1 --pretty=%B | grep "^v\?[0-9]\+\.[0-9]\+\.[0-9]\+$";
           then
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-            npm publish --access public
+            npm publish packages/napi-blitz --access public
           elif git log -1 --pretty=%B | grep "^v\?[0-9]\+\.[0-9]\+\.[0-9]\+";
           then
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-            npm publish --tag next --access public
+            npm publish packages/napi-blitz --tag next --access public
           else
             echo "Not a release, skipping publish"
           fi

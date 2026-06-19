@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import { HTMLDocument } from "../dist/index.js";
+import { HTMLDocument } from "../packages/napi-blitz/dist/index.js";
 import { pluckDocument } from "./_helpers.ts";
 
 test("appendChild / parentNode / childNodes are on Node", (t) => {

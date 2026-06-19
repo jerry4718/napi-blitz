@@ -1,13 +1,13 @@
 // Shared helpers for the AVA test files. Not picked up by AVA's default
 // glob because the filename does not end in `.spec.ts`.
 //
-// Mirrors the `pluck*` pattern from `src/js/internal/internal.ts`: tests
+// Mirrors the `pluck*` pattern from package `src/internal/internal.ts`: tests
 // occasionally need to read the package-private `_nodeId` off a Node so
 // they can fabricate an `EventPayload` that targets a specific element
 // — exactly what the native bridge would emit. Centralizing the
 // `as unknown as Internals` cast here keeps the spec files readable.
 
-import type { Node, EventPayload } from "../dist/index.js";
+import type { Node, EventPayload } from "../packages/napi-blitz/dist/index.js";
 
 /** Shape of a `Node`'s package-private fields, as seen from test code. */
 interface TestNodeInternals {
@@ -52,7 +52,7 @@ export function makeClickPayload(
  * need to drive the dispatch path manually.
  */
 interface TestDocumentInternals {
-  readonly _native: import("../dist/index.js").NativeDocHandle;
+  readonly _native: import("../packages/napi-blitz/dist/index.js").NativeDocHandle;
   _dispatchFromNative(payload: EventPayload): {
     defaultPrevented: boolean;
     propagationStopped: boolean;

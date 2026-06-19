@@ -3,7 +3,7 @@
 
 import test from "ava";
 
-import { HTMLDocument, HTMLElement } from "../dist/index.js";
+import { HTMLDocument, HTMLElement } from "../packages/napi-blitz/dist/index.js";
 
 test("style is a stable Proxy on HTMLElement", (t) => {
   const doc = new HTMLDocument();

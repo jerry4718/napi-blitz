@@ -17,7 +17,6 @@ Highlights:
 - No `Electron-style IPC` layer and no `Tauri-style WebView`: your JS calls native DOM bindings directly.
 - Standard-ish DOM wrappers: `document.createElement`, `appendChild`, `textContent`, `setAttribute`, `querySelector`, event listeners, inline styles, etc.
 - `Multiple windows` from one `BlitzApp`.
-- Experimental `BufferBlitzApp` path for headless RGBA frame rendering without native windows.
 - Prebuilt N-API packages for supported platforms.
 - TypeScript declarations included.
 
@@ -205,12 +204,12 @@ while (!a.closed || !b.closed) {
 }
 ```
 
-### Headless RGBA buffer rendering
+### Related package: `@ylcc/wasm-blitz`
 
-`BufferBlitzApp` is an experimental architecture path for hosts that want Blitz layout/paint output without owning a native window. It resolves a document and returns an RGBA8 frame; the host decides how to display or transport that buffer.
+Headless RGBA buffer rendering is split into the experimental `@ylcc/wasm-blitz` package. It owns the buffer/surface-exchange API and is intentionally separate from this native-window package so it can evolve toward browser/wasm backends without changing `@ylcc/napi-blitz`.
 
 ```ts
-import { BufferBlitzApp } from "@ylcc/napi-blitz";
+import { BufferBlitzApp } from "@ylcc/wasm-blitz";
 
 const app = BufferBlitzApp.create({
   width: 800,
@@ -229,9 +228,9 @@ const frame = app.render();
 pnpm install
 pnpm run build:debug
 
-pnpm --dir examples/html-tags start
-pnpm --dir examples/vue-jsx-dom start
-pnpm --dir examples/vue-jsx-multi-window start
+pnpm --filter html-tags start
+pnpm --filter vue-jsx-dom start
+pnpm --filter vue-jsx-multi-window start
 ```
 
 Examples:

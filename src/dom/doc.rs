@@ -39,8 +39,8 @@ use napi::{
 use napi_derive::napi;
 use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth};
 
-use crate::event::{JsBridge, JsEventHandler};
-use crate::payload::{DispatchResult, EventPayload};
+use crate::dom::event::{JsBridge, JsEventHandler};
+use crate::dom::payload::{DispatchResult, EventPayload};
 
 const DEFAULT_HTML: &str = "<!DOCTYPE html><html><head></head><body></body></html>";
 
@@ -213,6 +213,7 @@ pub struct DocHandle {
     /// Whether ownership of the document has been moved into a window.
     /// After this we still keep the `Rc` so the JS side can keep mutating
     /// the DOM, but we refuse to attach it to a second window.
+    #[cfg(feature = "native-window")]
     pub(crate) moved_into_window: bool,
 }
 
@@ -224,6 +225,7 @@ fn bigint_to_usize(id: BigInt) -> Option<usize> {
     usize::try_from(value).ok()
 }
 
+#[cfg(feature = "native-window")]
 impl DocHandle {
     pub(crate) fn share_base(&self) -> SharedBaseDoc {
         self.base.clone()
@@ -291,12 +293,14 @@ impl DocHandle {
             base: shared_base,
             bridge: shared_bridge,
             font_ctx: shared_font_ctx,
+            #[cfg(feature = "native-window")]
             moved_into_window: false,
         })
     }
 
     /// Mark this document as moved into a window. Internal use by `BlitzApp`.
     /// Returns `true` if it was a fresh attach, `false` if already attached.
+    #[cfg(feature = "native-window")]
     pub(crate) fn mark_attached(&mut self) -> bool {
         if self.moved_into_window {
             false
@@ -308,6 +312,7 @@ impl DocHandle {
 
     /// blitz-internal `BaseDocument` id. Used by `BlitzApp` to route window
     /// open/close to the right `View`.
+    #[cfg(feature = "native-window")]
     pub(crate) fn doc_id(&self) -> usize {
         self.base.doc.borrow().id()
     }
@@ -433,6 +438,7 @@ impl DocHandle {
 /// Internal helper: build a [`WindowDocument`] from a [`DocHandle`] without
 /// transferring the underlying `Rc`s away from the handle. The window will
 /// receive `Box<WindowDocument>`; the handle keeps its own clones.
+#[cfg(feature = "native-window")]
 pub(crate) fn make_window_document(handle: &DocHandle) -> Box<WindowDocument> {
     Box::new(WindowDocument::new(
         handle.share_base(),

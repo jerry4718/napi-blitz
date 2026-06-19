@@ -588,6 +588,5 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.BlitzApp = nativeBinding.BlitzApp
-module.exports.BufferRenderer = nativeBinding.BufferRenderer
 module.exports.DocHandle = nativeBinding.DocHandle
 module.exports.Window = nativeBinding.Window

@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import { HTMLDocument } from "../dist/index.js";
+import { HTMLDocument } from "../packages/napi-blitz/dist/index.js";
 
 test("innerHTML / outerHTML reflect the tree", (t) => {
   const doc = new HTMLDocument();

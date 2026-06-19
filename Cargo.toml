@@ -7,6 +7,11 @@ version = "0.1.0"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["native-window", "buffer-surface"]
+native-window = []
+buffer-surface = []
+
 [dependencies]
 napi-derive = "3.5.6"
 winit = "0.31.0-beta.2"

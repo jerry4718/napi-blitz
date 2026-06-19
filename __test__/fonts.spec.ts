@@ -13,7 +13,7 @@
 
 import test from "ava";
 
-import { FontFace, FontFaceSet, HTMLDocument } from "../dist/index.js";
+import { FontFace, FontFaceSet, HTMLDocument } from "../packages/napi-blitz/dist/index.js";
 
 test("FontFace constructor validates family name", (t) => {
   const buf = new Uint8Array([0, 0, 0, 0]);

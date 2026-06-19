@@ -11,7 +11,7 @@ use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::PropertyId;
 
-use crate::doc::DocHandle;
+use crate::dom::doc::DocHandle;
 
 /// Plain attribute pair used by the create/insert APIs.
 #[napi(object)]

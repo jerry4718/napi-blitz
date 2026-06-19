@@ -1,5 +1,5 @@
 import test from 'ava'
-import { BlitzApp } from '../dist/index.js'
+import { BlitzApp } from '../packages/napi-blitz/dist/index.js'
 
 test('JS-created element subtrees can match ancestor descendant selectors without panicking', (t) => {
   const app = BlitzApp.create()

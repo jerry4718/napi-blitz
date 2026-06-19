@@ -1,10 +1,10 @@
 // Public API of `@ylcc/napi-blitz`.
+//
+// This package owns the native-window path: winit event loop, OS windows, and
+// the shared DOM API. Headless buffer rendering lives in `@ylcc/wasm-blitz`.
 
 export { BlitzApp } from "./host/app";
 export type { OpenWindowInit } from "./host/app";
-export { BufferBlitzApp } from "./buffer/app";
-export type { BufferBlitzAppInit, BufferFrame } from "./buffer/app";
-
 export { Window } from "./host/window";
 
 export { Document } from "./document/document";

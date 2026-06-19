@@ -1,0 +1,60 @@
+{
+  "name": "@ylcc/napi-blitz",
+  "version": "1.1.1",
+  "description": "Blitz native-window N-API bindings",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "url": "git+ssh://git@github.com/jerry4718/napi-blitz.git",
+    "type": "git",
+    "directory": "packages/napi-blitz"
+  },
+  "license": "MIT",
+  "keywords": [
+    "napi-rs",
+    "NAPI",
+    "N-API",
+    "node-addon",
+    "node-addon-api",
+    "blitz",
+    "winit"
+  ],
+  "files": [
+    "dist/",
+    "native/"
+  ],
+  "napi": {
+    "binaryName": "napi-blitz",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "i686-pc-windows-msvc",
+      "armv7-unknown-linux-gnueabihf",
+      "x86_64-unknown-freebsd",
+      "aarch64-unknown-linux-musl",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts --package-json-path package.json",
+    "build": "node ../../scripts/build.cjs --package napi-blitz",
+    "build:debug": "node ../../scripts/build.cjs --debug --package napi-blitz",
+    "build:ts": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node ../../scripts/fixup-native-dts.cjs dist/native.d.ts",
+    "build:native": "napi build --platform --release --strip --manifest-path ../../Cargo.toml --no-default-features --features native-window --package-json-path package.json --output-dir native --js index.js --dts index.d.ts",
+    "build:native:debug": "napi build --platform --strip --manifest-path ../../Cargo.toml --no-default-features --features native-window --package-json-path package.json --output-dir native --js index.js --dts index.d.ts",
+    "prepublishOnly": "napi prepublish -t npm --package-json-path package.json",
+    "version": "napi version --package-json-path package.json"
+  }
+}

@@ -9,7 +9,7 @@ import {
   HTMLElement,
   Node,
   Text,
-} from "../dist/index.js";
+} from "../packages/napi-blitz/dist/index.js";
 
 test("HTMLDocument has documentElement / head / body", (t) => {
   const doc = new HTMLDocument();

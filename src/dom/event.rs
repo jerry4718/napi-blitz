@@ -20,7 +20,7 @@ use napi::{
     bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 
-use crate::payload::{
+use crate::dom::payload::{
     DispatchResult, EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,
 };
 

@@ -1,32 +1,23 @@
 #![deny(clippy::all)]
-//! napi-blitz: a Node.js binding around the [`blitz`] HTML/CSS engine.
+//! napi-blitz / wasm-blitz shared Rust backend around the [`blitz`] HTML/CSS engine.
 //!
-//! The Rust side exposes a flat, nodeId-based API on the [`DocHandle`] class.
-//! All DOM operations identify nodes by their numeric id; element-like
-//! wrapper objects live entirely in the JS / TS layer.
-//!
-//! Event flow:
-//! 1. `BlitzApp.pumpAppEvents` drives winit synchronously from the JS thread.
-//! 2. When blitz produces a `DomEvent`, our [`event::JsEventHandler`]
-//!    serializes the event chain plus payload and calls back into JS through
-//!    the document's `__dispatchFromNative` hook.
-//! 3. JS dispatches the event using standard `EventTarget` semantics.
-//!    `stopPropagation` / `preventDefault` on the JS side are reported back to
-//!    Rust via the return value, which we translate into blitz `EventState`.
+//! Architecture boundaries:
+//! - [`dom`] exposes the shared nodeId-based document and event bridge used by
+//!   every host package.
+//! - [`native_window`] owns the winit/native-window path exported by
+//!   `@ylcc/napi-blitz`.
+//! - [`buffer_surface`] owns the headless RGBA frame path exported by
+//!   `@ylcc/wasm-blitz`.
 
-mod app;
-mod app_bridge;
-mod app_handler;
-mod buffer;
-mod doc;
-mod event;
-mod ops;
-mod payload;
-mod window;
+#[cfg(feature = "buffer-surface")]
+mod buffer_surface;
+mod dom;
+#[cfg(feature = "native-window")]
+mod native_window;
 
-pub use app::BlitzApp;
-pub use app_bridge::{AppDispatchResult, AppEventPayload};
-pub use buffer::{BufferFrame, BufferRenderer, BufferRendererOptions};
-pub use doc::{DocHandle, DocHandleConfig};
-pub use payload::*;
-pub use window::Window;
+#[cfg(feature = "buffer-surface")]
+pub use buffer_surface::{BufferFrame, BufferRenderer, BufferRendererOptions};
+pub use dom::*;
+pub use dom::{DocHandle, DocHandleConfig};
+#[cfg(feature = "native-window")]
+pub use native_window::{AppDispatchResult, AppEventPayload, BlitzApp, Window};

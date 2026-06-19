@@ -1,6 +1,6 @@
 //! Headless RGBA buffer rendering for Blitz documents.
 //!
-//! This module is intentionally separate from [`crate::app::BlitzApp`]. The
+//! This module is intentionally separate from [`crate::native_window::app::BlitzApp`]. The
 //! native app path owns a winit event loop and paints into OS windows. The
 //! buffer path owns no window and no event loop: callers mutate a `DocHandle`,
 //! then ask this renderer to resolve layout/paint into an RGBA frame that the

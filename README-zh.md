@@ -17,7 +17,6 @@
 - 不是 `Electron IPC` 方案，也不是 `Tauri WebView` 方案：JS 直接调用原生 DOM 绑定。
 - 类浏览器 DOM 封装：`document.createElement`、`appendChild`、`textContent`、`setAttribute`、`querySelector`、事件监听、内联样式等。
 - 一个 `BlitzApp` 可管理 `多个窗口`。
-- 实验性的 `BufferBlitzApp` 路径：不创建原生窗口，直接输出 RGBA 帧缓冲。
 - 发布平台对应的 N-API 预编译包。
 - 内置 TypeScript 类型声明。
 
@@ -205,12 +204,12 @@ while (!a.closed || !b.closed) {
 }
 ```
 
-### 无窗口 RGBA 缓冲渲染
+### 相关包：`@ylcc/wasm-blitz`
 
-`BufferBlitzApp` 是一个实验性的架构方向，适合宿主只想拿到 Blitz layout/paint 结果、不想让 Rust 侧拥有原生窗口的场景。它会解析并渲染文档，返回 RGBA8 帧；如何显示或传输这个 buffer 由宿主决定。
+无窗口 RGBA 缓冲渲染拆到实验性的 `@ylcc/wasm-blitz` 包。它负责 buffer/surface-exchange API，刻意和这个原生窗口包分开，这样后续可以往浏览器/wasm backend 演进，而不用改变 `@ylcc/napi-blitz`。
 
 ```ts
-import { BufferBlitzApp } from "@ylcc/napi-blitz";
+import { BufferBlitzApp } from "@ylcc/wasm-blitz";
 
 const app = BufferBlitzApp.create({
   width: 800,
@@ -229,9 +228,9 @@ const frame = app.render();
 pnpm install
 pnpm run build:debug
 
-pnpm --dir examples/html-tags start
-pnpm --dir examples/vue-jsx-dom start
-pnpm --dir examples/vue-jsx-multi-window start
+pnpm --filter html-tags start
+pnpm --filter vue-jsx-dom start
+pnpm --filter vue-jsx-multi-window start
 ```
 
 示例说明：

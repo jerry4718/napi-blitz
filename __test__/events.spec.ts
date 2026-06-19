@@ -5,7 +5,7 @@
 
 import test from "ava";
 
-import { BlitzPointerEvent, HTMLDocument } from "../dist/index.js";
+import { BlitzPointerEvent, HTMLDocument } from "../packages/napi-blitz/dist/index.js";
 
 import {
   makeClickPayload,

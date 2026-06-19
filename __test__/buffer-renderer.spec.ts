@@ -1,6 +1,6 @@
 import test from "ava";
 
-import { BufferBlitzApp } from "../dist/index.js";
+import { BufferBlitzApp } from "../packages/wasm-blitz/dist/index.js";
 
 test("BufferBlitzApp renders a document into an RGBA frame", (t) => {
   const app = BufferBlitzApp.create({

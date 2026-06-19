@@ -24,10 +24,12 @@ use winit::dpi::PhysicalSize;
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::WindowAttributes;
 
-use crate::app_bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge};
-use crate::app_handler::JsAppHandler;
-use crate::doc::{DocHandle, make_window_document};
-use crate::window::{Window, WindowOptions};
+use crate::dom::doc::{DocHandle, make_window_document};
+use crate::native_window::app_bridge::{
+    APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge,
+};
+use crate::native_window::app_handler::JsAppHandler;
+use crate::native_window::window::{Window, WindowOptions};
 
 /// Result of one `pumpAppEvents` call.
 #[napi(object)]

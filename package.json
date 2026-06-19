@@ -1,66 +1,27 @@
 {
-  "name": "@ylcc/napi-blitz",
+  "name": "napi-blitz-workspace",
   "version": "1.1.1",
-  "description": "blitz napi bindings",
-  "type": "commonjs",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "private": true,
+  "description": "Workspace for napi-blitz and wasm-blitz packages",
   "repository": {
     "url": "git+ssh://git@github.com/jerry4718/napi-blitz.git",
     "type": "git"
   },
   "license": "MIT",
-  "keywords": [
-    "napi-rs",
-    "NAPI",
-    "N-API",
-    "node-addon",
-    "node-addon-api",
-    "blitz"
-  ],
-  "files": [
-    "dist/",
-    "native/"
-  ],
-  "napi": {
-    "binaryName": "napi-blitz",
-    "targets": [
-      "x86_64-apple-darwin",
-      "aarch64-apple-darwin",
-      "x86_64-unknown-linux-gnu",
-      "x86_64-pc-windows-msvc",
-      "x86_64-unknown-linux-musl",
-      "aarch64-unknown-linux-gnu",
-      "i686-pc-windows-msvc",
-      "armv7-unknown-linux-gnueabihf",
-      "x86_64-unknown-freebsd",
-      "aarch64-unknown-linux-musl",
-      "aarch64-pc-windows-msvc"
-    ]
-  },
-  "engines": {
-    "node": ">= 10"
-  },
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
-    "access": "public"
-  },
   "scripts": {
-    "artifacts": "napi artifacts",
+    "artifacts": "pnpm --filter @ylcc/napi-blitz artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "node scripts/build.cjs",
     "build:debug": "node scripts/build.cjs --debug",
-    "build:ts": "tsc -p tsconfig.json && pnpm run build:ts:fixup",
-    "build:ts:fixup": "node scripts/fixup-native-dts.cjs",
-    "build:native": "napi build --platform --release --strip --output-dir native --js index.js --dts index.d.ts",
-    "build:native:debug": "napi build --platform --strip --output-dir native --js index.js --dts index.d.ts",
-    "prepublishOnly": "napi prepublish -t npm",
+    "build:native": "node scripts/build.cjs --native-only",
+    "build:native:debug": "node scripts/build.cjs --debug --native-only",
+    "build:ts": "pnpm -r --filter './packages/*' run build:ts",
     "test": "ava",
     "fmt": "cargo fmt",
     "fmt:check": "cargo fmt -- --check",
     "lint": "cargo clippy",
     "lint:strict": "cargo clippy -- -D warnings",
-    "version": "napi version"
+    "version": "pnpm --filter @ylcc/napi-blitz version"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.7.2",

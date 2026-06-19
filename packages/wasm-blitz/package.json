@@ -1,0 +1,58 @@
+{
+  "name": "@ylcc/wasm-blitz",
+  "version": "0.0.0-experimental.0",
+  "description": "Experimental headless buffer-surface API for Blitz",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "url": "git+ssh://git@github.com/jerry4718/napi-blitz.git",
+    "type": "git",
+    "directory": "packages/wasm-blitz"
+  },
+  "license": "MIT",
+  "keywords": [
+    "blitz",
+    "wasm",
+    "headless",
+    "buffer",
+    "canvas",
+    "rendering"
+  ],
+  "files": [
+    "dist/",
+    "native/"
+  ],
+  "napi": {
+    "binaryName": "wasm-blitz",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "i686-pc-windows-msvc",
+      "armv7-unknown-linux-gnueabihf",
+      "x86_64-unknown-freebsd",
+      "aarch64-unknown-linux-musl",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build.cjs --package wasm-blitz",
+    "build:debug": "node ../../scripts/build.cjs --debug --package wasm-blitz",
+    "build:ts": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node ../../scripts/fixup-native-dts.cjs dist/native.d.ts",
+    "build:native": "napi build --platform --release --strip --manifest-path ../../Cargo.toml --no-default-features --features buffer-surface --package-json-path package.json --output-dir native --js index.js --dts index.d.ts",
+    "build:native:debug": "napi build --platform --strip --manifest-path ../../Cargo.toml --no-default-features --features buffer-surface --package-json-path package.json --output-dir native --js index.js --dts index.d.ts",
+    "prepublishOnly": "napi prepublish -t npm --package-json-path package.json",
+    "version": "napi version --package-json-path package.json"
+  }
+}

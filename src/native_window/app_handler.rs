@@ -20,7 +20,9 @@ use winit::{
     window::WindowId,
 };
 
-use crate::app_bridge::{APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload, JsAppBridge};
+use crate::native_window::app_bridge::{
+    APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload, JsAppBridge,
+};
 
 pub struct JsAppHandler<'a> {
     pub inner: &'a mut BlitzApplication<VelloWindowRenderer>,
