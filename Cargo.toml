@@ -10,8 +10,6 @@ crate-type = ["cdylib"]
 [dependencies]
 napi-derive = "3.5.6"
 winit = "0.31.0-beta.2"
-keyboard-types = "0.8.3"
-smol_str = "0.3.6"
 
 [dependencies.napi]
 version = "3.9.3"
@@ -21,6 +19,17 @@ features = ["napi6", "async"]
 version = "=0.3.0-alpha.5"
 default-features = false
 features = ["net"]
+
+# Stylo / selectors, pinned to the same versions blitz uses so the
+# trait impls in blitz-dom's private `stylo` module (which are written
+# against `&Node`) line up with the crates we call directly. The stylo
+# crate's lib name is `style`, so we import it under that name to match
+# blitz's own usage.
+[dependencies.style]
+version = "0.18.0"
+package = "stylo"
+[dependencies.selectors]
+version = "0.38.0"
 
 [dependencies.anyrender_vello]
 version = "0.11.0"

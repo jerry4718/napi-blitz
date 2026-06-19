@@ -61,6 +61,61 @@ impl DocHandle {
         }
     }
 
+    /// Element-scoped `querySelector`: first match in the subtree rooted at
+    /// `root_id` (exclusive — the root element itself is not a candidate,
+    /// matching the DOM spec for `Element.querySelector`). We parse the
+    /// selector via blitz's public `try_parse_selector_list` and then call
+    /// stylo's `dom_apis::query_selector` directly with `root_id`'s node as
+    /// the root — bypassing blitz's `query_selector_raw`, which is hardcoded
+    /// to `self.root_node()`.
+    #[napi]
+    pub fn query_selector_in(&self, root_id: u32, selector: String) -> Result<Option<u32>> {
+        let state = self.state.0.borrow();
+        let selector_list = state
+            .base
+            .try_parse_selector_list(&selector)
+            .map_err(|err| Error::from_reason(format!("query_selector_in: {err:?}")))?;
+
+        let Some(root_node) = state.base.get_node(root_id as usize) else {
+            return Ok(None);
+        };
+
+        use blitz::dom::Node;
+        let mut result: Option<&Node> = None;
+        style::dom_apis::query_selector::<&Node, style::dom_apis::QueryFirst>(
+            root_node,
+            &selector_list,
+            &mut result,
+            style::dom_apis::MayUseInvalidation::Yes,
+        );
+        Ok(result.map(|node| node.id as u32))
+    }
+
+    /// Element-scoped `querySelectorAll`: all matches in the subtree rooted
+    /// at `root_id` (exclusive). Same approach as `query_selector_in`.
+    #[napi]
+    pub fn query_selector_all_in(&self, root_id: u32, selector: String) -> Result<Vec<u32>> {
+        let state = self.state.0.borrow();
+        let selector_list = state
+            .base
+            .try_parse_selector_list(&selector)
+            .map_err(|err| Error::from_reason(format!("query_selector_all_in: {err:?}")))?;
+
+        let Some(root_node) = state.base.get_node(root_id as usize) else {
+            return Ok(Vec::new());
+        };
+
+        use blitz::dom::Node;
+        let mut results: style::dom_apis::QuerySelectorAllResult<&Node> = Default::default();
+        style::dom_apis::query_selector::<&Node, style::dom_apis::QueryAll>(
+            root_node,
+            &selector_list,
+            &mut results,
+            style::dom_apis::MayUseInvalidation::Yes,
+        );
+        Ok(results.iter().map(|node| node.id as u32).collect())
+    }
+
     /// Lookup by `id=` attribute, like `document.getElementById`.
     #[napi]
     pub fn get_element_by_id(&self, id: String) -> Option<u32> {

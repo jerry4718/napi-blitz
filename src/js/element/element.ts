@@ -128,6 +128,26 @@ export class Element extends Node {
       .map((id) => owner._wrap(id) as Element);
   }
 
-  // TODO: native side currently only exposes document-scoped querySelector.
-  // We'll add element-scoped queries when blitz exposes them.
+  /**
+   * First descendant element matching `selector`, or null. Uses stylo's
+   * selector engine via `querySelectorIn` — the root is this element,
+   * and per spec the element itself is not a candidate.
+   */
+  querySelector(selector: string): Element | null {
+    const owner = this._ownerDocument as unknown as Document;
+    const id = owner._native.querySelectorIn(this._nodeId, selector);
+    return id === null ? null : (owner._wrap(id) as Element);
+  }
+
+  /**
+   * All descendant elements matching `selector`. Snapshot array.
+   * Selector matching runs through stylo scoped to this element's
+   * subtree.
+   */
+  querySelectorAll(selector: string): Element[] {
+    const owner = this._ownerDocument as unknown as Document;
+    return owner._native
+      .querySelectorAllIn(this._nodeId, selector)
+      .map((id) => owner._wrap(id) as Element);
+  }
 }

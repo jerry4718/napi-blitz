@@ -151,6 +151,58 @@ test("Element.getElementsByClassName is scoped to descendants", (t) => {
   t.is(div.getElementsByClassName("nope").length, 0);
 });
 
+test("Element.querySelector / querySelectorAll are scoped to descendants", (t) => {
+  const doc = new HTMLDocument();
+  doc.body!.innerHTML =
+    '<div id="root"><p class="a">1</p><span class="a">2</span><p class="b">3</p></div>';
+
+  const root = doc.getElementsByTagName("div")[0];
+
+  // Simple type selector.
+  const firstP = root.querySelector("p");
+  t.truthy(firstP);
+  t.is(firstP!.textContent, "1");
+
+  // Class selector returns both descendants.
+  const aEls = root.querySelectorAll(".a");
+  t.is(aEls.length, 2);
+  t.is(aEls[0].tagName, "p");
+  t.is(aEls[1].tagName, "span");
+
+  // Descendant combinator.
+  const spansInP = root.querySelectorAll("p span");
+  // No <span> inside any <p> here.
+  t.is(spansInP.length, 0);
+
+  // The root element itself must not be a match even if it satisfies
+  // the selector (#root matches "#root" but is excluded).
+  t.is(root.querySelector("#root"), null);
+
+  // No match.
+  t.is(root.querySelector("section"), null);
+  t.is(root.querySelectorAll("section").length, 0);
+});
+
+test("Element.querySelector supports id and compound selectors", (t) => {
+  const doc = new HTMLDocument();
+  doc.body!.innerHTML =
+    '<ul><li id="first" class="item">a</li><li class="item">b</li></ul>';
+
+  const ul = doc.getElementsByTagName("ul")[0];
+
+  const byId = ul.querySelector("#first");
+  t.truthy(byId);
+  t.is(byId!.textContent, "a");
+
+  const items = ul.querySelectorAll("li.item");
+  t.is(items.length, 2);
+
+  // :first-child pseudo (stylo supports structural pseudos).
+  const firstChild = ul.querySelector("li:first-child");
+  t.truthy(firstChild);
+  t.is(firstChild!.id, "first");
+});
+
 test("createElement returns an HTMLElement; identity is stable", (t) => {
   const doc = new HTMLDocument();
   const div = doc.createElement("div");

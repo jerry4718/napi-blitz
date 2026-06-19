@@ -95,6 +95,21 @@ export declare class DocHandle {
   querySelector(selector: string): number | null
   /** Find all nodes by CSS selector. Returns a list of node ids. */
   querySelectorAll(selector: string): Array<number>
+  /**
+   * Element-scoped `querySelector`: first match in the subtree rooted at
+   * `root_id` (exclusive — the root element itself is not a candidate,
+   * matching the DOM spec for `Element.querySelector`). We parse the
+   * selector via blitz's public `try_parse_selector_list` and then call
+   * stylo's `dom_apis::query_selector` directly with `root_id`'s node as
+   * the root — bypassing blitz's `query_selector_raw`, which is hardcoded
+   * to `self.root_node()`.
+   */
+  querySelectorIn(rootId: number, selector: string): number | null
+  /**
+   * Element-scoped `querySelectorAll`: all matches in the subtree rooted
+   * at `root_id` (exclusive). Same approach as `query_selector_in`.
+   */
+  querySelectorAllIn(rootId: number, selector: string): Array<number>
   /** Lookup by `id=` attribute, like `document.getElementById`. */
   getElementById(id: string): number | null
   /**
