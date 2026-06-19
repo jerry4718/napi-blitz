@@ -89,17 +89,35 @@ export abstract class Document extends Node implements DocumentInternals {
 
   // ----- Standard DOM root accessors --------------------------------------
 
-  /** The `<html>` element. Equivalent to `document.documentElement`. */
+  /**
+   * The `<html>` element. Uses a fast-path lookup that bypasses the CSS
+   * selector engine — blitz keeps an internal TreeTraverser equivalent
+   * and we replicate it on the napi side.
+   */
   get documentElement(): Element {
+    const id = this._native.htmlElementId();
+    if (id !== null) return this._wrap(id) as Element;
+    // Fallback to the napi rootElementId (always 0 in blitz, the
+    // document node) when the tree has no <html> wrapper yet.
     return this._wrap(this._native.rootElementId()) as Element;
   }
 
-  get body(): Element | null {
-    return this.querySelector("body");
+  /**
+   * The `<head>` element, or null if missing. Fast-path lookup; does
+   * not go through querySelector.
+   */
+  get head(): Element | null {
+    const id = this._native.headElementId();
+    return id === null ? null : (this._wrap(id) as Element);
   }
 
-  get head(): Element | null {
-    return this.querySelector("head");
+  /**
+   * The `<body>` element, or null if missing. Fast-path lookup; does
+   * not go through querySelector.
+   */
+  get body(): Element | null {
+    const id = this._native.bodyElementId();
+    return id === null ? null : (this._wrap(id) as Element);
   }
 
   /**
@@ -214,6 +232,23 @@ export abstract class Document extends Node implements DocumentInternals {
   getElementById(id: string): Element | null {
     const nodeId = this._native.getElementById(id);
     return nodeId === null ? null : (this._wrap(nodeId) as Element);
+  }
+
+  /**
+   * All elements with the given tag name. Uses a fast-path pre-order
+   * DFS rather than the CSS selector engine. Returns a snapshot array;
+   * the web spec's "live HTMLCollection" is not modeled here.
+   *
+   * Pass `"*"` to match every element in the document. Tag names are
+   * case-folded to lowercase to match blitz's storage convention.
+   */
+  getElementsByTagName(name: string): Element[] {
+    if (name === "*") {
+      return this.querySelectorAll("*");
+    }
+    return this._native
+      .findAllByLocalName(name.toLowerCase())
+      .map((id) => this._wrap(id) as Element);
   }
 
   // ----- Layout / lifecycle ----------------------------------------------

@@ -3,7 +3,7 @@
 //! Every method here takes node ids (`u32`) as input and returns plain
 //! values. Element wrapper objects live entirely in the JS layer.
 
-use blitz::dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, ns};
+use blitz::dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, local_name, ns};
 use blitz::html::DocumentHtmlParser;
 use napi::{Error, Result};
 use napi_derive::napi;
@@ -73,17 +73,13 @@ impl DocHandle {
     }
 
     /// Find the document's `<title>` element id, or None if no title
-    /// element exists in the tree. Faster than `querySelector("title")`
-    /// because blitz keeps a tree-traversal helper that short-circuits
-    /// on the first match.
+    /// element exists in the tree. Uses the same pre-order DFS as the
+    /// other structural lookups (`html`/`head`/`body`) — cheaper than
+    /// `querySelector("title")` which dispatches through the CSS
+    /// selector engine.
     #[napi]
     pub fn find_title_node_id(&self) -> Option<u32> {
-        self.state
-            .0
-            .borrow()
-            .base
-            .find_title_node()
-            .map(|node| node.id as u32)
+        self.find_first_static(local_name!("title"))
     }
 
     /// True iff the given node id currently exists in the document.
@@ -472,4 +468,115 @@ impl DocHandle {
         }
         Some(out)
     }
+
+    // -- Fast tree lookups --------------------------------------------------
+    //
+    // These bypass the CSS selector engine entirely. We run a pre-order
+    // DFS over the document tree (using `Node.children` + `get_node`,
+    // both pub) and short-circuit on the first match. blitz has an
+    // internal `TreeTraverser` that does the same thing, but it isn't
+    // re-exported from `blitz::dom`; our hand-rolled walk is
+    // equivalent in cost.
+
+    /// First element id matching the given local tag name (lowercase),
+    /// or None if no element matches. Pre-order traversal from the
+    /// document root.
+    #[napi]
+    pub fn find_first_by_local_name(&self, name: String) -> Option<u32> {
+        let state = self.state.0.borrow();
+        let needle = LocalName::from(name.as_str());
+        dfs_find(&state.base, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+    }
+
+    /// All element ids matching the given local tag name, in tree order.
+    /// Mirrors `getElementsByTagName(name)` minus the live-collection
+    /// semantics — JS gets a snapshot.
+    #[napi]
+    pub fn find_all_by_local_name(&self, name: String) -> Vec<u32> {
+        let state = self.state.0.borrow();
+        let needle = LocalName::from(name.as_str());
+        dfs_collect(&state.base, |n| n.data.is_element_with_tag_name(&needle))
+            .into_iter()
+            .map(|id| id as u32)
+            .collect()
+    }
+
+    /// `<html>` element id. Uses the `local_name!` macro for a zero-cost
+    /// atom comparison. Returns None for documents without an `<html>`
+    /// root (unusual but possible during partial parsing).
+    #[napi]
+    pub fn html_element_id(&self) -> Option<u32> {
+        self.find_first_static(local_name!("html"))
+    }
+
+    /// `<head>` element id, or None if missing.
+    #[napi]
+    pub fn head_element_id(&self) -> Option<u32> {
+        self.find_first_static(local_name!("head"))
+    }
+
+    /// `<body>` element id, or None if missing.
+    #[napi]
+    pub fn body_element_id(&self) -> Option<u32> {
+        self.find_first_static(local_name!("body"))
+    }
+}
+
+impl DocHandle {
+    /// Shared fast-path for `local_name!`-constructed atoms. Bypasses the
+    /// `LocalName::from(&str)` allocation that `find_first_by_local_name`
+    /// has to do for the runtime-string case.
+    fn find_first_static(&self, needle: LocalName) -> Option<u32> {
+        let state = self.state.0.borrow();
+        dfs_find(&state.base, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u32)
+    }
+}
+
+// --- Pre-order DFS helpers -----------------------------------------------
+//
+// These mirror blitz's internal `TreeTraverser` (which isn't pub-exported).
+// `BaseDocument::get_node` + `Node.children` are both pub, so the walk
+// costs the same as the upstream version: a Vec-backed stack with reversed
+// children pushed per node.
+
+use blitz::dom::BaseDocument;
+
+/// Find the first node id (pre-order) where `pred` returns true.
+fn dfs_find<F>(doc: &BaseDocument, pred: F) -> Option<usize>
+where
+    F: Fn(&blitz::dom::Node) -> bool,
+{
+    let mut stack: Vec<usize> = vec![0];
+    while let Some(id) = stack.pop() {
+        let node = doc.get_node(id)?;
+        if pred(node) {
+            return Some(id);
+        }
+        // Push children in reverse so the first child is visited next.
+        for &child in node.children.iter().rev() {
+            stack.push(child);
+        }
+    }
+    None
+}
+
+/// Collect every node id (pre-order) where `pred` returns true.
+fn dfs_collect<F>(doc: &BaseDocument, pred: F) -> Vec<usize>
+where
+    F: Fn(&blitz::dom::Node) -> bool,
+{
+    let mut out = Vec::new();
+    let mut stack: Vec<usize> = vec![0];
+    while let Some(id) = stack.pop() {
+        let Some(node) = doc.get_node(id) else {
+            break;
+        };
+        if pred(node) {
+            out.push(id);
+        }
+        for &child in node.children.iter().rev() {
+            stack.push(child);
+        }
+    }
+    out
 }

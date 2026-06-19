@@ -99,9 +99,10 @@ export declare class DocHandle {
   getElementById(id: string): number | null
   /**
    * Find the document's `<title>` element id, or None if no title
-   * element exists in the tree. Faster than `querySelector("title")`
-   * because blitz keeps a tree-traversal helper that short-circuits
-   * on the first match.
+   * element exists in the tree. Uses the same pre-order DFS as the
+   * other structural lookups (`html`/`head`/`body`) — cheaper than
+   * `querySelector("title")` which dispatches through the CSS
+   * selector engine.
    */
   findTitleNodeId(): number | null
   /** True iff the given node id currently exists in the document. */
@@ -192,6 +193,28 @@ export declare class DocHandle {
    * open/close tags. Mirrors `Element.innerHTML`.
    */
   innerHtml(nodeId: number): string | null
+  /**
+   * First element id matching the given local tag name (lowercase),
+   * or None if no element matches. Pre-order traversal from the
+   * document root.
+   */
+  findFirstByLocalName(name: string): number | null
+  /**
+   * All element ids matching the given local tag name, in tree order.
+   * Mirrors `getElementsByTagName(name)` minus the live-collection
+   * semantics — JS gets a snapshot.
+   */
+  findAllByLocalName(name: string): Array<number>
+  /**
+   * `<html>` element id. Uses the `local_name!` macro for a zero-cost
+   * atom comparison. Returns None for documents without an `<html>`
+   * root (unusual but possible during partial parsing).
+   */
+  htmlElementId(): number | null
+  /** `<head>` element id, or None if missing. */
+  headElementId(): number | null
+  /** `<body>` element id, or None if missing. */
+  bodyElementId(): number | null
 }
 
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */

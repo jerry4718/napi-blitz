@@ -68,6 +68,25 @@ test("document.title round-trips through <title> element", (t) => {
   t.is(titles.length, 1);
 });
 
+test("getElementsByTagName returns a snapshot in tree order", (t) => {
+  const doc = new HTMLDocument();
+  const body = doc.body!;
+  body.innerHTML = "<div><span></span></div><span></span>";
+
+  const spans = doc.getElementsByTagName("span");
+  t.is(spans.length, 2);
+  t.is(spans[0].tagName, "span");
+  t.is(spans[1].tagName, "span");
+
+  // Upper-case input is normalized because blitz stores tag names lowercased.
+  const divs = doc.getElementsByTagName("DIV");
+  t.is(divs.length, 1);
+  t.is(divs[0].tagName, "div");
+
+  // Unknown tag: empty snapshot.
+  t.is(doc.getElementsByTagName("nope").length, 0);
+});
+
 test("createElement returns an HTMLElement; identity is stable", (t) => {
   const doc = new HTMLDocument();
   const div = doc.createElement("div");
