@@ -70,6 +70,23 @@ export declare class DocHandle {
    * before painting. `time_ms` drives CSS animations.
    */
   resolve(timeMs: number): void
+  /**
+   * Register a font from a raw byte buffer.
+   *
+   * The buffer must contain a single TTF/OTF/WOFF/WOFF2 font file (or
+   * a TrueType collection — every face inside will be registered).
+   * Returns the number of faces that were added.
+   *
+   * This bypasses blitz's `@font-face` machinery entirely: there is
+   * no network fetch, no CSS parsing, just a direct insert into the
+   * shared `Collection`. The font becomes available to all subsequent
+   * layout/paint work driven by this document.
+   *
+   * The buffer is taken by value and stored inside the font cache;
+   * callers may safely drop their reference to it after this call
+   * returns.
+   */
+  registerFont(data: Uint8Array, options?: RegisterFontOptions | undefined | null): number
   /** The id of the root node (always 0 for blitz, but expose it for JS). */
   rootNodeId(): number
   /** The id of `<html>` (the root *element*). */
@@ -382,6 +399,43 @@ export interface PumpResult {
   exit: boolean
   /** Exit code, if `exit`. */
   code?: number
+}
+
+/**
+ * Options for `DocHandle.registerFont`. All fields are optional and act
+ * as overrides for the metadata that `parley` would otherwise read from
+ * the font file's own tables.
+ *
+ * Mirrors the subset of CSS `@font-face` descriptors that map cleanly
+ * onto the underlying font cache. Each `weight` / `style` / `stretch`
+ * value is a CSS string (e.g. `"400"`, `"bold"`, `"italic"`,
+ * `"oblique 14deg"`, `"condensed"`, `"75%"`); invalid input is
+ * reported back to JS as a thrown error, matching how the browser
+ * rejects invalid `FontFaceDescriptors`.
+ */
+export interface RegisterFontOptions {
+  /**
+   * Override the family name reported to CSS. If omitted, the family
+   * name embedded in the font file is used.
+   */
+  familyName?: string
+  /**
+   * CSS `font-weight` descriptor string, e.g. `"400"`, `"bold"`,
+   * `"100 900"` (variable). For variable fonts the lower bound is
+   * used as the registered weight.
+   */
+  weight?: string
+  /**
+   * CSS `font-style` descriptor, e.g. `"normal"`, `"italic"`,
+   * `"oblique"`, `"oblique 14deg"`.
+   */
+  style?: string
+  /**
+   * CSS `font-stretch` descriptor, e.g. `"normal"`, `"condensed"`,
+   * `"75%"`. (Standard name; we keep the CSS spelling rather than
+   * fontique's `width`.)
+   */
+  stretch?: string
 }
 
 export interface WheelData {

@@ -27,16 +27,36 @@ use blitz::{
     traits::events::UiEvent,
 };
 use napi::{
-    Env, Result,
-    bindgen_prelude::{Function, FunctionRef},
+    Env, Error, Result, Status,
+    bindgen_prelude::{Function, FunctionRef, Uint8Array},
 };
 use napi_derive::napi;
-use parley::fontique::Blob;
+use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth};
 
 use crate::event::{JsBridge, JsEventHandler};
 use crate::payload::{DispatchResult, EventPayload};
 
 const DEFAULT_HTML: &str = "<!DOCTYPE html><html><head></head><body></body></html>";
+
+/// Helper for `register_font`: turn an optional CSS descriptor string
+/// into the corresponding fontique type, mapping a parse failure into a
+/// `napi::Error` so JS sees a thrown exception rather than a silent
+/// fallback.
+fn parse_descriptor<T>(
+    label: &str,
+    raw: Option<&str>,
+    parse: impl FnOnce(&str) -> Option<T>,
+) -> Result<Option<T>> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    parse(s).map(Some).ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            format!("registerFont: invalid CSS `{label}` descriptor: {s:?}"),
+        )
+    })
+}
 
 /// Configuration passed to `DocHandle.create`.
 #[napi(object)]
@@ -49,6 +69,34 @@ pub struct DocHandleConfig<'env> {
     /// the Rust side calls every time blitz produces a DomEvent. The JS layer
     /// uses it to drive its own `EventTarget` chain.
     pub on_dispatch: Function<'env, EventPayload, DispatchResult>,
+}
+
+/// Options for `DocHandle.registerFont`. All fields are optional and act
+/// as overrides for the metadata that `parley` would otherwise read from
+/// the font file's own tables.
+///
+/// Mirrors the subset of CSS `@font-face` descriptors that map cleanly
+/// onto the underlying font cache. Each `weight` / `style` / `stretch`
+/// value is a CSS string (e.g. `"400"`, `"bold"`, `"italic"`,
+/// `"oblique 14deg"`, `"condensed"`, `"75%"`); invalid input is
+/// reported back to JS as a thrown error, matching how the browser
+/// rejects invalid `FontFaceDescriptors`.
+#[napi(object)]
+pub struct RegisterFontOptions {
+    /// Override the family name reported to CSS. If omitted, the family
+    /// name embedded in the font file is used.
+    pub family_name: Option<String>,
+    /// CSS `font-weight` descriptor string, e.g. `"400"`, `"bold"`,
+    /// `"100 900"` (variable). For variable fonts the lower bound is
+    /// used as the registered weight.
+    pub weight: Option<String>,
+    /// CSS `font-style` descriptor, e.g. `"normal"`, `"italic"`,
+    /// `"oblique"`, `"oblique 14deg"`.
+    pub style: Option<String>,
+    /// CSS `font-stretch` descriptor, e.g. `"normal"`, `"condensed"`,
+    /// `"75%"`. (Standard name; we keep the CSS spelling rather than
+    /// fontique's `width`.)
+    pub stretch: Option<String>,
 }
 
 /// `Rc<RefCell<BaseDocument>>` — the document tree, shared between
@@ -133,6 +181,14 @@ impl BlitzDocument for WindowDocument {
 pub struct DocHandle {
     pub(crate) base: SharedBaseDoc,
     pub(crate) bridge: SharedBridge,
+    /// A clone of the same `FontContext` that was passed into
+    /// `BaseDocument::new`. Because we call `make_shared()` on its
+    /// `Collection` and `SourceCache` before cloning, mutations on
+    /// either copy (registering fonts here vs. blitz's `@font-face`
+    /// loader) propagate to the other through the internal `Arc`s.
+    /// This lets JS register raw font buffers at runtime without going
+    /// through the network/CSS path.
+    pub(crate) font_ctx: FontContext,
     /// Whether ownership of the document has been moved into a window.
     /// After this we still keep the `Rc` so the JS side can keep mutating
     /// the DOM, but we refuse to attach it to a second window.
@@ -153,11 +209,26 @@ impl DocHandle {
     /// Create a new document.
     #[napi(factory)]
     pub fn create(env: Env, config: DocHandleConfig<'_>) -> Result<Self> {
-        // Register the bullet font for list-item bullets.
+        // Build the font context up-front so we can both pass it to
+        // blitz (via `DocumentConfig::font_ctx`) and keep a cloned
+        // handle on `DocHandle` for runtime JS-side font registration.
+        //
+        // Calling `make_shared()` on the `Collection` and `SourceCache`
+        // is mandatory: without it, `Clone` produces independent copies
+        // and mutations on one would not be visible to the other. After
+        // `make_shared`, both copies hold the same internal `Arc<Shared>`
+        // and any `register_fonts` call goes through the shared
+        // `Mutex<Data>`.
         let mut font_ctx = FontContext::new();
+        // Bullet font for list-item markers. blitz also registers this
+        // when it builds its own default `FontContext`, but since we are
+        // now supplying ours we must register it ourselves.
         font_ctx
             .collection
             .register_fonts(Blob::new(Arc::new(BULLET_FONT) as _), None);
+        font_ctx.collection.make_shared();
+        font_ctx.source_cache.make_shared();
+        let shared_font_ctx = font_ctx.clone();
 
         let ua_stylesheets = config
             .ua_stylesheets
@@ -167,6 +238,7 @@ impl DocHandle {
         let doc_config = DocumentConfig {
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
             ua_stylesheets: Some(ua_stylesheets),
+            font_ctx: Some(font_ctx),
             ..DocumentConfig::default()
         };
 
@@ -189,6 +261,7 @@ impl DocHandle {
         Ok(Self {
             base: shared_base,
             bridge: shared_bridge,
+            font_ctx: shared_font_ctx,
             moved_into_window: false,
         })
     }
@@ -215,6 +288,79 @@ impl DocHandle {
     #[napi]
     pub fn resolve(&mut self, time_ms: f64) {
         self.base.0.borrow_mut().resolve(time_ms);
+    }
+
+    /// Register a font from a raw byte buffer.
+    ///
+    /// The buffer must contain a single TTF/OTF/WOFF/WOFF2 font file (or
+    /// a TrueType collection — every face inside will be registered).
+    /// Returns the number of faces that were added.
+    ///
+    /// This bypasses blitz's `@font-face` machinery entirely: there is
+    /// no network fetch, no CSS parsing, just a direct insert into the
+    /// shared `Collection`. The font becomes available to all subsequent
+    /// layout/paint work driven by this document.
+    ///
+    /// The buffer is taken by value and stored inside the font cache;
+    /// callers may safely drop their reference to it after this call
+    /// returns.
+    #[napi]
+    pub fn register_font(
+        &mut self,
+        data: Uint8Array,
+        options: Option<RegisterFontOptions>,
+    ) -> Result<u32> {
+        if data.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "registerFont: data buffer is empty",
+            ));
+        }
+        // Copy the bytes out of the V8 typed array into an owned Vec so
+        // the font cache (which keeps the data alive in an `Arc<[u8]>`)
+        // doesn't depend on V8's GC. `Uint8Array` is zero-copy on the
+        // way in but owning a Rust-side copy decouples lifetimes.
+        let bytes: Vec<u8> = data.to_vec();
+        let blob = Blob::new(Arc::new(bytes) as _);
+
+        // Parse the optional CSS descriptor strings into fontique types.
+        // Each helper returns `Option<T>`: `None` for unspecified, an
+        // `Err` for an explicit-but-unparseable value (we surface that
+        // back to JS just like a browser would reject an invalid
+        // `FontFaceDescriptors` entry).
+        let family_name = options.as_ref().and_then(|o| o.family_name.as_deref());
+        let weight = parse_descriptor(
+            "weight",
+            options.as_ref().and_then(|o| o.weight.as_deref()),
+            FontWeight::parse_css,
+        )?;
+        let style = parse_descriptor(
+            "style",
+            options.as_ref().and_then(|o| o.style.as_deref()),
+            FontStyle::parse_css,
+        )?;
+        let width = parse_descriptor(
+            "stretch",
+            options.as_ref().and_then(|o| o.stretch.as_deref()),
+            FontWidth::parse_css,
+        )?;
+
+        let info_override =
+            if family_name.is_some() || weight.is_some() || style.is_some() || width.is_some() {
+                Some(FontInfoOverride {
+                    family_name,
+                    weight,
+                    style,
+                    width,
+                    ..Default::default()
+                })
+            } else {
+                None
+            };
+
+        let registered = self.font_ctx.collection.register_fonts(blob, info_override);
+        let face_count: usize = registered.iter().map(|(_, fonts)| fonts.len()).sum();
+        Ok(face_count as u32)
     }
 
     /// The id of the root node (always 0 for blitz, but expose it for JS).
