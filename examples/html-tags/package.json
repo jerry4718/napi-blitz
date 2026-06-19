@@ -1,0 +1,24 @@
+{
+  "name": "html-tags",
+  "version": "1.0.0",
+  "description": "napi-blitz HTML tag support matrix aligned with Blitz UA stylesheet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "pnpm install && cross-env RUST_BACKTRACE=full node --import @oxc-node/core/register index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.2",
+  "dependencies": {
+    "@ylcc/napi-blitz": "file:../../"
+  },
+  "devDependencies": {
+    "@oxc-node/core": "^0.0.35",
+    "@types/node": "^22.7.4",
+    "cross-env": "^10.1.0",
+    "typescript": "^5.9.3"
+  }
+}
