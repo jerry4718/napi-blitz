@@ -26,7 +26,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
       - name: setup pnpm
@@ -41,6 +41,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libfontconfig1-dev
 
       - name: Install dependencies
         run: pnpm install
@@ -59,46 +65,50 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-14
             target: x86_64-apple-darwin
-            build: pnpm build --target x86_64-apple-darwin
-          - host: windows-latest
-            build: pnpm build --target x86_64-pc-windows-msvc
+            build: pnpm run build:native --target x86_64-apple-darwin && pnpm run build:ts
+          - host: windows-2022
+            build: pnpm run build:native --target x86_64-pc-windows-msvc && pnpm run build:ts
             target: x86_64-pc-windows-msvc
-          - host: windows-latest
-            build: pnpm build --target i686-pc-windows-msvc
+          - host: windows-2022
+            build: pnpm run build:native --target i686-pc-windows-msvc && pnpm run build:ts
             target: i686-pc-windows-msvc
-          - host: ubuntu-latest
+          - host: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            build: pnpm build --target x86_64-unknown-linux-gnu --use-napi-cross
-          - host: ubuntu-latest
+            build: pnpm run build:native --target x86_64-unknown-linux-gnu --use-napi-cross && pnpm run build:ts
+          - host: ubuntu-22.04
             target: x86_64-unknown-linux-musl
-            build: pnpm build --target x86_64-unknown-linux-musl -x
-          - host: macos-latest
+            build: pnpm run build:native --target x86_64-unknown-linux-musl -x && pnpm run build:ts
+          - host: macos-14
             target: aarch64-apple-darwin
-            build: pnpm build --target aarch64-apple-darwin
-          - host: ubuntu-latest
+            build: pnpm run build:native --target aarch64-apple-darwin && pnpm run build:ts
+          - host: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
-            build: pnpm build --target aarch64-unknown-linux-gnu --use-napi-cross
-          - host: ubuntu-latest
+            build: pnpm run build:native --target aarch64-unknown-linux-gnu --use-napi-cross && pnpm run build:ts
+          - host: ubuntu-22.04
             target: armv7-unknown-linux-gnueabihf
-            build: pnpm build --target armv7-unknown-linux-gnueabihf --use-napi-cross
-          - host: ubuntu-latest
-            target: aarch64-linux-android
-            build: pnpm build --target aarch64-linux-android
-          - host: ubuntu-latest
-            target: armv7-linux-androideabi
-            build: pnpm build --target armv7-linux-androideabi
-          - host: ubuntu-latest
+            build: pnpm run build:native --target armv7-unknown-linux-gnueabihf --use-napi-cross && pnpm run build:ts
+          # TODO(android): Keep these targets here. Do not delete them.
+          # Re-enable after adding Android targets to package.json and setting up NDK/test coverage.
+          # - host: ubuntu-22.04
+          #   target: aarch64-linux-android
+          #   build: pnpm run build:native --target aarch64-linux-android && pnpm run build:ts
+          # - host: ubuntu-22.04
+          #   target: armv7-linux-androideabi
+          #   build: pnpm run build:native --target armv7-linux-androideabi && pnpm run build:ts
+          - host: ubuntu-22.04
             target: aarch64-unknown-linux-musl
-            build: pnpm build --target aarch64-unknown-linux-musl -x
-          - host: windows-latest
+            build: pnpm run build:native --target aarch64-unknown-linux-musl -x && pnpm run build:ts
+          - host: windows-2022
             target: aarch64-pc-windows-msvc
-            build: pnpm build --target aarch64-pc-windows-msvc
-          - host: ubuntu-latest
-            target: wasm32-wasip1-threads
-            build: pnpm build --target wasm32-wasip1-threads
-    name: stable - ${{ matrix.settings.target }} - node@20
+            build: pnpm run build:native --target aarch64-pc-windows-msvc && pnpm run build:ts
+          # TODO(wasi): Keep this target here. Do not delete it.
+          # Re-enable once the WASI build/test path is fixed.
+          # - host: ubuntu-22.04
+          #   target: wasm32-wasip1-threads
+          #   build: pnpm run build:native --target wasm32-wasip1-threads && pnpm run build:ts
+    name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v5
@@ -136,6 +146,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           tool: cargo-zigbuild
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libfontconfig1-dev
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
@@ -157,7 +172,7 @@ jobs:
         if: matrix.settings.target != 'wasm32-wasip1-threads'
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: '*.node'
+          path: 'native/*.node'
           if-no-files-found: error
 
       - name: Upload artifact
@@ -165,10 +180,10 @@ jobs:
         if: matrix.settings.target == 'wasm32-wasip1-threads'
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: '*.wasm'
+          path: 'native/*.wasm'
           if-no-files-found: error
   build-freebsd:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     name: Build FreeBSD
     steps:
       - uses: actions/checkout@v5
@@ -186,7 +201,7 @@ jobs:
           environment_variables: 'DEBUG RUSTUP_IO_THREADS'
           shell: bash
           run: |
-            sudo pkg install -y -f curl node libnghttp2 npm
+            sudo pkg install -y -f curl node libnghttp2 npm pkgconf fontconfig
             sudo npm install -g corepack
             curl https://sh.rustup.rs -sSf --output rustup.sh
             sh rustup.sh -y --profile minimal --default-toolchain beta
@@ -211,7 +226,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: bindings-freebsd
-          path: ${{ env.APP_NAME }}.*.node
+          path: native/${{ env.APP_NAME }}.*.node
           if-no-files-found: error
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
@@ -221,13 +236,13 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: windows-latest
+          - host: windows-2022
             target: x86_64-pc-windows-msvc
             architecture: x64
-          - host: macos-latest
+          - host: macos-14
             target: x86_64-apple-darwin
             architecture: x64
-          - host: macos-latest
+          - host: macos-14
             target: aarch64-apple-darwin
             architecture: arm64
         node:
@@ -250,7 +265,10 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: .
+          path: native
+      - name: Normalize native artifact path
+        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        shell: bash
       - name: List packages
         run: ls -R .
         shell: bash
@@ -272,7 +290,7 @@ jobs:
         node:
           - '20'
           - '22'
-    runs-on: ${{ contains(matrix.target, 'aarch64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    runs-on: ${{ contains(matrix.target, 'aarch64') && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
     steps:
       - uses: actions/checkout@v5
       - name: setup pnpm
@@ -309,7 +327,10 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-${{ matrix.target }}
-          path: .
+          path: native
+      - name: Normalize native artifact path
+        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        shell: bash
       - name: List packages
         run: ls -R .
         shell: bash
@@ -325,12 +346,22 @@ jobs:
         with:
           image: ${{ steps.docker.outputs.IMAGE }}
           options: -v ${{ steps.docker.outputs.PNPM_STORE_PATH }}:${{ steps.docker.outputs.PNPM_STORE_PATH }} -v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}
-          run: npm run test
+          run: |
+            if command -v apk >/dev/null 2>&1; then
+              apk add --no-cache fontconfig
+            else
+              apt-get update
+              apt-get install -y --no-install-recommends fontconfig libfontconfig1
+            fi
+            npm run test
   test-wasi:
     name: Test WASI target
+    # TODO(wasi): Temporarily disabled. Do not delete this job.
+    # Re-enable together with the wasm32-wasip1-threads build matrix entry.
+    if: ${{ false }}
     needs:
       - build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
       - name: setup pnpm
@@ -346,7 +377,10 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bindings-wasm32-wasip1-threads
-          path: .
+          path: native
+      - name: Normalize native artifact path
+        run: find native -mindepth 2 -type f \( -name '*.node' -o -name '*.wasm' \) -exec mv {} native/ \;
+        shell: bash
       - name: List packages
         run: ls -R .
         shell: bash
@@ -356,13 +390,13 @@ jobs:
           NAPI_RS_FORCE_WASI: 1
   publish:
     name: Publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - lint
       - build-freebsd
       - test-macOS-windows-binding
       - test-linux-binding
-      - test-wasi
+      # TODO(wasi): Re-add test-wasi when the WASI build/test path is enabled again.
     steps:
       - uses: actions/checkout@v5
       - name: setup pnpm

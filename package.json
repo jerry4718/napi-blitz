@@ -48,10 +48,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "build": "pnpm run build:native && pnpm run build:ts",
-    "build:debug": "pnpm run build:native:debug && pnpm run build:ts",
+    "build": "node scripts/build.cjs",
+    "build:debug": "node scripts/build.cjs --debug",
     "build:ts": "tsc -p tsconfig.json && pnpm run build:ts:fixup",
-    "build:ts:fixup": "node -e \"const fs=require('fs');const p='dist/native.d.ts';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace(/from \\\"\\.\\.\\/\\.\\.\\/native\\\"/g,'from \\\"../native\\\"'));\"",
+    "build:ts:fixup": "node scripts/fixup-native-dts.cjs",
     "build:native": "napi build --platform --release --strip --output-dir native --js index.js --dts index.d.ts",
     "build:native:debug": "napi build --platform --strip --output-dir native --js index.js --dts index.d.ts",
     "prepublishOnly": "napi prepublish -t npm",
