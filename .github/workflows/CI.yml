@@ -73,11 +73,9 @@ jobs:
           - host: windows-2022
             build: pnpm run build:native --target x86_64-pc-windows-msvc && pnpm run build:ts
             target: x86_64-pc-windows-msvc
-          # TODO(i686): Re-enable once anyrender publishes a fix for its
-          # 32-bit FilterEffect size assertion on i686-pc-windows-msvc.
-          # - host: windows-2022
-          #   build: pnpm run build:native --target i686-pc-windows-msvc && pnpm run build:ts
-          #   target: i686-pc-windows-msvc
+          - host: windows-2022
+            build: pnpm run build:native --target i686-pc-windows-msvc && pnpm run build:ts
+            target: i686-pc-windows-msvc
           - host: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             build: pnpm run build:native --target x86_64-unknown-linux-gnu --use-napi-cross && pnpm run build:ts
@@ -90,11 +88,9 @@ jobs:
           - host: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
             build: pnpm run build:native --target aarch64-unknown-linux-gnu --use-napi-cross && pnpm run build:ts
-          # TODO(armv7): Re-enable once anyrender publishes a fix for its
-          # 32-bit FilterEffect size assertion on armv7-unknown-linux-gnueabihf.
-          # - host: ubuntu-22.04
-          #   target: armv7-unknown-linux-gnueabihf
-          #   build: pnpm run build:native --target armv7-unknown-linux-gnueabihf --use-napi-cross && pnpm run build:ts
+          - host: ubuntu-22.04
+            target: armv7-unknown-linux-gnueabihf
+            build: pnpm run build:native --target armv7-unknown-linux-gnueabihf --use-napi-cross && pnpm run build:ts
           # TODO(android): Keep these targets here. Do not delete them.
           # Re-enable after adding Android targets to package.json and setting up NDK/test coverage.
           # - host: ubuntu-22.04
@@ -169,14 +165,13 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo tree --target ${{ matrix.settings.target }} -e features -i openssl-src || true
         shell: bash
-      # TODO(i686): Re-enable with the i686-pc-windows-msvc build matrix entry.
-      # - name: Setup node x86
-      #   uses: actions/setup-node@v6
-      #   if: matrix.settings.target == 'i686-pc-windows-msvc'
-      #   with:
-      #     node-version: 22
-      #     cache: pnpm
-      #     architecture: x86
+      - name: Setup node x86
+        uses: actions/setup-node@v6
+        if: matrix.settings.target == 'i686-pc-windows-msvc'
+        with:
+          node-version: 22
+          cache: pnpm
+          architecture: x86
       - name: Build
         run: ${{ matrix.settings.build }}
         shell: bash
@@ -307,8 +302,7 @@ jobs:
           - x86_64-unknown-linux-musl
           - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
-          # TODO(armv7): Re-enable with the armv7-unknown-linux-gnueabihf build matrix entry.
-          # - armv7-unknown-linux-gnueabihf
+          - armv7-unknown-linux-gnueabihf
         node:
           - '20'
           - '22'

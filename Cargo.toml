@@ -41,7 +41,10 @@ package = "stylo"
 version = "0.38.0"
 
 [dependencies.anyrender_vello]
-version = "0.11.0"
+version = "=0.11.0"
+
+[dependencies.anyrender]
+version = "=0.11.1"
 
 [dependencies.parley]
 version = "0.10"
@@ -62,6 +65,13 @@ features = ["fontconfig-dlopen"]
 version = "0.13.4"
 default-features = false
 features = ["native-tls-vendored"]
+
+[patch.crates-io]
+# anyrender 0.11.1 has a documentation-only size assertion that assumes
+# non-wasm targets are 64-bit. i686-pc-windows-msvc is 32-bit, where
+# FilterEffect is 88 bytes. Keep this minimal local patch until upstream
+# publishes a fixed release.
+anyrender = { path = "vendor/anyrender-0.11.1" }
 
 [build-dependencies]
 napi-build = "2.3.2"
