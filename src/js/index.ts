@@ -2,6 +2,8 @@
 
 export { BlitzApp } from "./host/app";
 export type { OpenWindowInit } from "./host/app";
+export { BufferBlitzApp } from "./buffer/app";
+export type { BufferBlitzAppInit, BufferFrame } from "./buffer/app";
 
 export { Window } from "./host/window";
 

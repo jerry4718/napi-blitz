@@ -73,6 +73,23 @@ export declare class BlitzApp {
   pumpAppEvents(millis: number): PumpResult
 }
 
+export declare class BufferRenderer {
+  static create(options: BufferRendererOptions): BufferRenderer
+  /**
+   * Resize the virtual surface. Dimensions are CSS pixels; the returned
+   * frame dimensions are multiplied by `scale`.
+   */
+  resize(options: BufferRendererOptions): void
+  /**
+   * Resolve the document and render it into a fresh RGBA8 buffer.
+   *
+   * This is a deliberately simple first architecture pass: every call paints
+   * the whole viewport. Later we can layer dirty-region tracking and buffer
+   * reuse on top without changing the separation from the native window path.
+   */
+  render(doc: DocHandle): BufferFrame
+}
+
 /**
  * JS-facing handle. Holds the shared document state and exposes the flat
  * nodeId-based DOM API.
@@ -370,6 +387,26 @@ export interface AttrInit {
   name: string
   value: string
   namespace?: string
+}
+
+export interface BufferFrame {
+  /** Frame width in physical pixels. */
+  width: number
+  /** Frame height in physical pixels. */
+  height: number
+  /** Device scale factor used to render the frame. */
+  scale: number
+  /** RGBA8 pixels, row-major, 4 bytes per pixel. */
+  data: Uint8Array
+}
+
+export interface BufferRendererOptions {
+  /** Viewport width in CSS pixels. */
+  width: number
+  /** Viewport height in CSS pixels. */
+  height: number
+  /** Device scale factor. Defaults to 1.0. */
+  scale?: number
 }
 
 /** JS reports back per-event how dispatch went. */

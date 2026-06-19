@@ -17,6 +17,7 @@
 mod app;
 mod app_bridge;
 mod app_handler;
+mod buffer;
 mod doc;
 mod event;
 mod ops;
@@ -25,6 +26,7 @@ mod window;
 
 pub use app::BlitzApp;
 pub use app_bridge::{AppDispatchResult, AppEventPayload};
+pub use buffer::{BufferFrame, BufferRenderer, BufferRendererOptions};
 pub use doc::{DocHandle, DocHandleConfig};
 pub use payload::*;
 pub use window::Window;

@@ -17,6 +17,7 @@ Highlights:
 - No `Electron-style IPC` layer and no `Tauri-style WebView`: your JS calls native DOM bindings directly.
 - Standard-ish DOM wrappers: `document.createElement`, `appendChild`, `textContent`, `setAttribute`, `querySelector`, event listeners, inline styles, etc.
 - `Multiple windows` from one `BlitzApp`.
+- Experimental `BufferBlitzApp` path for headless RGBA frame rendering without native windows.
 - Prebuilt N-API packages for supported platforms.
 - TypeScript declarations included.
 
@@ -202,6 +203,24 @@ b.document.body.textContent = "B";
 while (!a.closed || !b.closed) {
   app.pumpAppEvents(16);
 }
+```
+
+### Headless RGBA buffer rendering
+
+`BufferBlitzApp` is an experimental architecture path for hosts that want Blitz layout/paint output without owning a native window. It resolves a document and returns an RGBA8 frame; the host decides how to display or transport that buffer.
+
+```ts
+import { BufferBlitzApp } from "@ylcc/napi-blitz";
+
+const app = BufferBlitzApp.create({
+  width: 800,
+  height: 600,
+  scale: 1,
+  baseHtml: "<!doctype html><html><body>Hello buffer</body></html>",
+});
+
+const frame = app.render();
+// frame.data is a Uint8Array-compatible RGBA8 buffer.
 ```
 
 ## Examples in this repository

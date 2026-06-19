@@ -43,6 +43,15 @@ version = "0.38.0"
 [dependencies.anyrender_vello]
 version = "0.11.0"
 
+[dependencies.anyrender]
+version = "0.11.1"
+
+[dependencies.anyrender_vello_cpu]
+version = "0.14.0"
+
+[dependencies.blitz-paint]
+version = "=0.3.0-alpha.5"
+
 [dependencies.parley]
 version = "0.10"
 default-features = false
@@ -54,6 +63,9 @@ features = ["std"]
 [dependencies.fontique]
 version = "0.10.0"
 features = ["fontconfig-dlopen"]
+
+[dependencies.peniko]
+version = "0.6.1"
 
 # Unify reqwest's TLS feature for Linux builds so openssl-sys builds
 # OpenSSL from source instead of trying to locate a target sysroot via pkg-config.

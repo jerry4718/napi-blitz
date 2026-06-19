@@ -15,6 +15,9 @@ import type {
   AppDispatchResult,
   AppEventPayload,
   AttrInit,
+  BufferFrame,
+  BufferRenderer as NativeBufferRenderer,
+  BufferRendererOptions,
   BlitzApp as NativeBlitzApp,
   DispatchResult,
   DocHandle as NativeDocHandle,
@@ -33,6 +36,7 @@ import type {
 
 interface NativeModuleShape {
   BlitzApp: typeof NativeBlitzApp;
+  BufferRenderer: typeof NativeBufferRenderer;
   DocHandle: typeof NativeDocHandle;
 }
 
@@ -44,12 +48,16 @@ const requireFromRoot = createRequire(path.join(packageRoot, "_anchor.js"));
 const mod: NativeModuleShape = requireFromRoot("./native/index.js");
 
 export const NativeBlitzAppCtor: typeof NativeBlitzApp = mod.BlitzApp;
+export const NativeBufferRendererCtor: typeof NativeBufferRenderer =
+  mod.BufferRenderer;
 export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
 
 export type {
   AppDispatchResult,
   AppEventPayload,
   AttrInit,
+  BufferFrame,
+  BufferRendererOptions,
   DispatchResult,
   DocHandleConfig,
   EventPayload,
@@ -60,6 +68,7 @@ export type {
   PumpResult,
   RegisterFontOptions,
   WheelData,
+  NativeBufferRenderer,
   NativeBlitzApp,
   NativeDocHandle,
   NativeWindow as Window,
