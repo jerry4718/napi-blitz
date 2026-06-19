@@ -4,7 +4,6 @@
 
 import { Node } from "../base/node";
 import { makeAttributesProxy, type AttributesMap } from "./attributes";
-import type { Document } from "../document/document";
 
 export class Element extends Node {
   private _attributesProxy: AttributesMap | null = null;
@@ -106,7 +105,7 @@ export class Element extends Node {
    * `"*"` matches all descendant elements via `findAllElementsIn`.
    */
   getElementsByTagName(name: string): Element[] {
-    const owner = this._ownerDocument as unknown as Document;
+    const owner = this._ownerDocument;
     if (name === "*") {
       return owner._native
         .findAllElementsIn(this._nodeId)
@@ -122,7 +121,7 @@ export class Element extends Node {
    * itself is excluded (DFS starts at children). Snapshot array.
    */
   getElementsByClassName(className: string): Element[] {
-    const owner = this._ownerDocument as unknown as Document;
+    const owner = this._ownerDocument;
     return owner._native
       .findAllByClassNameIn(this._nodeId, className)
       .map((id) => owner._wrap(id) as Element);
@@ -134,7 +133,7 @@ export class Element extends Node {
    * and per spec the element itself is not a candidate.
    */
   querySelector(selector: string): Element | null {
-    const owner = this._ownerDocument as unknown as Document;
+    const owner = this._ownerDocument;
     const id = owner._native.querySelectorIn(this._nodeId, selector);
     return id === null ? null : (owner._wrap(id) as Element);
   }
@@ -145,7 +144,7 @@ export class Element extends Node {
    * subtree.
    */
   querySelectorAll(selector: string): Element[] {
-    const owner = this._ownerDocument as unknown as Document;
+    const owner = this._ownerDocument;
     return owner._native
       .querySelectorAllIn(this._nodeId, selector)
       .map((id) => owner._wrap(id) as Element);

@@ -25,7 +25,12 @@ export const NodeTypes = {
 export abstract class Node extends EventTarget {
   protected readonly _handle: NativeDocHandle;
   protected readonly _nodeId: number;
-  protected readonly _ownerDocument: DocumentInternals;
+  // Not `readonly`: `Document` patches it to `this` immediately after
+  // calling `super()` (a Document is its own owner, but `this` is not
+  // available before `super(...)` returns). No other code should
+  // reassign this — `_setOwnerDocument` below is the only allowed
+  // mutation path.
+  protected _ownerDocument: DocumentInternals;
 
   /**
    * @internal
@@ -42,6 +47,19 @@ export abstract class Node extends EventTarget {
     this._handle = handle;
     this._nodeId = nodeId;
     this._ownerDocument = ownerDocument;
+  }
+
+  /**
+   * @internal Patch the owner-document reference. Used exclusively by
+   * the `Document` constructor to point its own `_ownerDocument` at
+   * `this` after `super()` runs (there is no way to forward a
+   * not-yet-constructed `this` through `super()`'s arguments).
+   *
+   * Non-Document call sites are a bug; we keep this `protected` so
+   * the type system blocks accidental external use.
+   */
+  protected _setOwnerDocument(doc: DocumentInternals): void {
+    this._ownerDocument = doc;
   }
 
   /** DOM-style numeric nodeType. */

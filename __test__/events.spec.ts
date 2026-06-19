@@ -7,7 +7,11 @@ import test from "ava";
 
 import { BlitzPointerEvent, HTMLDocument } from "../dist/index.js";
 
-import { makeClickPayload, nodeIdOf } from "./_helpers.js";
+import {
+  makeClickPayload,
+  nodeIdOf,
+  pluckDocument,
+} from "./_helpers.js";
 
 test("event subclasses are exported", (t) => {
   t.true(typeof BlitzPointerEvent === "function");
@@ -34,8 +38,7 @@ test("event chain: bubble + stopPropagation", (t) => {
     nodeIdOf(outer),
     nodeIdOf(body),
   ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = (doc as any)._dispatchFromNative(payload);
+  const result = pluckDocument(doc)._dispatchFromNative(payload);
 
   t.deepEqual(calls, ["inner"]);
   t.true(result.propagationStopped);
@@ -59,8 +62,7 @@ test("event chain: full bubble when no stop", (t) => {
     nodeIdOf(outer),
     nodeIdOf(body),
   ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (doc as any)._dispatchFromNative(payload);
+  pluckDocument(doc)._dispatchFromNative(payload);
 
   t.deepEqual(calls, ["inner", "outer", "body"]);
 });
@@ -73,9 +75,11 @@ test("event chain: preventDefault is reported", (t) => {
 
   el.addEventListener("click", (e) => e.preventDefault());
 
-  const payload = makeClickPayload(nodeIdOf(el), [nodeIdOf(el), nodeIdOf(body)]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = (doc as any)._dispatchFromNative(payload);
+  const payload = makeClickPayload(nodeIdOf(el), [
+    nodeIdOf(el),
+    nodeIdOf(body),
+  ]);
+  const result = pluckDocument(doc)._dispatchFromNative(payload);
   t.true(result.defaultPrevented);
 });
 
@@ -94,8 +98,7 @@ test("event.target stays pinned to the originating node", (t) => {
     nodeIdOf(inner),
     nodeIdOf(body),
   ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (doc as any)._dispatchFromNative(payload);
+  pluckDocument(doc)._dispatchFromNative(payload);
 
   t.is(observed, inner);
 });

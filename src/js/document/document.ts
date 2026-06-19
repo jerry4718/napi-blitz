@@ -32,6 +32,27 @@ export interface DocumentInit {
 }
 
 /**
+ * Placeholder owner-document handed to `super(...)` while a `Document`
+ * is bootstrapping itself. Reading any property on it indicates a bug
+ * — the Document constructor patches `_ownerDocument` to `this` before
+ * any code observes it. We use a Proxy rather than `undefined` so the
+ * mistake is loud (a thrown Error pointing at the misuse) instead of a
+ * cryptic "cannot read property of undefined".
+ */
+const PENDING_OWNER_DOCUMENT: DocumentInternals = new Proxy(
+  {} as DocumentInternals,
+  {
+    get(_target, prop): never {
+      throw new Error(
+        `Document._ownerDocument was read (property "${String(prop)}") ` +
+          "before the Document constructor finished initializing it. " +
+          "This is a bug in @ylcc/napi-blitz.",
+      );
+    },
+  },
+);
+
+/**
  * Top-level base. Most users instantiate one of the concrete subclasses
  * (e.g. `HTMLDocument`); this base class is exported mainly for
  * `instanceof` checks and shared code.
@@ -71,12 +92,17 @@ export abstract class Document extends Node implements DocumentInternals {
       },
     });
 
-    super(native, native.rootNodeId(), undefined as unknown as DocumentInternals);
+    // Forward a placeholder for `ownerDocument`: Node requires it in
+    // the super-call but `this` is not yet available. The Document
+    // patches its own `_ownerDocument` to `this` on the next line via
+    // `_setOwnerDocument`, before any code can observe the placeholder.
+    super(native, native.rootNodeId(), PENDING_OWNER_DOCUMENT);
 
     self.ref = this;
     this._native = native;
-    // Document is its own ownerDocument.
-    (this as unknown as { _ownerDocument: DocumentInternals })._ownerDocument = this;
+    // Document is its own ownerDocument. `_setOwnerDocument` is the
+    // sanctioned hatch for this single use-case.
+    this._setOwnerDocument(this);
 
     this._finalizer = new FinalizationRegistry<number>((nodeId) => {
       const ref = this._nodes.get(nodeId);
