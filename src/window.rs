@@ -53,4 +53,12 @@ impl Window {
     pub fn closed(&self) -> bool {
         self.closed
     }
+
+    /// Internal blitz `BaseDocument` id of the attached document. JS
+    /// uses this to map app-event payloads back to the right `Window`
+    /// wrapper. Stable for the lifetime of the window.
+    #[napi(getter)]
+    pub fn doc_id(&self) -> u32 {
+        self.doc_id as u32
+    }
 }

@@ -3,13 +3,24 @@
 // embedding: it exposes the document, runtime size/resizable controls,
 // and a `close()` action.
 //
-// Naming convention:
-//   - JS-side method names follow web conventions where reasonable
-//     (`resize`, `innerSize`, `resizable`).
-//   - The underlying native methods follow winit's naming
-//     (`setWindowInnerSize` etc.) and live on `BlitzApp`, since the
-//     napi `Window` handle does not own a back-reference to the live
-//     winit `Arc<dyn Window>`.
+// `Window` extends `EventTarget`, so JS code can listen for lifecycle
+// events:
+//
+//   - `close`   (cancelable): fires before the window is torn down.
+//                Dispatched from two places:
+//                  * The OS window manager's "close request" (user
+//                    clicked the X button or hit Cmd-W / Alt-F4),
+//                    routed via the native `setAppEventHandler` hook
+//                    on `BlitzApp`.
+//                  * `Window.close()` / `BlitzApp.closeWindow(w)`,
+//                    which dispatch the same event before delegating
+//                    to the native side.
+//                Calling `event.preventDefault()` cancels the close.
+//
+//   - `closed`  (non-cancelable): fires after the window has been
+//                removed from the application. This is the place to
+//                drop references and let the GC reclaim the
+//                associated document tree.
 //
 // We deliberately do NOT close the OS window in a `FinalizationRegistry`
 // callback. GC timing is unpredictable, and a user calling `close()`
@@ -20,7 +31,7 @@ import type { BlitzApp } from "./app";
 import type { HTMLDocument } from "../document/html-document";
 import type { Window as NativeWindow } from "../native";
 
-export class Window {
+export class Window extends EventTarget {
   /**
    * @internal Constructed by `BlitzApp.openWindow`. Direct construction
    * outside the package is unsupported.
@@ -29,11 +40,22 @@ export class Window {
     private readonly _app: BlitzApp,
     private readonly _nativeWindow: NativeWindow,
     private readonly _document: HTMLDocument,
-  ) {}
+  ) {
+    super();
+  }
 
   /** The HTMLDocument painted in this window. */
   get document(): HTMLDocument {
     return this._document;
+  }
+
+  /**
+   * Stable numeric id of the document attached to this window. Mirrors
+   * the native `doc_id` and is used by `BlitzApp` to look up windows
+   * routed from the OS event handler.
+   */
+  get docId(): number {
+    return this._nativeWindow.docId;
   }
 
   /** Whether the window has been closed. */
@@ -43,10 +65,30 @@ export class Window {
 
   /**
    * Close the OS window synchronously. Equivalent to
-   * `app.closeWindow(window)`. Subsequent calls are no-ops.
+   * `app.closeWindow(window)`. Dispatches a cancelable `close` event
+   * first; if the listener calls `event.preventDefault()` the close
+   * is aborted and `closed` will not fire. Subsequent calls on an
+   * already-closed window are no-ops.
    */
   close(): void {
     this._app.closeWindow(this);
+  }
+
+  /**
+   * @internal Dispatch a cancelable `close` event on this window.
+   * Returns `true` if the close should proceed (default not
+   * prevented). Used by `BlitzApp` for both JS-initiated closes and
+   * OS-initiated closes routed through the native bridge.
+   */
+  _dispatchClose(): boolean {
+    const event = new Event("close", { cancelable: true });
+    this.dispatchEvent(event);
+    return !event.defaultPrevented;
+  }
+
+  /** @internal Dispatch the non-cancelable `closed` event. */
+  _dispatchClosed(): void {
+    this.dispatchEvent(new Event("closed"));
   }
 
   /**

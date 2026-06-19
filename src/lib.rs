@@ -15,6 +15,8 @@
 //!    Rust via the return value, which we translate into blitz `EventState`.
 
 mod app;
+mod app_bridge;
+mod app_handler;
 mod doc;
 mod event;
 mod ops;
@@ -22,6 +24,7 @@ mod payload;
 mod window;
 
 pub use app::BlitzApp;
+pub use app_bridge::{AppDispatchResult, AppEventPayload};
 pub use doc::{DocHandle, DocHandleConfig};
 pub use payload::*;
 pub use window::Window;

@@ -4,6 +4,16 @@ export declare class BlitzApp {
   /** Build the winit event loop and underlying blitz application. */
   static create(): BlitzApp
   /**
+   * Install (or replace) the JS callback that receives app/window
+   * events. JS wires this in its `BlitzApp` constructor; calling
+   * again replaces the previous handler.
+   *
+   * The callback receives an `AppEventPayload` and must return an
+   * `AppDispatchResult` reporting whether the JS-side `Event` had
+   * `preventDefault()` called on it.
+   */
+  setAppEventHandler(callback: (arg: AppEventPayload) => AppDispatchResult): void
+  /**
    * Attach a new window to the given document handle. The same handle can
    * only be attached to one window. The JS DocHandle keeps working after
    * this call (it shares state with the window via Rc<RefCell<...>>), so
@@ -313,6 +323,41 @@ export declare class DocHandle {
 export declare class Window {
   /** Whether `closeWindow` has run for this handle. */
   get closed(): boolean
+  /**
+   * Internal blitz `BaseDocument` id of the attached document. JS
+   * uses this to map app-event payloads back to the right `Window`
+   * wrapper. Stable for the lifetime of the window.
+   */
+  get docId(): number
+}
+
+/**
+ * Result reported back from JS after dispatching an app event. A
+ * missing call (handler not installed, or threw) acts as
+ * `default_prevented = false`.
+ */
+export interface AppDispatchResult {
+  defaultPrevented: boolean
+}
+
+/**
+ * Payload handed to the JS-side app-event handler. One shape for all
+ * of our app/window events; fields not relevant to a given event are
+ * left at their defaults.
+ */
+export interface AppEventPayload {
+  /** `"close" | "closed"` for now. */
+  eventType: string
+  /**
+   * `BaseDocument::id` of the window the event refers to. JS uses
+   * this to map back to the right `Window` wrapper.
+   */
+  windowDocId: number
+  /**
+   * Whether the JS `Event` constructed from this payload should be
+   * cancelable. Only `close` is cancelable; `closed` is not.
+   */
+  cancelable: boolean
 }
 
 /** Plain attribute pair used by the create/insert APIs. */

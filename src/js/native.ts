@@ -12,6 +12,8 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 
 import type {
+  AppDispatchResult,
+  AppEventPayload,
   AttrInit,
   BlitzApp as NativeBlitzApp,
   DispatchResult,
@@ -45,6 +47,8 @@ export const NativeBlitzAppCtor: typeof NativeBlitzApp = mod.BlitzApp;
 export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
 
 export type {
+  AppDispatchResult,
+  AppEventPayload,
   AttrInit,
   DispatchResult,
   DocHandleConfig,

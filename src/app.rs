@@ -13,12 +13,19 @@ use anyrender_vello::VelloWindowRenderer;
 use blitz::shell::{
     BlitzApplication, BlitzShellProxy, EventLoop, WindowConfig, create_default_event_loop,
 };
-use napi::{Error, Result};
+use blitz::traits::shell::DummyShellProvider;
+use napi::{
+    Env, Error, Result,
+    bindgen_prelude::{Function, FunctionRef},
+};
 use napi_derive::napi;
+use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::WindowAttributes;
 
+use crate::app_bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge};
+use crate::app_handler::JsAppHandler;
 use crate::doc::{DocHandle, make_window_document};
 use crate::window::{Window, WindowOptions};
 
@@ -43,6 +50,26 @@ pub struct BlitzApp {
     /// initialised yet (winit's `can_create_surfaces` only runs during
     /// `pumpAppEvents`). Each entry is `(doc_id, config)`.
     pending: Vec<(usize, WindowConfig<VelloWindowRenderer>)>,
+    /// Doc ids requested to close from JS. We intentionally defer live
+    /// `View` removal until after the current `pump_app_events` call has
+    /// returned from winit/blitz event dispatch. This makes `window.close()`
+    /// safe to call from within that same window's click handler: blitz's
+    /// `EventDriver` may still need to borrow the document after JS listeners
+    /// return to run default actions.
+    closing_doc_ids: Vec<usize>,
+    /// JS-side bridge for app/window events (close / closed). Set
+    /// lazily by `setAppEventHandler`; absent until JS opts in.
+    bridge: Option<JsAppBridge>,
+    /// Number of windows currently considered "alive". Incremented
+    /// on `openWindow`, decremented in the `close_window` path when we
+    /// successfully remove a window from `application.windows` and in
+    /// the native `CloseRequested` path via
+    /// `JsAppHandler::outstanding`.
+    outstanding_windows: usize,
+    /// True once at least one window has ever been opened. Without
+    /// this, calling `pump_app_events` before any `open_window` would
+    /// wrongly synthesise an exit on the very first pump.
+    has_opened_window: bool,
 }
 
 #[napi]
@@ -57,7 +84,30 @@ impl BlitzApp {
             event_loop,
             application,
             pending: Vec::new(),
+            closing_doc_ids: Vec::new(),
+            bridge: None,
+            outstanding_windows: 0,
+            has_opened_window: false,
         }
+    }
+
+    /// Install (or replace) the JS callback that receives app/window
+    /// events. JS wires this in its `BlitzApp` constructor; calling
+    /// again replaces the previous handler.
+    ///
+    /// The callback receives an `AppEventPayload` and must return an
+    /// `AppDispatchResult` reporting whether the JS-side `Event` had
+    /// `preventDefault()` called on it.
+    #[napi]
+    pub fn set_app_event_handler(
+        &mut self,
+        env: Env,
+        callback: Function<AppEventPayload, AppDispatchResult>,
+    ) -> Result<()> {
+        let callback_ref: FunctionRef<AppEventPayload, AppDispatchResult> =
+            callback.create_ref()?;
+        self.bridge = Some(JsAppBridge::new(env, callback_ref));
+        Ok(())
     }
 
     /// Attach a new window to the given document handle. The same handle can
@@ -91,6 +141,8 @@ impl BlitzApp {
         let config =
             WindowConfig::with_attributes(window_doc, VelloWindowRenderer::new(), attributes);
         self.pending.push((doc_id, config));
+        self.has_opened_window = true;
+        self.outstanding_windows += 1;
         Ok(Window {
             doc_id,
             closed: false,
@@ -106,20 +158,51 @@ impl BlitzApp {
     /// does not close the OS window. Callers must invoke this explicitly.
     #[napi]
     pub fn close_window(&mut self, window: &mut Window) {
-        if window.closed {
-            return;
-        }
         let doc_id = window.doc_id;
 
-        // Drop matching pending config (window opened but never pumped).
+        // Public JS API guarantee: close() is idempotent. Multiple calls are
+        // common when listeners race with UI state updates, so only the first
+        // one has side effects.
+        if window.closed || self.closing_doc_ids.contains(&doc_id) {
+            window.closed = true;
+            return;
+        }
+
+        // Drop matching pending config (window opened but not yet pumped).
+        // After `pump_app_events`, the config has been handed to the
+        // `JsAppHandler` which promotes it to a live `View` inside
+        // `application.windows` via `View::init`, so the
+        // `application.windows.retain` below catches the
+        // post-pump case.
+        let was_pending = self.pending.iter().any(|(id, _)| *id == doc_id);
         self.pending.retain(|(id, _)| *id != doc_id);
 
-        // Remove from initialised windows.
-        self.application
-            .windows
-            .retain(|_, view| view.doc.id() != doc_id);
+        let was_initialised = self.has_initialised_window(doc_id);
+        if was_initialised {
+            self.closing_doc_ids.push(doc_id);
+        }
+
+        let removed = was_pending || was_initialised;
 
         window.closed = true;
+        if removed {
+            self.outstanding_windows = self.outstanding_windows.saturating_sub(1);
+        }
+
+        // Pending windows never enter the event loop, so it is safe to notify
+        // immediately. Live windows are notified from `flush_closing_windows`,
+        // after any in-progress winit/blitz document event dispatch has fully
+        // unwound.
+        if was_pending
+            && !was_initialised
+            && let Some(bridge) = self.bridge.as_ref()
+        {
+            let _ = bridge.dispatch(AppEventPayload {
+                event_type: APP_EVENT_CLOSED.to_string(),
+                window_doc_id: doc_id as u32,
+                cancelable: false,
+            });
+        }
     }
 
     // -- Per-window runtime configuration -----------------------------------
@@ -186,24 +269,103 @@ impl BlitzApp {
             .find(|v| v.doc.id() == window.doc_id)
     }
 
+    fn has_initialised_window(&self, doc_id: usize) -> bool {
+        self.application
+            .windows
+            .values()
+            .any(|view| view.doc.id() == doc_id)
+    }
+
+    fn flush_closing_windows(&mut self) {
+        if self.closing_doc_ids.is_empty() {
+            return;
+        }
+
+        let closing_doc_ids = std::mem::take(&mut self.closing_doc_ids);
+        for doc_id in closing_doc_ids {
+            let Some(window_id) = self
+                .application
+                .windows
+                .iter()
+                .find_map(|(window_id, view)| (view.doc.id() == doc_id).then_some(*window_id))
+            else {
+                continue;
+            };
+
+            if let Some(mut view) = self.application.windows.remove(&window_id) {
+                // `View::init` stores a `BlitzShellProvider` in the document.
+                // That provider owns an `Arc<dyn winit::Window>`, so simply
+                // dropping `View` is not enough to make the OS window go away.
+                // Swap the provider back to the dummy implementation first so
+                // the winit window Arc can actually reach zero.
+                view.doc
+                    .inner_mut()
+                    .set_shell_provider(Arc::new(DummyShellProvider));
+                drop(view);
+            }
+
+            if let Some(bridge) = self.bridge.as_ref() {
+                let _ = bridge.dispatch(AppEventPayload {
+                    event_type: APP_EVENT_CLOSED.to_string(),
+                    window_doc_id: doc_id as u32,
+                    cancelable: false,
+                });
+            }
+        }
+    }
+
     /// Pump pending winit events for at most `millis` milliseconds. JS should
     /// call this in a loop (typically once per animation frame) to drive the
     /// renderer and event handling.
     #[napi]
     pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
         // Hand any windows that survived `closeWindow` over to the
-        // BlitzApplication. After this they live in `application.windows`
-        // (after the next `can_create_surfaces`) and synchronous close is
-        // routed through `application.windows.retain(...)`.
+        // BlitzApplication. After this they live in
+        // `application.pending_windows` until the next handler hook
+        // promotes them. blitz's own `can_create_surfaces` only fires
+        // on initial resume, so the JS-runtime case is handled by
+        // `JsAppHandler::drain_pending_windows`, which calls
+        // `View::init` from `about_to_wait` / `proxy_wake_up`. By the
+        // time `pump_app_events` returns, every entry pushed here has
+        // either become a `View` in `application.windows` or been
+        // explicitly cancelled via `close_window`.
         for (_doc_id, config) in self.pending.drain(..) {
             self.application.add_window(config);
         }
 
+        // A caller may invoke `window.close()` between pump ticks. In that
+        // case no winit/blitz document dispatch is active, so it is safe and
+        // necessary to drop the queued views before the synthetic-exit check
+        // below observes `outstanding_windows == 0`.
+        self.flush_closing_windows();
+
+        // If at least one window has ever been opened and every
+        // window has now been closed via JS, surface a synthetic
+        // Exit. winit's `pump_app_events` mode never exits on its
+        // own; the OS-initiated `CloseRequested` path already
+        // triggers `event_loop.exit()` from inside
+        // `BlitzApplication::window_event`, but JS-initiated
+        // `BlitzApp::close_window` bypasses winit's pipeline entirely.
+        if self.has_opened_window && self.outstanding_windows == 0 {
+            return PumpResult {
+                r#continue: false,
+                exit: true,
+                code: Some(0),
+            };
+        }
+
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
-        match self
-            .event_loop
-            .pump_app_events(timeout, &mut self.application)
-        {
+        // Build a fresh per-pump handler that wraps the inner blitz
+        // application and lets JS observe close/closed events.
+        let mut handler = JsAppHandler {
+            inner: &mut self.application,
+            bridge: self.bridge.as_ref(),
+            outstanding: &mut self.outstanding_windows,
+        };
+        let status = self.event_loop.pump_app_events(timeout, &mut handler);
+        self.flush_closing_windows();
+
+        match status {
             PumpStatus::Continue => PumpResult {
                 r#continue: true,
                 exit: false,
