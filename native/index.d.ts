@@ -150,6 +150,17 @@ export declare class DocHandle {
   createCommentNode(): number
   /** Deep-clone an existing node and return the new node's id. */
   deepCloneNode(nodeId: number): number
+  /**
+   * Shallow-clone a node: same data (tag name, attributes, text
+   * payload, etc.) but no children. The new node has no parent.
+   * Returns the new node's id.
+   *
+   * Cloning a missing nodeId returns 0 (the document root) — the
+   * caller should make sure the source id is valid first. The
+   * alternative (returning `Option<u32>`) noisily complicates the
+   * JS-side cloneNode wrapper for a case JS code can never trigger.
+   */
+  shallowCloneNode(nodeId: number): number
   /** Parent node id, if any. */
   parentId(nodeId: number): number | null
   /** First child id, if any. */

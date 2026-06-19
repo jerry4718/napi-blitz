@@ -157,13 +157,23 @@ export abstract class Node extends EventTarget {
 
   // ---- Cloning / containment ---------------------------------------------
 
+  /**
+   * Standard `Node.cloneNode(deep)`.
+   *
+   * - `deep=false` (default): copies this node only — same tag, same
+   *   attributes, same text/comment payload, but no children. The
+   *   clone starts detached (no parent, no owner-list membership).
+   * - `deep=true`: copies this node and the entire subtree.
+   *
+   * The clone shares no mutable state with the original beyond what
+   * `Clone` on the underlying `NodeData` shares (Arc-pointered things
+   * like the parsed inline-style block — those are immutable from
+   * the engine's side and copy-on-write at the property level).
+   */
   cloneNode(deep = false): Node {
-    if (!deep) {
-      // We don't yet expose a shallow-clone primitive on the native side.
-      // Until then, deep-clone is the only safe option.
-      // TODO: add `cloneNodeShallow` in Rust and wire here.
-    }
-    const id = this._handle.deepCloneNode(this._nodeId);
+    const id = deep
+      ? this._handle.deepCloneNode(this._nodeId)
+      : this._handle.shallowCloneNode(this._nodeId);
     return this._ownerDocument._wrap(id) as Node;
   }
 

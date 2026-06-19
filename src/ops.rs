@@ -190,6 +190,27 @@ impl DocHandle {
         let mut mutator = state.mutate();
         mutator.deep_clone_node(node_id as usize) as u32
     }
+
+    /// Shallow-clone a node: same data (tag name, attributes, text
+    /// payload, etc.) but no children. The new node has no parent.
+    /// Returns the new node's id.
+    ///
+    /// Cloning a missing nodeId returns 0 (the document root) — the
+    /// caller should make sure the source id is valid first. The
+    /// alternative (returning `Option<u32>`) noisily complicates the
+    /// JS-side cloneNode wrapper for a case JS code can never trigger.
+    #[napi]
+    pub fn shallow_clone_node(&mut self, node_id: u32) -> u32 {
+        let mut state = self.base.0.borrow_mut();
+        let Some(source) = state.get_node(node_id as usize) else {
+            return 0;
+        };
+        // Cloning `NodeData` deep-copies attributes, text, and the
+        // (Arc-shared) parsed `style` declaration block. We never
+        // touch `children` / `parent` so the clone starts detached.
+        let data = source.data.clone();
+        state.create_node(data) as u32
+    }
 }
 
 #[napi]

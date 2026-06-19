@@ -66,3 +66,49 @@ test("contains walks ancestors", (t) => {
   t.true(outer.contains(inner));
   t.false(inner.contains(outer));
 });
+
+test("cloneNode(false) shallow-copies a node without children", (t) => {
+  const doc = new HTMLDocument();
+  const div = doc.createElement("div");
+  div.id = "src";
+  div.appendChild(doc.createElement("span"));
+  div.appendChild(doc.createTextNode("hello"));
+
+  const clone = div.cloneNode(false);
+  // Same tag, same attributes.
+  t.is((clone as typeof div).tagName, "div");
+  t.is((clone as typeof div).id, "src");
+  // Distinct identity from the source.
+  t.not(clone, div);
+  // Detached: no parent until appended.
+  t.is(clone.parentNode, null);
+  // No children copied.
+  t.is(clone.childNodes.length, 0);
+  // Original is untouched.
+  t.is(div.childNodes.length, 2);
+});
+
+test("cloneNode(true) deep-copies the whole subtree", (t) => {
+  const doc = new HTMLDocument();
+  const div = doc.createElement("div");
+  div.id = "src";
+  div.innerHTML = "<span>a</span><p>b</p>";
+
+  const clone = div.cloneNode(true);
+  t.is((clone as typeof div).id, "src");
+  // Children are duplicated, not shared.
+  t.is(clone.childNodes.length, 2);
+  t.not(clone.firstChild, div.firstChild);
+});
+
+test("cloneNode preserves inline style attribute", (t) => {
+  const doc = new HTMLDocument();
+  const div = doc.createElement("div");
+  div.setAttribute("style", "color: red");
+
+  const shallow = div.cloneNode(false);
+  t.is(shallow.getAttribute?.("style"), "color: red");
+
+  const deep = div.cloneNode(true);
+  t.is(deep.getAttribute?.("style"), "color: red");
+});
