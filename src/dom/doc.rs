@@ -2,15 +2,12 @@
 //!
 //! The handle owns two shared cells:
 //!   - `SharedBaseDoc`: `Rc<RefCell<BaseDocument>>` — the document tree.
-//!   - `SharedBridge`: `Rc<RefCell<JsBridge>>` — the JS event-dispatch bridge.
-//!
-//! Splitting them into separate `RefCell`s is deliberate: blitz's
-//! `EventDriver` needs `&mut dyn Document` for the duration of event
-//! dispatch, and during that time the JS callback may fire. The JS
-//! callback must be able to read/mutate the DOM (which borrows
-//! `SharedBaseDoc`) without colliding with the bridge borrow. If both
-//! lived in the same `RefCell<DocState>`, any JS-triggered DOM op
-//! during dispatch would panic with "already mutably borrowed".
+//!   - `SharedBridge`: holds `Rc<RefCell<JsBridge>>` (the dispatch callback)
+//!     and a *separate* `Rc<RefCell<HashSet<usize>>>` (the listened-nodes
+//!     set). Splitting the listened set into its own `RefCell` prevents
+//!     `RefCell` collisions when JS event handlers mutate the DOM (which
+//!     calls `DocHandle::add_listened_node`) while `WindowDocument::handle_ui_event`
+//!     holds a `RefMut<JsBridge>`.
 //!
 //! `WindowDocument` implements `Document` by borrowing `SharedBaseDoc`
 //! on each `inner()` / `inner_mut()` call and releasing immediately, so
@@ -18,6 +15,7 @@
 
 use std::{
     cell::{Cell, RefCell},
+    collections::HashSet,
     rc::Rc,
     sync::Arc,
     task::Context as TaskContext,
@@ -41,6 +39,23 @@ use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth}
 
 use crate::dom::event::{JsBridge, JsEventHandler};
 use crate::dom::payload::{DispatchResult, EventPayload};
+
+fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
+    match event {
+        UiEvent::PointerMove(_) => "PointerMove",
+        UiEvent::PointerUp(_) => "PointerUp",
+        UiEvent::PointerDown(_) => "PointerDown",
+        UiEvent::Wheel(_) => "Wheel",
+        UiEvent::KeyUp(_) => "KeyUp",
+        UiEvent::KeyDown(_) => "KeyDown",
+        UiEvent::Ime(_) => "Ime",
+        UiEvent::AppleStandardKeybinding(_) => "AppleStandardKeybinding",
+    }
+}
+
+fn should_log_ui_event(event: &UiEvent) -> bool {
+    matches!(event, UiEvent::PointerDown(_) | UiEvent::PointerUp(_))
+}
 
 const DEFAULT_HTML: &str = "<!DOCTYPE html><html><head></head><body></body></html>";
 
@@ -133,12 +148,24 @@ impl SharedBaseDoc {
 
 /// `Rc<RefCell<JsBridge>>` — the JS event-dispatch bridge, shared
 /// between `DocHandle` and `WindowDocument`.
+///
+/// `listened` is a *separate* `RefCell` from `inner` so that
+/// `DocHandle` methods that mutate the listened set (e.g.
+/// `add_listened_node`) and `WindowDocument::handle_ui_event` (which
+/// holds a `RefMut<JsBridge>` across the JS callback) never collide
+/// on the same `RefCell`.
 #[derive(Clone)]
-pub struct SharedBridge(pub Rc<RefCell<JsBridge>>);
+pub struct SharedBridge {
+    pub inner: Rc<RefCell<JsBridge>>,
+    pub listened: Rc<RefCell<HashSet<usize>>>,
+}
 
 impl SharedBridge {
     pub fn new(bridge: JsBridge) -> Self {
-        Self(Rc::new(RefCell::new(bridge)))
+        Self {
+            inner: Rc::new(RefCell::new(bridge)),
+            listened: Rc::new(RefCell::new(HashSet::new())),
+        }
     }
 }
 
@@ -169,6 +196,12 @@ impl BlitzDocument for WindowDocument {
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
+        if should_log_ui_event(&event) {
+            eprintln!(
+                "napi-blitz[ui]: enter kind={}",
+                debug_ui_event_kind(&event)
+            );
+        }
         // Clone the bridge `Rc` so we can borrow it independently of
         // `&mut self`. This lets `EventDriver::new(self, handler)` take
         // `&mut self` (for `inner()` / `inner_mut()` calls) while the
@@ -177,10 +210,17 @@ impl BlitzDocument for WindowDocument {
         // The bridge and base live in *separate* `RefCell`s, so JS
         // callbacks (triggered inside `driver.handle_ui_event`) can
         // freely borrow `base` without colliding with the bridge borrow.
-        let bridge_rc = self.bridge.0.clone();
+        //
+        // `listened` is also a *separate* `RefCell` from `inner`, so
+        // JS callbacks that call `DocHandle::add_listened_node` (which
+        // borrows_mut `listened`) don't collide with the `RefMut<JsBridge>`
+        // held here.
+        let bridge_rc = self.bridge.inner.clone();
+        let listened_rc = self.bridge.listened.clone();
         let mut bridge = bridge_rc.borrow_mut();
         let handler = JsEventHandler {
             bridge: &mut bridge,
+            listened: &listened_rc,
         };
 
         let mut driver = EventDriver::new(self, handler);
@@ -413,8 +453,8 @@ impl DocHandle {
     /// uses this to short-circuit dispatch when no listener could exist.
     #[napi]
     pub fn set_listened_nodes(&mut self, ids: Vec<BigInt>) {
-        let mut bridge = self.bridge.0.borrow_mut();
-        bridge.listened_nodes = ids.into_iter().filter_map(bigint_to_usize).collect();
+        let mut listened = self.bridge.listened.borrow_mut();
+        *listened = ids.into_iter().filter_map(bigint_to_usize).collect();
     }
 
     /// Add a single node id to the listened set. Cheaper than calling
@@ -422,7 +462,7 @@ impl DocHandle {
     #[napi]
     pub fn add_listened_node(&mut self, id: BigInt) {
         if let Some(id) = bigint_to_usize(id) {
-            self.bridge.0.borrow_mut().listened_nodes.insert(id);
+            self.bridge.listened.borrow_mut().insert(id);
         }
     }
 
@@ -430,7 +470,7 @@ impl DocHandle {
     #[napi]
     pub fn remove_listened_node(&mut self, id: BigInt) {
         if let Some(id) = bigint_to_usize(id) {
-            self.bridge.0.borrow_mut().listened_nodes.remove(&id);
+            self.bridge.listened.borrow_mut().remove(&id);
         }
     }
 }

@@ -6,10 +6,10 @@
 //! bubble using its own `EventTarget`s and returns a `DispatchResult` that we
 //! translate back into the blitz `EventState`.
 
-use std::collections::HashSet;
+use std::{cell::RefCell, collections::HashSet};
 
 use blitz::{
-    dom::Document as BlitzDocument,
+    dom::{Document as BlitzDocument, NodeData},
     traits::events::{
         BlitzImeEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, DomEvent, DomEventData,
         DomEventKind, EventState, KeyState,
@@ -24,42 +24,128 @@ use crate::dom::payload::{
     DispatchResult, EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,
 };
 
+fn debug_event_kind(event: &DomEvent) -> &'static str {
+    event.name()
+}
+
+fn should_log_event(event: &DomEvent) -> bool {
+    matches!(event.data, DomEventData::PointerDown(_) | DomEventData::PointerUp(_))
+}
+
+fn describe_node(doc: &dyn BlitzDocument, node_id: usize) -> String {
+    let inner = doc.inner();
+    let Some(node) = inner.get_node(node_id) else {
+        return format!("{}:<missing>", node_id);
+    };
+    let parent = node.parent.map_or("-".to_string(), |id| id.to_string());
+    let layout_parent = node.layout_parent.get().map_or("-".to_string(), |id| id.to_string());
+    match &node.data {
+        NodeData::Document => format!("{}:Document(parent={},layout_parent={})", node_id, parent, layout_parent),
+        NodeData::Text(text) => {
+            let snippet: String = text.content.chars().take(24).collect();
+            format!(
+                "{}:Text(\"{}\",parent={},layout_parent={})",
+                node_id,
+                snippet.replace('\n', "\\n"),
+                parent,
+                layout_parent
+            )
+        }
+        NodeData::Comment => format!("{}:Comment(parent={},layout_parent={})", node_id, parent, layout_parent),
+        NodeData::Element(el) | NodeData::AnonymousBlock(el) => {
+            let id_attr = el
+                .attrs()
+                .iter()
+                .find(|attr| attr.name.local.as_ref() == "id")
+                .map(|attr| attr.value.as_ref())
+                .unwrap_or("");
+            let class_attr = el
+                .attrs()
+                .iter()
+                .find(|attr| attr.name.local.as_ref() == "class")
+                .map(|attr| attr.value.as_ref())
+                .unwrap_or("");
+            let kind = match &node.data {
+                NodeData::AnonymousBlock(_) => "AnonymousBlock",
+                _ => "Element",
+            };
+            format!(
+                "{}:{}<{} id=\"{}\" class=\"{}\">(parent={},layout_parent={})",
+                node_id,
+                kind,
+                el.name.local,
+                id_attr,
+                class_attr,
+                parent,
+                layout_parent
+            )
+        }
+    }
+}
+
+fn describe_chain(doc: &mut dyn BlitzDocument, chain: &[usize]) -> Vec<String> {
+    chain.iter().map(|&id| describe_node(doc, id)).collect()
+}
+
 /// Trait object stored on the document, holds the JS callback that dispatches
 /// events into the JS-side document instance.
+///
+/// `listened_nodes` lives in a separate `RefCell<HashSet<usize>>` on
+/// `SharedBridge` so that `DocHandle` methods (which need `borrow_mut` on
+/// the listened set) and `WindowDocument::handle_ui_event` (which holds a
+/// `RefMut<JsBridge>` across the JS callback) never collide on the same
+/// `RefCell`.
 pub struct JsBridge {
     pub env: Env,
     pub callback: FunctionRef<EventPayload, DispatchResult>,
-    /// node ids that JS currently has live wrappers for. We use this to skip
-    /// dispatching events to nodes JS no longer cares about (the JS side
-    /// updates this set via `DocHandle::set_listened_nodes`).
-    pub listened_nodes: HashSet<usize>,
 }
 
 impl JsBridge {
     pub fn new(env: Env, callback: FunctionRef<EventPayload, DispatchResult>) -> Self {
-        Self {
-            env,
-            callback,
-            listened_nodes: HashSet::new(),
-        }
-    }
-
-    /// Returns true if any node along the chain has a live JS wrapper that
-    /// might be listening for this event. We err on the side of dispatching
-    /// when in doubt.
-    fn chain_is_observed(&self, chain: &[usize]) -> bool {
-        if self.listened_nodes.is_empty() {
-            // Until JS has registered any listeners we still dispatch, because
-            // the document itself may want to observe events.
-            return true;
-        }
-        chain.iter().any(|id| self.listened_nodes.contains(id))
+        Self { env, callback }
     }
 }
 
 /// `EventHandler` impl that funnels every event through the JS bridge.
 pub struct JsEventHandler<'a> {
     pub bridge: &'a mut JsBridge,
+    /// The listened-nodes set, in a *separate* `RefCell` from `JsBridge`.
+    /// We borrow it transiently for `chain_is_observed` and release before
+    /// calling into JS, so JS event handlers that mutate the set (via
+    /// `DocHandle::add_listened_node`) don't collide.
+    pub listened: &'a RefCell<HashSet<usize>>,
+}
+
+/// Returns true if any node along the chain has a live JS wrapper that
+/// might be listening for this event. We err on the side of dispatching
+/// when in doubt.
+fn chain_is_observed(listened: &HashSet<usize>, chain: &[usize]) -> bool {
+    if listened.is_empty() {
+        // Until JS has registered any listeners we still dispatch, because
+        // the document itself may want to observe events.
+        return true;
+    }
+    chain.iter().any(|id| listened.contains(id))
+}
+
+fn normalize_event_target(doc: &dyn BlitzDocument, target: usize) -> usize {
+    let inner = doc.inner();
+    let mut node_id = target;
+
+    while let Some(node) = inner.get_node(node_id) {
+        match node.data {
+            NodeData::AnonymousBlock(_) => {
+                let Some(parent_id) = node.parent else {
+                    return target;
+                };
+                node_id = parent_id;
+            }
+            NodeData::Element(_) => return node_id,
+            _ => return target,
+        }
+    }
+
+    target
 }
 
 impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
@@ -70,11 +156,39 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
         _doc: &mut dyn BlitzDocument,
         event_state: &mut EventState,
     ) {
-        if !self.bridge.chain_is_observed(chain) {
-            return;
+        // Borrow listened_nodes only for the check, then release the
+        // borrow so JS callbacks (which may call DocHandle methods that
+        // borrow_mut the same RefCell) don't panic.
+        {
+            let nodes = self.listened.borrow();
+            let observed = chain_is_observed(&nodes, chain);
+            if should_log_event(event) {
+                let chain_desc = describe_chain(_doc, chain);
+                eprintln!(
+                    "napi-blitz[event]: kind={} target={} chain={:?} chain_desc={:?} listened_len={} observed={}",
+                    debug_event_kind(event),
+                    event.target,
+                    chain,
+                    chain_desc,
+                    nodes.len(),
+                    observed,
+                );
+            }
+            if !observed {
+                if should_log_event(event) {
+                    eprintln!(
+                        "napi-blitz[event]: skipped_unobserved kind={} target={} chain={:?}",
+                        debug_event_kind(event),
+                        event.target,
+                        chain,
+                    );
+                }
+                return;
+            }
         }
 
-        let payload = serialize_event(event, chain);
+        let normalized_target = normalize_event_target(_doc, event.target);
+        let payload = serialize_event(event, normalized_target, chain);
 
         let callback = match self.bridge.callback.borrow_back(&self.bridge.env) {
             Ok(cb) => cb,
@@ -84,6 +198,8 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
             }
         };
 
+        println!("napi-blitz: success to borrow dispatch callback");
+
         let result: DispatchResult = match call_dispatch(callback, payload) {
             Ok(r) => r,
             Err(err) => {
@@ -91,6 +207,19 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
                 return;
             }
         };
+
+        println!("napi-blitz: dispatch callback success");
+
+        if should_log_event(event) {
+            eprintln!(
+                "napi-blitz[event]: dispatched kind={} target={} default_prevented={} propagation_stopped={} request_redraw={}",
+                debug_event_kind(event),
+                normalized_target,
+                result.default_prevented,
+                result.propagation_stopped,
+                result.request_redraw,
+            );
+        }
 
         if result.default_prevented {
             event_state.prevent_default();
@@ -108,14 +237,17 @@ fn call_dispatch(
     callback: Function<EventPayload, DispatchResult>,
     payload: EventPayload,
 ) -> napi::Result<DispatchResult> {
-    callback.call(payload)
+    println!("napi-blitz: callback call start");
+    let x = callback.call(payload);
+    println!("napi-blitz: callback call end");
+    x
 }
 
 /// Translate a blitz `DomEvent` into the napi-friendly `EventPayload`.
-pub fn serialize_event(event: &DomEvent, chain: &[usize]) -> EventPayload {
+pub fn serialize_event(event: &DomEvent, target: usize, chain: &[usize]) -> EventPayload {
     EventPayload {
         event_type: event.name().to_string(),
-        target: BigInt::from(event.target as u64),
+        target: BigInt::from(target as u64),
         chain: chain.iter().map(|id| BigInt::from(*id as u64)).collect(),
         bubbles: event.bubbles,
         cancelable: event.cancelable,

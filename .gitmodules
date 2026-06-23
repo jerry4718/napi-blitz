@@ -1,0 +1,3 @@
+[submodule "external/blitz"]
+	path = external/blitz
+	url = https://github.com/jerry4718/blitz/

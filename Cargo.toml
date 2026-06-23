@@ -80,6 +80,15 @@ version = "0.13.4"
 default-features = false
 features = ["native-tls-vendored"]
 
+[patch.crates-io]
+blitz = { path = "external/blitz/packages/blitz" }
+blitz-dom = { path = "external/blitz/packages/blitz-dom" }
+blitz-html = { path = "external/blitz/packages/blitz-html" }
+blitz-net = { path = "external/blitz/packages/blitz-net" }
+blitz-paint = { path = "external/blitz/packages/blitz-paint" }
+blitz-shell = { path = "external/blitz/packages/blitz-shell" }
+blitz-traits = { path = "external/blitz/packages/blitz-traits" }
+
 [build-dependencies]
 napi-build = "2.3.2"
 
