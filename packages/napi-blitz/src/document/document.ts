@@ -194,12 +194,23 @@ export abstract class Document extends Node implements DocumentInternals {
    * Get-or-create the JS-side wrapper for a known-existing nodeId.
    * Concrete subclasses override `_makeWrapper` to choose Element vs.
    * HTMLElement vs. SVGElement etc.
+   *
+   * Identity stability is backed by the Rust-side `NodeCache`: the
+   * first call creates a wrapper and caches it (weak ref); subsequent
+   * calls return the same JS object as long as it hasn't been GC'd.
    */
   _wrap(nodeId: bigint): Node {
-    const cached = this._nodes.get(nodeId)?.deref();
-    if (cached) return cached;
+    // Check the Rust-side NodeCache first.
+    const cached = this._native.getCachedNode(nodeId);
+    if (cached !== null) return cached as Node;
 
     const node = this._makeWrapper(nodeId);
+
+    // Cache the new wrapper in Rust (weak ref, does not prevent GC).
+    this._native.cacheNode(nodeId, node as unknown as object);
+
+    // Keep the JS-side WeakRef map for backward compatibility
+    // (FinalizationRegistry cleanup of listened-node tracking).
     this._nodes.set(nodeId, new WeakRef(node));
     this._finalizer.register(node, nodeId);
     return node;

@@ -39,6 +39,7 @@ use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth}
 
 use crate::dom::event::{JsBridge, JsEventHandler};
 use crate::dom::listener_store::{AddEventListenerOptions, ListenerStore};
+use crate::dom::node_cache::NodeCache;
 use crate::dom::payload::{DispatchResult, EventPayload};
 
 fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
@@ -162,6 +163,10 @@ pub struct SharedBridge {
     /// Rust-side listener store. Replaces JS-side EventTarget listener
     /// management. Indexed by node_id, holds strong napi_ref to callbacks.
     pub listeners: Rc<RefCell<ListenerStore>>,
+    /// Rust-side node cache. Stores weak napi_ref (refcount=0) to JS
+    /// Node wrapper objects, ensuring querySelector returns the same
+    /// JS object for the same node_id while it's alive.
+    pub node_cache: Rc<RefCell<NodeCache>>,
 }
 
 impl SharedBridge {
@@ -170,6 +175,7 @@ impl SharedBridge {
             inner: Rc::new(RefCell::new(bridge)),
             listened: Rc::new(RefCell::new(HashSet::new())),
             listeners: Rc::new(RefCell::new(ListenerStore::new())),
+            node_cache: Rc::new(RefCell::new(NodeCache::new())),
         }
     }
 }
@@ -567,6 +573,83 @@ impl DocHandle {
             store.invoke_listeners(&env, nid, &event_type, capture, event_napi_value)?;
         }
         Ok(has_listeners)
+    }
+
+    // ----- Rust-side NodeCache API ───────────────────────────────────
+    //
+    // The JS-side `Document._wrap` calls these to check whether a JS
+    // Node wrapper already exists for a given node_id (identity
+    // stability) and to cache newly created wrappers.
+
+    /// Look up a cached JS Node object by node_id.
+    ///
+    /// Returns the JS object as `unknown` if a live (non-GC'd) entry
+    /// exists, or `null` if not cached or already GC'd.
+    ///
+    /// JS side usage:
+    /// ```js
+    /// const cached = doc._native.getCachedNode(nodeId);
+    /// if (cached !== null) return cached;
+    /// // ... create new wrapper ...
+    /// doc._native.cacheNode(nodeId, newWrapper);
+    /// return newWrapper;
+    /// ```
+    #[napi]
+    pub fn get_cached_node(
+        &self,
+        env: Env,
+        node_id: BigInt,
+    ) -> Result<Option<napi::bindgen_prelude::Unknown>> {
+        use napi::bindgen_prelude::FromNapiValue;
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return Ok(None);
+        };
+        let mut cache = self.bridge.node_cache.borrow_mut();
+        let value = cache.get(&env, nid)?;
+        match value {
+            Some(v) => Ok(Some(unsafe { napi::bindgen_prelude::Unknown::from_napi_value(env.raw(), v)? })),
+            None => Ok(None),
+        }
+    }
+
+    /// Cache a newly created JS Node wrapper for `node_id`.
+    ///
+    /// Creates a weak reference (refcount=0) that does not prevent GC.
+    /// When the JS object is GC'd, the finalizer removes the entry.
+    ///
+    /// Also sets the thread-local active cache pointer if not already
+    /// set, so finalizer callbacks can reach this cache.
+    #[napi]
+    pub fn cache_node(
+        &self,
+        env: Env,
+        node_id: BigInt,
+        node_value: napi::bindgen_prelude::Unknown,
+    ) -> Result<()> {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return Ok(());
+        };
+        // Set the active cache pointer for finalizer callbacks.
+        // SAFETY: the NodeCache lives on SharedBridge which outlives
+        // the DocHandle and all JS Node objects.
+        {
+            let mut cache = self.bridge.node_cache.borrow_mut();
+            unsafe { crate::dom::node_cache::set_active_cache(&mut cache); }
+        }
+        let js_value = node_value.value().value;
+        let mut cache = self.bridge.node_cache.borrow_mut();
+        cache.insert(&env, nid, js_value)?;
+        Ok(())
+    }
+
+    /// Remove a node from the cache (e.g. when the node is removed
+    /// from the DOM).
+    #[napi]
+    pub fn remove_cached_node(&self, node_id: BigInt) {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return;
+        };
+        self.bridge.node_cache.borrow_mut().remove(nid);
     }
 }
 

@@ -1,6 +1,7 @@
 pub mod doc;
 pub mod event;
 pub mod listener_store;
+pub mod node_cache;
 pub mod node_handle;
 pub mod ops;
 pub mod payload;
@@ -9,5 +10,6 @@ pub mod raw;
 
 pub use doc::{DocHandle, DocHandleConfig};
 pub use listener_store::{AddEventListenerOptions, ListenerStore};
+pub use node_cache::NodeCache;
 pub use node_handle::NodeHandle;
 pub use payload::*;

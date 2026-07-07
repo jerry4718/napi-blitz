@@ -165,6 +165,37 @@ export declare class DocHandle {
    */
   invokeListeners(nodeId: bigint, eventType: string, capture: boolean, eventValue: unknown): boolean
   /**
+   * Look up a cached JS Node object by node_id.
+   *
+   * Returns the JS object as `unknown` if a live (non-GC'd) entry
+   * exists, or `null` if not cached or already GC'd.
+   *
+   * JS side usage:
+   * ```js
+   * const cached = doc._native.getCachedNode(nodeId);
+   * if (cached !== null) return cached;
+   * // ... create new wrapper ...
+   * doc._native.cacheNode(nodeId, newWrapper);
+   * return newWrapper;
+   * ```
+   */
+  getCachedNode(nodeId: bigint): unknown | null
+  /**
+   * Cache a newly created JS Node wrapper for `node_id`.
+   *
+   * Creates a weak reference (refcount=0) that does not prevent GC.
+   * When the JS object is GC'd, the finalizer removes the entry.
+   *
+   * Also sets the thread-local active cache pointer if not already
+   * set, so finalizer callbacks can reach this cache.
+   */
+  cacheNode(nodeId: bigint, nodeValue: unknown): void
+  /**
+   * Remove a node from the cache (e.g. when the node is removed
+   * from the DOM).
+   */
+  removeCachedNode(nodeId: bigint): void
+  /**
    * Replace document content from an HTML string. Useful for tests and
    * initial bootstrapping when `base_html` was not enough.
    */
