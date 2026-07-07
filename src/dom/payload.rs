@@ -7,17 +7,19 @@ use napi_derive::napi;
 
 /// One DomEvent serialized for JS consumption.
 ///
-/// `chain` lists node ids from the event target (index 0) up to the root.
-/// JS uses this to run capture (root -> target) followed by bubble
-/// (target -> root) using a standard `EventTarget` for each node.
+/// `receiver` is the node id currently dispatching the event in the
+/// capture/target/bubble walk. Rust now drives the walk and JS only
+/// dispatches a single `Event` to that receiver.
 #[napi(object)]
 pub struct EventPayload {
     /// Event name in DOM-spec lowercased form, e.g. "click", "pointerdown".
     pub event_type: String,
     /// node id of the original event target.
     pub target: BigInt,
-    /// node id chain, target first, root last.
-    pub chain: Vec<BigInt>,
+    /// node id currently receiving this dispatch step.
+    pub receiver: BigInt,
+    /// Current dispatch phase: 1=capture, 2=target, 3=bubble.
+    pub phase: u32,
     /// `event.bubbles`
     pub bubbles: bool,
     /// `event.cancelable`

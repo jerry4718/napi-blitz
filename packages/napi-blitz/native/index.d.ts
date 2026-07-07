@@ -154,6 +154,7 @@ export declare class DocHandle {
   findTitleNodeId(): bigint | null
   /** True iff the given node id currently exists in the document. */
   hasNode(id: bigint): boolean
+  nodeHandle(id: bigint): NodeHandle | null
   /**
    * Create an element node. Returns its node id. The element is detached
    * (no parent) until inserted.
@@ -324,6 +325,40 @@ export declare class DocHandle {
   bodyElementId(): bigint | null
 }
 
+export declare class NodeHandle {
+  nodeId(): bigint
+  nodeType(): number
+  parentId(): bigint | null
+  firstChildId(): bigint | null
+  lastChildId(): bigint | null
+  childIds(): Array<bigint>
+  nextSiblingId(): bigint | null
+  previousSiblingId(): bigint | null
+  textContent(): string | null
+  setTextContent(text: string): void
+  tagName(): string | null
+  getAttribute(name: string): string | null
+  getAttributes(): Array<AttrInit>
+  setAttribute(name: string, value: string, namespace?: string | null): void
+  removeAttribute(name: string, namespace?: string | null): void
+  getStyleProperty(name: string): string | null
+  setStyleProperty(name: string, value: string): void
+  removeStyleProperty(name: string): void
+  getStylePropertyNames(): Array<string>
+  getStyleAttribute(): string
+  appendChild(childId: bigint): void
+  insertBefore(nodeId: bigint, anchorId?: bigint | null): void
+  remove(): void
+  replaceWith(nodeId: bigint): void
+  deepCloneNode(): bigint
+  shallowCloneNode(): bigint
+  setInnerHtml(html: string): void
+  innerHtml(): string | null
+  outerHtml(): string | null
+  querySelector(selector: string): bigint | null
+  querySelectorAll(selector: string): Array<bigint>
+}
+
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */
 export declare class Window {
   /** Whether `closeWindow` has run for this handle. */
@@ -412,8 +447,10 @@ export interface EventPayload {
   eventType: string
   /** node id of the original event target. */
   target: bigint
-  /** node id chain, target first, root last. */
-  chain: Array<bigint>
+  /** node id currently receiving this dispatch step. */
+  receiver: bigint
+  /** Current dispatch phase: 1=capture, 2=target, 3=bubble. */
+  phase: number
   /** `event.bubbles` */
   bubbles: boolean
   /** `event.cancelable` */

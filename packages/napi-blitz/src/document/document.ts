@@ -96,7 +96,11 @@ export abstract class Document extends Node implements DocumentInternals {
     // the super-call but `this` is not yet available. The Document
     // patches its own `_ownerDocument` to `this` on the next line via
     // `_setOwnerDocument`, before any code can observe the placeholder.
-    super(native, native.rootNodeId(), PENDING_OWNER_DOCUMENT);
+    const rootHandle = native.nodeHandle(native.rootNodeId());
+    if (rootHandle === null) {
+      throw new Error("Failed to create root NodeHandle for document");
+    }
+    super(rootHandle, native.rootNodeId(), PENDING_OWNER_DOCUMENT);
 
     self.ref = this;
     this._native = native;
@@ -198,7 +202,6 @@ export abstract class Document extends Node implements DocumentInternals {
     const node = this._makeWrapper(nodeId);
     this._nodes.set(nodeId, new WeakRef(node));
     this._finalizer.register(node, nodeId);
-    this._native.addListenedNode(nodeId);
     return node;
   }
 
@@ -208,9 +211,13 @@ export abstract class Document extends Node implements DocumentInternals {
    * Subclasses override to specialize element wrapping.
    */
   protected _makeWrapper(nodeId: bigint): Node {
-    const type = this._native.nodeType(nodeId);
-    if (type === NodeTypes.TEXT_NODE) return new Text(this._native, nodeId, this);
-    if (type === NodeTypes.COMMENT_NODE) return new Comment(this._native, nodeId, this);
+    const handle = this._native.nodeHandle(nodeId);
+    if (handle === null) {
+      throw new Error(`Attempted to wrap missing node ${nodeId.toString()}`);
+    }
+    const type = handle.nodeType();
+    if (type === NodeTypes.TEXT_NODE) return new Text(handle, nodeId, this);
+    if (type === NodeTypes.COMMENT_NODE) return new Comment(handle, nodeId, this);
     return this._makeElementWrapper(nodeId);
   }
 
@@ -326,9 +333,8 @@ export abstract class Document extends Node implements DocumentInternals {
   // ----- Native event dispatch -------------------------------------------
 
   /**
-   * Called by Rust for every DomEvent. We dispatch along the chain
-   * (target -> root) honoring `event.cancelBubble` between steps so
-   * `stopPropagation()` works as expected.
+   * Called by Rust for each native dispatch step. Rust drives the
+   * capture/target/bubble walk; JS only dispatches to one receiver.
    */
   protected _dispatchFromNative(payload: EventPayload): DispatchResult {
     const event = buildEvent(payload, this);
@@ -346,23 +352,26 @@ export abstract class Document extends Node implements DocumentInternals {
       });
     }
 
-    let propagationStopped = false;
-
-    for (const id of payload.chain) {
-      const ref = this._nodes.get(id);
-      const target = ref?.deref();
-      if (target) target.dispatchEvent(event);
-
-      if (event.cancelBubble) {
-        propagationStopped = true;
-        break;
-      }
-      if (!payload.bubbles) break;
+    const currentTarget = this._nodes.get(payload.receiver)?.deref() ?? null;
+    if (currentTarget) {
+      Object.defineProperty(event, "currentTarget", {
+        configurable: true,
+        enumerable: true,
+        value: currentTarget,
+        writable: false,
+      });
+      Object.defineProperty(event, "eventPhase", {
+        configurable: true,
+        enumerable: true,
+        value: payload.phase,
+        writable: false,
+      });
+      currentTarget.dispatchEvent(event);
     }
 
     return {
       defaultPrevented: event.defaultPrevented,
-      propagationStopped,
+      propagationStopped: event.cancelBubble,
       requestRedraw: false,
     };
   }

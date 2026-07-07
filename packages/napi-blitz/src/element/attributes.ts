@@ -16,14 +16,13 @@
 // `length`, indexed access, and `getNamedItem` will land when we add a
 // proper `Attr` wrapper.
 
-import type { NativeDocHandle } from "../native";
+import type { NativeNodeHandle } from "../native";
 
 /** The shape user code sees behind `el.attributes`. */
 export type AttributesMap = Record<string, string>;
 
 export function makeAttributesProxy(
-  handle: NativeDocHandle,
-  nodeId: bigint,
+  handle: NativeNodeHandle,
 ): AttributesMap {
   // The proxy target is just a placeholder object; we route every
   // operation through `handle` so reads always reflect the latest
@@ -33,34 +32,34 @@ export function makeAttributesProxy(
   return new Proxy(target, {
     get(_, prop): unknown {
       if (typeof prop !== "string") return undefined;
-      const value = handle.getAttribute(nodeId, prop);
+      const value = handle.getAttribute(prop);
       return value === null ? undefined : value;
     },
 
     set(_, prop, value): boolean {
       if (typeof prop !== "string") return false;
-      handle.setAttribute(nodeId, prop, String(value), null);
+      handle.setAttribute(prop, String(value), null);
       return true;
     },
 
     has(_, prop): boolean {
       if (typeof prop !== "string") return false;
-      return handle.getAttribute(nodeId, prop) !== null;
+      return handle.getAttribute(prop) !== null;
     },
 
     deleteProperty(_, prop): boolean {
       if (typeof prop !== "string") return false;
-      handle.removeAttribute(nodeId, prop, null);
+      handle.removeAttribute(prop, null);
       return true;
     },
 
     ownKeys(): string[] {
-      return handle.getAttributes(nodeId).map((a) => a.name);
+      return handle.getAttributes().map((a) => a.name);
     },
 
     getOwnPropertyDescriptor(_, prop): PropertyDescriptor | undefined {
       if (typeof prop !== "string") return undefined;
-      const value = handle.getAttribute(nodeId, prop);
+      const value = handle.getAttribute(prop);
       if (value === null) return undefined;
       return {
         value,

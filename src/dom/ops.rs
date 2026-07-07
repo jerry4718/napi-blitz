@@ -12,6 +12,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::PropertyId;
 
 use crate::dom::doc::DocHandle;
+use crate::dom::node_handle::NodeHandle;
 
 /// Plain attribute pair used by the create/insert APIs.
 #[napi(object)]
@@ -21,7 +22,7 @@ pub struct AttrInit {
     pub namespace: Option<String>,
 }
 
-fn make_qual_name(local: &str, namespace: Option<&str>) -> QualName {
+pub(crate) fn make_qual_name(local: &str, namespace: Option<&str>) -> QualName {
     QualName {
         prefix: None,
         ns: namespace.map(Namespace::from).unwrap_or(ns!(html)),
@@ -49,14 +50,14 @@ fn js_node_id_to_usize(id: &BigInt) -> usize {
 ///
 /// Until blitz-dom exposes a fully invalidating style-property mutator, keep
 /// the parsed-style mutation path but add the public invalidation pieces here.
-fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, node_id: usize) {
+pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, node_id: usize) {
     state.snapshot_node(node_id);
     if let Some(node) = state.get_node_mut(node_id) {
         node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
     }
 }
 
-fn set_detached_attribute(
+pub(crate) fn set_detached_attribute(
     state: &mut blitz::dom::BaseDocument,
     node_id: usize,
     name: QualName,
@@ -97,7 +98,7 @@ fn set_detached_attribute(
     true
 }
 
-fn remove_detached_attribute(
+pub(crate) fn remove_detached_attribute(
     state: &mut blitz::dom::BaseDocument,
     node_id: usize,
     name: &QualName,
@@ -239,6 +240,13 @@ impl DocHandle {
             .borrow()
             .get_node(js_node_id_to_usize(&id))
             .is_some()
+    }
+
+    #[napi]
+    pub fn node_handle(&self, id: BigInt) -> Option<NodeHandle> {
+        let node_id = js_node_id_to_usize(&id);
+        self.base.doc.borrow().get_node(node_id)?;
+        Some(NodeHandle::new(self.base.clone(), node_id))
     }
 }
 

@@ -14,10 +14,10 @@ import { Node } from "./node";
 export abstract class CharacterData extends Node {
   /** The character data of this node (Text content or Comment text). */
   get data(): string {
-    return this._handle.textContent(this._nodeId) ?? "";
+    return this._handle.textContent() ?? "";
   }
   set data(value: string) {
-    this._handle.setTextContent(this._nodeId, value);
+    this._handle.setTextContent(value);
   }
 
   get length(): number {

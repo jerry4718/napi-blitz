@@ -24,12 +24,19 @@ use crate::dom::payload::{
     DispatchResult, EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,
 };
 
+const CAPTURING_PHASE: u32 = 1;
+const AT_TARGET: u32 = 2;
+const BUBBLING_PHASE: u32 = 3;
+
 fn debug_event_kind(event: &DomEvent) -> &'static str {
     event.name()
 }
 
 fn should_log_event(event: &DomEvent) -> bool {
-    matches!(event.data, DomEventData::PointerDown(_) | DomEventData::PointerUp(_))
+    matches!(
+        event.data,
+        DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
+    )
 }
 
 fn describe_node(doc: &dyn BlitzDocument, node_id: usize) -> String {
@@ -38,9 +45,15 @@ fn describe_node(doc: &dyn BlitzDocument, node_id: usize) -> String {
         return format!("{}:<missing>", node_id);
     };
     let parent = node.parent.map_or("-".to_string(), |id| id.to_string());
-    let layout_parent = node.layout_parent.get().map_or("-".to_string(), |id| id.to_string());
+    let layout_parent = node
+        .layout_parent
+        .get()
+        .map_or("-".to_string(), |id| id.to_string());
     match &node.data {
-        NodeData::Document => format!("{}:Document(parent={},layout_parent={})", node_id, parent, layout_parent),
+        NodeData::Document => format!(
+            "{}:Document(parent={},layout_parent={})",
+            node_id, parent, layout_parent
+        ),
         NodeData::Text(text) => {
             let snippet: String = text.content.chars().take(24).collect();
             format!(
@@ -51,7 +64,10 @@ fn describe_node(doc: &dyn BlitzDocument, node_id: usize) -> String {
                 layout_parent
             )
         }
-        NodeData::Comment => format!("{}:Comment(parent={},layout_parent={})", node_id, parent, layout_parent),
+        NodeData::Comment => format!(
+            "{}:Comment(parent={},layout_parent={})",
+            node_id, parent, layout_parent
+        ),
         NodeData::Element(el) | NodeData::AnonymousBlock(el) => {
             let id_attr = el
                 .attrs()
@@ -71,13 +87,7 @@ fn describe_node(doc: &dyn BlitzDocument, node_id: usize) -> String {
             };
             format!(
                 "{}:{}<{} id=\"{}\" class=\"{}\">(parent={},layout_parent={})",
-                node_id,
-                kind,
-                el.name.local,
-                id_attr,
-                class_attr,
-                parent,
-                layout_parent
+                node_id, kind, el.name.local, id_attr, class_attr, parent, layout_parent
             )
         }
     }
@@ -97,11 +107,11 @@ fn describe_chain(doc: &mut dyn BlitzDocument, chain: &[usize]) -> Vec<String> {
 /// `RefCell`.
 pub struct JsBridge {
     pub env: Env,
-    pub callback: FunctionRef<EventPayload, DispatchResult>,
+    pub callback: FunctionRef<(EventPayload,), DispatchResult>,
 }
 
 impl JsBridge {
-    pub fn new(env: Env, callback: FunctionRef<EventPayload, DispatchResult>) -> Self {
+    pub fn new(env: Env, callback: FunctionRef<(EventPayload,), DispatchResult>) -> Self {
         Self { env, callback }
     }
 }
@@ -187,9 +197,6 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
             }
         }
 
-        let normalized_target = normalize_event_target(_doc, event.target);
-        let payload = serialize_event(event, normalized_target, chain);
-
         let callback = match self.bridge.callback.borrow_back(&self.bridge.env) {
             Ok(cb) => cb,
             Err(err) => {
@@ -198,17 +205,54 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
             }
         };
 
-        println!("napi-blitz: success to borrow dispatch callback");
-
-        let result: DispatchResult = match call_dispatch(callback, payload) {
-            Ok(r) => r,
-            Err(err) => {
-                eprintln!("napi-blitz: dispatch callback failed: {err}");
-                return;
+        let normalized_target = normalize_event_target(_doc, event.target);
+        let mut result = DispatchResult::default();
+        for &receiver in chain.iter().rev().skip(1) {
+            result = match call_dispatch(
+                &callback,
+                serialize_event(event, normalized_target, receiver, CAPTURING_PHASE),
+            ) {
+                Ok(r) => r,
+                Err(err) => {
+                    eprintln!("napi-blitz: dispatch callback failed: {err}");
+                    return;
+                }
+            };
+            if result.propagation_stopped {
+                break;
             }
-        };
+        }
 
-        println!("napi-blitz: dispatch callback success");
+        if !result.propagation_stopped {
+            result = match call_dispatch(
+                &callback,
+                serialize_event(event, normalized_target, normalized_target, AT_TARGET),
+            ) {
+                Ok(r) => r,
+                Err(err) => {
+                    eprintln!("napi-blitz: dispatch callback failed: {err}");
+                    return;
+                }
+            };
+        }
+
+        if event.bubbles && !result.propagation_stopped {
+            for &receiver in chain.iter().skip(1) {
+                result = match call_dispatch(
+                    &callback,
+                    serialize_event(event, normalized_target, receiver, BUBBLING_PHASE),
+                ) {
+                    Ok(r) => r,
+                    Err(err) => {
+                        eprintln!("napi-blitz: dispatch callback failed: {err}");
+                        return;
+                    }
+                };
+                if result.propagation_stopped {
+                    break;
+                }
+            }
+        }
 
         if should_log_event(event) {
             eprintln!(
@@ -234,21 +278,20 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
 }
 
 fn call_dispatch(
-    callback: Function<EventPayload, DispatchResult>,
+    callback: &Function<(EventPayload,), DispatchResult>,
     payload: EventPayload,
 ) -> napi::Result<DispatchResult> {
-    println!("napi-blitz: callback call start");
-    let x = callback.call(payload);
-    println!("napi-blitz: callback call end");
-    x
+    callback.call((payload,))
 }
 
-/// Translate a blitz `DomEvent` into the napi-friendly `EventPayload`.
-pub fn serialize_event(event: &DomEvent, target: usize, chain: &[usize]) -> EventPayload {
+/// Translate one dispatch step of a blitz `DomEvent` into the napi-friendly
+/// `EventPayload`.
+pub fn serialize_event(event: &DomEvent, target: usize, receiver: usize, phase: u32) -> EventPayload {
     EventPayload {
         event_type: event.name().to_string(),
         target: BigInt::from(target as u64),
-        chain: chain.iter().map(|id| BigInt::from(*id as u64)).collect(),
+        receiver: BigInt::from(receiver as u64),
+        phase,
         bubbles: event.bubbles,
         cancelable: event.cancelable,
         pointer: pointer_from(&event.data),

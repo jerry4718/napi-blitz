@@ -18,6 +18,6 @@ mod native_window;
 #[cfg(feature = "buffer-surface")]
 pub use buffer_surface::{BufferFrame, BufferRenderer, BufferRendererOptions};
 pub use dom::*;
-pub use dom::{DocHandle, DocHandleConfig};
+pub use dom::{DocHandle, DocHandleConfig, NodeHandle};
 #[cfg(feature = "native-window")]
 pub use native_window::{AppDispatchResult, AppEventPayload, BlitzApp, Window};

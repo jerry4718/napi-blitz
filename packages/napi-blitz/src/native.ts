@@ -26,6 +26,7 @@ import type {
   PointerData,
   PumpResult,
   RegisterFontOptions,
+  NodeHandle as NativeNodeHandle,
   WheelData,
   Window as NativeWindow,
   WindowOptions as NativeWindowOptions,
@@ -34,6 +35,7 @@ import type {
 interface NativeModuleShape {
   BlitzApp: typeof NativeBlitzApp;
   DocHandle: typeof NativeDocHandle;
+  NodeHandle: typeof NativeNodeHandle;
 }
 
 // Both `src/native.ts` and `dist/native.js` sit one directory below the
@@ -45,6 +47,7 @@ const mod: NativeModuleShape = requireFromRoot("./native/index.js");
 
 export const NativeBlitzAppCtor: typeof NativeBlitzApp = mod.BlitzApp;
 export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
+export const NativeNodeHandleCtor: typeof NativeNodeHandle = mod.NodeHandle;
 
 export type {
   AppDispatchResult,
@@ -59,9 +62,11 @@ export type {
   PointerData,
   PumpResult,
   RegisterFontOptions,
+  NativeNodeHandle,
   WheelData,
   NativeBlitzApp,
   NativeDocHandle,
+  NativeNodeHandle as NodeHandle,
   NativeWindow as Window,
   NativeWindowOptions as WindowOptions,
 };

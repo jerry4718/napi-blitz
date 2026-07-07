@@ -28,7 +28,7 @@ export class HTMLElement extends Element {
    */
   get style(): StyleDeclaration {
     if (this._styleProxy === null) {
-      this._styleProxy = makeStyleProxy(this._handle, this._nodeId);
+      this._styleProxy = makeStyleProxy(this._handle);
     }
     return this._styleProxy;
   }

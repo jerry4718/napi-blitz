@@ -3,7 +3,7 @@
 // `Comment`, and `Document`.
 //
 // Closely mirrors the web `Node` interface. Each Node holds:
-//   - `_handle`: the native DocHandle, used for every DOM op
+//   - `_handle`: the native NodeHandle, used for node-scoped DOM ops
 //   - `_nodeId`: blitz's internal id
 //   - `_ownerDocument`: the JS Document this node belongs to. Used for
 //     `_wrap`-based reverse lookups when returning related nodes.
@@ -11,7 +11,7 @@
 // We keep the underscore + `protected` style instead of TS `#` so the
 // internal hatch in `internal.ts` keeps working.
 
-import type { NativeDocHandle } from "../native";
+import type { NativeNodeHandle } from "../native";
 import { pluckNode, type DocumentInternals, type NodeInternals } from "../internal/internal";
 
 /** DOM nodeType constants. Mirrors the web spec. */
@@ -23,8 +23,9 @@ export const NodeTypes = {
 } as const;
 
 export abstract class Node extends EventTarget {
-  protected readonly _handle: NativeDocHandle;
+  protected readonly _handle: NativeNodeHandle;
   protected readonly _nodeId: bigint;
+  private _listenerCounts = new Map<string, number>();
   // Not `readonly`: `Document` patches it to `this` immediately after
   // calling `super()` (a Document is its own owner, but `this` is not
   // available before `super(...)` returns). No other code should
@@ -39,7 +40,7 @@ export abstract class Node extends EventTarget {
    * for caching or finalization.
    */
   constructor(
-    handle: NativeDocHandle,
+    handle: NativeNodeHandle,
     nodeId: bigint,
     ownerDocument: DocumentInternals,
   ) {
@@ -62,9 +63,43 @@ export abstract class Node extends EventTarget {
     this._ownerDocument = doc;
   }
 
+  override addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    super.addEventListener(type, listener, options);
+    if (listener === null) return;
+    const count = this._listenerCounts.get(type) ?? 0;
+    this._listenerCounts.set(type, count + 1);
+    if (count === 0) {
+      this._ownerDocument._native.addListenedNode(this._nodeId);
+    }
+  }
+
+  override removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions,
+  ): void {
+    super.removeEventListener(type, listener, options);
+    if (listener === null) return;
+    const count = this._listenerCounts.get(type) ?? 0;
+    if (count > 1) {
+      this._listenerCounts.set(type, count - 1);
+      return;
+    }
+    if (count === 1) {
+      this._listenerCounts.delete(type);
+      if (this._listenerCounts.size === 0) {
+        this._ownerDocument._native.removeListenedNode(this._nodeId);
+      }
+    }
+  }
+
   /** DOM-style numeric nodeType. */
   get nodeType(): number {
-    return this._handle.nodeType(this._nodeId);
+    return this._handle.nodeType();
   }
 
   /**
@@ -73,16 +108,16 @@ export abstract class Node extends EventTarget {
    * it updates `data` directly.
    */
   get textContent(): string | null {
-    return this._handle.textContent(this._nodeId);
+    return this._handle.textContent();
   }
   set textContent(value: string) {
-    this._handle.setTextContent(this._nodeId, value);
+    this._handle.setTextContent(value);
   }
 
   // ---- Tree relationships -------------------------------------------------
 
   get parentNode(): Node | null {
-    const id = this._handle.parentId(this._nodeId);
+    const id = this._handle.parentId();
     return id === null ? null : (this._ownerDocument._wrap(id) as Node);
   }
 
@@ -92,46 +127,45 @@ export abstract class Node extends EventTarget {
   }
 
   get firstChild(): Node | null {
-    const id = this._handle.firstChildId(this._nodeId);
+    const id = this._handle.firstChildId();
     return id === null ? null : (this._ownerDocument._wrap(id) as Node);
   }
 
   get lastChild(): Node | null {
-    const id = this._handle.lastChildId(this._nodeId);
+    const id = this._handle.lastChildId();
     return id === null ? null : (this._ownerDocument._wrap(id) as Node);
   }
 
   get nextSibling(): Node | null {
-    const id = this._handle.nextSiblingId(this._nodeId);
+    const id = this._handle.nextSiblingId();
     return id === null ? null : (this._ownerDocument._wrap(id) as Node);
   }
 
   get previousSibling(): Node | null {
-    const id = this._handle.previousSiblingId(this._nodeId);
+    const id = this._handle.previousSiblingId();
     return id === null ? null : (this._ownerDocument._wrap(id) as Node);
   }
 
   /** Live-ish snapshot of children. We materialize the whole array each call. */
   get childNodes(): Node[] {
     return this._handle
-      .childIds(this._nodeId)
+      .childIds()
       .map((id) => this._ownerDocument._wrap(id) as Node);
   }
 
   get hasChildNodes(): boolean {
-    return this._handle.firstChildId(this._nodeId) !== null;
+    return this._handle.firstChildId() !== null;
   }
 
   // ---- Tree mutation ------------------------------------------------------
 
   appendChild<T extends Node>(child: T): T {
-    this._handle.appendChild(this._nodeId, pluckNode(child)._nodeId);
+    this._handle.appendChild(pluckNode(child)._nodeId);
     return child;
   }
 
   insertBefore<T extends Node>(node: T, anchor: Node | null): T {
     this._handle.insertBefore(
-      this._nodeId,
       pluckNode(node)._nodeId,
       anchor === null ? null : pluckNode(anchor)._nodeId,
     );
@@ -141,18 +175,18 @@ export abstract class Node extends EventTarget {
   removeChild<T extends Node>(child: T): T {
     // The spec requires `child.parentNode === this`; we trust callers
     // and let blitz error if invariants are violated.
-    this._handle.remove(pluckNode(child)._nodeId);
+    pluckNode(child)._handle.remove();
     return child;
   }
 
   replaceChild<T extends Node>(newChild: Node, oldChild: T): T {
-    this._handle.replaceWith(pluckNode(oldChild)._nodeId, pluckNode(newChild)._nodeId);
+    pluckNode(oldChild)._handle.replaceWith(pluckNode(newChild)._nodeId);
     return oldChild;
   }
 
   /** Remove this node from its parent. Mirrors `ChildNode.remove`. */
   remove(): void {
-    this._handle.remove(this._nodeId);
+    this._handle.remove();
   }
 
   // ---- Cloning / containment ---------------------------------------------
@@ -172,8 +206,8 @@ export abstract class Node extends EventTarget {
    */
   cloneNode(deep = false): Node {
     const id = deep
-      ? this._handle.deepCloneNode(this._nodeId)
-      : this._handle.shallowCloneNode(this._nodeId);
+      ? this._handle.deepCloneNode()
+      : this._handle.shallowCloneNode();
     return this._ownerDocument._wrap(id) as Node;
   }
 
@@ -193,9 +227,9 @@ export abstract class Node extends EventTarget {
     // doesn't expose a quick `is_connected`, so walk up to the root.
     let cur: Node | null = this;
     while (cur !== null) {
-      const parentId = cur._handle.parentId(cur._nodeId);
+      const parentId = cur._handle.parentId();
       if (parentId === null) {
-        return cur._handle.nodeType(cur._nodeId) === NodeTypes.DOCUMENT_NODE;
+        return cur._handle.nodeType() === NodeTypes.DOCUMENT_NODE;
       }
       cur = cur._ownerDocument._wrap(parentId) as Node;
     }

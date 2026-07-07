@@ -13,7 +13,7 @@ export class Element extends Node {
     // Spec returns uppercase for HTML; blitz hands us lowercase. We
     // return what blitz says for now; HTMLElement layers on the
     // HTML-uppercasing nuance later if needed.
-    return this._handle.tagName(this._nodeId) ?? "";
+    return this._handle.tagName() ?? "";
   }
 
   /** Same as `tagName` for now; mirrors web `Element.localName`. */
@@ -31,38 +31,38 @@ export class Element extends Node {
    */
   get attributes(): AttributesMap {
     if (this._attributesProxy === null) {
-      this._attributesProxy = makeAttributesProxy(this._handle, this._nodeId);
+      this._attributesProxy = makeAttributesProxy(this._handle);
     }
     return this._attributesProxy;
   }
 
   getAttribute(name: string): string | null {
-    return this._handle.getAttribute(this._nodeId, name);
+    return this._handle.getAttribute(name);
   }
 
   setAttribute(name: string, value: string): void {
-    this._handle.setAttribute(this._nodeId, name, value, null);
+    this._handle.setAttribute(name, value, null);
   }
 
   setAttributeNS(namespace: string | null, name: string, value: string): void {
-    this._handle.setAttribute(this._nodeId, name, value, namespace);
+    this._handle.setAttribute(name, value, namespace);
   }
 
   removeAttribute(name: string): void {
-    this._handle.removeAttribute(this._nodeId, name, null);
+    this._handle.removeAttribute(name, null);
   }
 
   removeAttributeNS(namespace: string | null, name: string): void {
-    this._handle.removeAttribute(this._nodeId, name, namespace);
+    this._handle.removeAttribute(name, namespace);
   }
 
   hasAttribute(name: string): boolean {
-    return this._handle.getAttribute(this._nodeId, name) !== null;
+    return this._handle.getAttribute(name) !== null;
   }
 
   /** Snapshot of attribute names. */
   getAttributeNames(): string[] {
-    return this._handle.getAttributes(this._nodeId).map((a) => a.name);
+    return this._handle.getAttributes().map((a) => a.name);
   }
 
   // ---- Convenience id / class --------------------------------------------
@@ -84,14 +84,14 @@ export class Element extends Node {
   // ---- HTML serialization ------------------------------------------------
 
   get innerHTML(): string {
-    return this._handle.innerHtml(this._nodeId) ?? "";
+    return this._handle.innerHtml() ?? "";
   }
   set innerHTML(value: string) {
-    this._handle.setInnerHtml(this._nodeId, value);
+    this._handle.setInnerHtml(value);
   }
 
   get outerHTML(): string {
-    return this._handle.outerHtml(this._nodeId) ?? "";
+    return this._handle.outerHtml() ?? "";
   }
 
   // ---- Queries scoped to this element ------------------------------------
@@ -134,7 +134,7 @@ export class Element extends Node {
    */
   querySelector(selector: string): Element | null {
     const owner = this._ownerDocument;
-    const id = owner._native.querySelectorIn(this._nodeId, selector);
+    const id = this._handle.querySelector(selector);
     return id === null ? null : (owner._wrap(id) as Element);
   }
 
@@ -145,8 +145,8 @@ export class Element extends Node {
    */
   querySelectorAll(selector: string): Element[] {
     const owner = this._ownerDocument;
-    return owner._native
-      .querySelectorAllIn(this._nodeId, selector)
+    return this._handle
+      .querySelectorAll(selector)
       .map((id) => owner._wrap(id) as Element);
   }
 }

@@ -30,7 +30,7 @@
 //   - Indexed access via numeric property keys (`el.style[0]`). Use
 //     `item(0)` instead, which is also standard.
 
-import type { NativeDocHandle } from "../native";
+import type { NativeNodeHandle } from "../native";
 
 /**
  * Public shape behind `el.style`. The string-indexed entries are CSS
@@ -116,8 +116,7 @@ const RESERVED = new Set<string | symbol>([
 ]);
 
 export function makeStyleProxy(
-  handle: NativeDocHandle,
-  nodeId: bigint,
+  handle: NativeNodeHandle,
 ): StyleDeclaration {
   // The target carries the spec methods so calls like
   // `el.style.setProperty("color", "x")` resolve via the normal
@@ -128,23 +127,23 @@ export function makeStyleProxy(
   target.length = 0;
 
   target.getPropertyValue = (name: string): string => {
-    const v = handle.getStyleProperty(nodeId, camelToKebab(name));
+    const v = handle.getStyleProperty(camelToKebab(name));
     return v ?? "";
   };
 
   target.setProperty = (name: string, value: string): void => {
-    handle.setStyleProperty(nodeId, camelToKebab(name), value);
+    handle.setStyleProperty(camelToKebab(name), value);
   };
 
   target.removeProperty = (name: string): string => {
     const css = camelToKebab(name);
-    const previous = handle.getStyleProperty(nodeId, css) ?? "";
-    handle.removeStyleProperty(nodeId, css);
+    const previous = handle.getStyleProperty(css) ?? "";
+    handle.removeStyleProperty(css);
     return previous;
   };
 
   target.item = (index: number): string => {
-    const names = handle.getStylePropertyNames(nodeId);
+    const names = handle.getStylePropertyNames();
     return names[index] ?? "";
   };
 
@@ -152,10 +151,10 @@ export function makeStyleProxy(
     get(_, prop): unknown {
       // Spec accessors served from the target object.
       if (prop === "cssText") {
-        return handle.getStyleAttribute(nodeId);
+        return handle.getStyleAttribute();
       }
       if (prop === "length") {
-        return handle.getStylePropertyNames(nodeId).length;
+        return handle.getStylePropertyNames().length;
       }
       if (RESERVED.has(prop)) {
         return target[prop];
@@ -165,10 +164,10 @@ export function makeStyleProxy(
       // CSSOM, returning the n-th property name.
       if (/^\d+$/.test(prop)) {
         const i = Number(prop);
-        const names = handle.getStylePropertyNames(nodeId);
+        const names = handle.getStylePropertyNames();
         return names[i] ?? "";
       }
-      const v = handle.getStyleProperty(nodeId, camelToKebab(prop));
+      const v = handle.getStyleProperty(camelToKebab(prop));
       return v ?? "";
     },
 
@@ -176,7 +175,7 @@ export function makeStyleProxy(
       if (prop === "cssText") {
         // Setting cssText reparses the whole block. We delegate by
         // setting the `style` attribute, which blitz reparses for us.
-        handle.setAttribute(nodeId, "style", String(value), null);
+        handle.setAttribute("style", String(value), null);
         return true;
       }
       if (RESERVED.has(prop)) {
@@ -184,31 +183,31 @@ export function makeStyleProxy(
         return false;
       }
       if (typeof prop !== "string") return false;
-      handle.setStyleProperty(nodeId, camelToKebab(prop), String(value));
+      handle.setStyleProperty(camelToKebab(prop), String(value));
       return true;
     },
 
     has(_, prop): boolean {
       if (RESERVED.has(prop)) return true;
       if (typeof prop !== "string") return false;
-      return handle.getStyleProperty(nodeId, camelToKebab(prop)) !== null;
+      return handle.getStyleProperty(camelToKebab(prop)) !== null;
     },
 
     deleteProperty(_, prop): boolean {
       if (RESERVED.has(prop)) return false;
       if (typeof prop !== "string") return false;
-      handle.removeStyleProperty(nodeId, camelToKebab(prop));
+      handle.removeStyleProperty(camelToKebab(prop));
       return true;
     },
 
     ownKeys(): string[] {
-      return handle.getStylePropertyNames(nodeId);
+      return handle.getStylePropertyNames();
     },
 
     getOwnPropertyDescriptor(_, prop): PropertyDescriptor | undefined {
       if (RESERVED.has(prop)) return undefined;
       if (typeof prop !== "string") return undefined;
-      const v = handle.getStyleProperty(nodeId, camelToKebab(prop));
+      const v = handle.getStyleProperty(camelToKebab(prop));
       if (v === null) return undefined;
       return {
         value: v,

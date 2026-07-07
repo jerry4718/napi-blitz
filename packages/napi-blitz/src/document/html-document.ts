@@ -11,6 +11,10 @@ export class HTMLDocument extends Document {
   }
 
   protected _makeElementWrapper(nodeId: bigint): Element {
-    return new HTMLElement(this._native, nodeId, this);
+    const handle = this._native.nodeHandle(nodeId);
+    if (handle === null) {
+      throw new Error(`Attempted to wrap missing element ${nodeId.toString()}`);
+    }
+    return new HTMLElement(handle, nodeId, this);
   }
 }

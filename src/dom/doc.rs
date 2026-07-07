@@ -197,10 +197,7 @@ impl BlitzDocument for WindowDocument {
 
     fn handle_ui_event(&mut self, event: UiEvent) {
         if should_log_ui_event(&event) {
-            eprintln!(
-                "napi-blitz[ui]: enter kind={}",
-                debug_ui_event_kind(&event)
-            );
+            eprintln!("napi-blitz[ui]: enter kind={}", debug_ui_event_kind(&event));
         }
         // Clone the bridge `Rc` so we can borrow it independently of
         // `&mut self`. This lets `EventDriver::new(self, handler)` take
