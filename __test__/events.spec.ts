@@ -1,13 +1,13 @@
 // Event dispatch: drives the Rust -> JS bridge directly. Each test
-// hand-builds an `EventPayload` (via `makeClickPayload`) that mirrors
-// what the native side would emit, then calls the package-private
-// `_dispatchFromNative` to walk the chain.
+// uses `dispatchChain` to simulate the full capture/target/bubble walk
+// that the native `handle_event` would perform.
 
 import test from "ava";
 
 import { BlitzPointerEvent, HTMLDocument } from "../packages/napi-blitz/dist/index.js";
 
 import {
+  dispatchChain,
   makeClickPayload,
   nodeIdOf,
   pluckDocument,
@@ -33,12 +33,11 @@ test("event chain: bubble + stopPropagation", (t) => {
     e.stopPropagation();
   });
 
-  const payload = makeClickPayload(nodeIdOf(inner), [
+  const result = dispatchChain(
+    pluckDocument(doc),
     nodeIdOf(inner),
-    nodeIdOf(outer),
-    nodeIdOf(body),
-  ]);
-  const result = pluckDocument(doc)._dispatchFromNative(payload);
+    [nodeIdOf(inner), nodeIdOf(outer), nodeIdOf(body)],
+  );
 
   t.deepEqual(calls, ["inner"]);
   t.true(result.propagationStopped);
@@ -57,12 +56,11 @@ test("event chain: full bubble when no stop", (t) => {
   outer.addEventListener("click", () => calls.push("outer"));
   inner.addEventListener("click", () => calls.push("inner"));
 
-  const payload = makeClickPayload(nodeIdOf(inner), [
+  dispatchChain(
+    pluckDocument(doc),
     nodeIdOf(inner),
-    nodeIdOf(outer),
-    nodeIdOf(body),
-  ]);
-  pluckDocument(doc)._dispatchFromNative(payload);
+    [nodeIdOf(inner), nodeIdOf(outer), nodeIdOf(body)],
+  );
 
   t.deepEqual(calls, ["inner", "outer", "body"]);
 });
@@ -75,11 +73,11 @@ test("event chain: preventDefault is reported", (t) => {
 
   el.addEventListener("click", (e) => e.preventDefault());
 
-  const payload = makeClickPayload(nodeIdOf(el), [
+  const result = dispatchChain(
+    pluckDocument(doc),
     nodeIdOf(el),
-    nodeIdOf(body),
-  ]);
-  const result = pluckDocument(doc)._dispatchFromNative(payload);
+    [nodeIdOf(el), nodeIdOf(body)],
+  );
   t.true(result.defaultPrevented);
 });
 
@@ -94,11 +92,11 @@ test("event.target stays pinned to the originating node", (t) => {
     observed = e.target;
   });
 
-  const payload = makeClickPayload(nodeIdOf(inner), [
+  dispatchChain(
+    pluckDocument(doc),
     nodeIdOf(inner),
-    nodeIdOf(body),
-  ]);
-  pluckDocument(doc)._dispatchFromNative(payload);
+    [nodeIdOf(inner), nodeIdOf(body)],
+  );
 
   t.is(observed, inner);
 });

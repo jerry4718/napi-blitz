@@ -20,6 +20,7 @@ use napi::{
     bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 
+use crate::dom::listener_store::ListenerStore;
 use crate::dom::payload::{
     DispatchResult, EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,
 };
@@ -107,35 +108,30 @@ fn describe_chain(doc: &mut dyn BlitzDocument, chain: &[usize]) -> Vec<String> {
 /// `RefCell`.
 pub struct JsBridge {
     pub env: Env,
-    pub callback: FunctionRef<(EventPayload,), DispatchResult>,
+    pub callback: FunctionRef<EventPayload, DispatchResult>,
 }
 
 impl JsBridge {
-    pub fn new(env: Env, callback: FunctionRef<(EventPayload,), DispatchResult>) -> Self {
+    pub fn new(env: Env, callback: FunctionRef<EventPayload, DispatchResult>) -> Self {
         Self { env, callback }
     }
 }
 
 /// `EventHandler` impl that funnels every event through the JS bridge.
+///
+/// In the first refactoring phase, the `ListenerStore` is used for the
+/// `chain_is_observed` fast-path check (replacing the coarse `listened`
+/// `HashSet`). The actual listener invocation still goes through the JS
+/// dispatch callback until the `#[napi] struct BlitzEvent` is implemented.
 pub struct JsEventHandler<'a> {
     pub bridge: &'a mut JsBridge,
     /// The listened-nodes set, in a *separate* `RefCell` from `JsBridge`.
-    /// We borrow it transiently for `chain_is_observed` and release before
-    /// calling into JS, so JS event handlers that mutate the set (via
-    /// `DocHandle::add_listened_node`) don't collide.
+    /// Kept for backward compatibility; the `ListenerStore` provides a
+    /// more precise check.
     pub listened: &'a RefCell<HashSet<usize>>,
-}
-
-/// Returns true if any node along the chain has a live JS wrapper that
-/// might be listening for this event. We err on the side of dispatching
-/// when in doubt.
-fn chain_is_observed(listened: &HashSet<usize>, chain: &[usize]) -> bool {
-    if listened.is_empty() {
-        // Until JS has registered any listeners we still dispatch, because
-        // the document itself may want to observe events.
-        return true;
-    }
-    chain.iter().any(|id| listened.contains(id))
+    /// Rust-side listener store. Provides precise `has_listeners` checks
+    /// per node, replacing the coarse `listened` HashSet.
+    pub listeners: &'a RefCell<ListenerStore>,
 }
 
 fn normalize_event_target(doc: &dyn BlitzDocument, target: usize) -> usize {
@@ -166,35 +162,52 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
         _doc: &mut dyn BlitzDocument,
         event_state: &mut EventState,
     ) {
-        // Borrow listened_nodes only for the check, then release the
-        // borrow so JS callbacks (which may call DocHandle methods that
-        // borrow_mut the same RefCell) don't panic.
-        {
-            let nodes = self.listened.borrow();
-            let observed = chain_is_observed(&nodes, chain);
+        // Use the ListenerStore for a precise observed check: if no node
+        // in the chain has any listener, skip dispatch entirely.
+        // We still fall back to the `listened` HashSet for backward
+        // compatibility (JS-side listeners registered via the old path).
+        let observed = {
+            let store = self.listeners.borrow();
+            let listened = self.listened.borrow();
+            if !listened.is_empty() {
+                // Old path: JS wrappers exist, dispatch.
+                true
+            } else {
+                // New path: check ListenerStore.
+                store.chain_has_listeners(chain)
+            }
+        };
+
+        if should_log_event(event) {
+            let chain_desc = describe_chain(_doc, chain);
+            let listened_len = self.listened.borrow().len();
+            let listener_nodes = self.listeners.borrow();
+            let listener_count: usize = chain.iter()
+                .map(|&nid| listener_nodes.matching_ids(nid, event.name(), true).len()
+                    + listener_nodes.matching_ids(nid, event.name(), false).len())
+                .sum();
+            eprintln!(
+                "napi-blitz[event]: kind={} target={} chain={:?} chain_desc={:?} listened_len={} listener_count={} observed={}",
+                debug_event_kind(event),
+                event.target,
+                chain,
+                chain_desc,
+                listened_len,
+                listener_count,
+                observed,
+            );
+        }
+
+        if !observed {
             if should_log_event(event) {
-                let chain_desc = describe_chain(_doc, chain);
                 eprintln!(
-                    "napi-blitz[event]: kind={} target={} chain={:?} chain_desc={:?} listened_len={} observed={}",
+                    "napi-blitz[event]: skipped_unobserved kind={} target={} chain={:?}",
                     debug_event_kind(event),
                     event.target,
                     chain,
-                    chain_desc,
-                    nodes.len(),
-                    observed,
                 );
             }
-            if !observed {
-                if should_log_event(event) {
-                    eprintln!(
-                        "napi-blitz[event]: skipped_unobserved kind={} target={} chain={:?}",
-                        debug_event_kind(event),
-                        event.target,
-                        chain,
-                    );
-                }
-                return;
-            }
+            return;
         }
 
         let callback = match self.bridge.callback.borrow_back(&self.bridge.env) {
@@ -278,10 +291,10 @@ impl<'a> blitz::dom::EventHandler for JsEventHandler<'a> {
 }
 
 fn call_dispatch(
-    callback: &Function<(EventPayload,), DispatchResult>,
+    callback: &Function<EventPayload, DispatchResult>,
     payload: EventPayload,
 ) -> napi::Result<DispatchResult> {
-    callback.call((payload,))
+    callback.call(payload)
 }
 
 /// Translate one dispatch step of a blitz `DomEvent` into the napi-friendly

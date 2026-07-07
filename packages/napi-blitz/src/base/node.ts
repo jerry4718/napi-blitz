@@ -11,7 +11,7 @@
 // We keep the underscore + `protected` style instead of TS `#` so the
 // internal hatch in `internal.ts` keeps working.
 
-import type { NativeNodeHandle } from "../native";
+import type { NativeNodeHandle, AddEventListenerOptions as NativeAddEventListenerOptions } from "../native";
 import { pluckNode, type DocumentInternals, type NodeInternals } from "../internal/internal";
 
 /** DOM nodeType constants. Mirrors the web spec. */
@@ -25,7 +25,6 @@ export const NodeTypes = {
 export abstract class Node extends EventTarget {
   protected readonly _handle: NativeNodeHandle;
   protected readonly _nodeId: bigint;
-  private _listenerCounts = new Map<string, number>();
   // Not `readonly`: `Document` patches it to `this` immediately after
   // calling `super()` (a Document is its own owner, but `this` is not
   // available before `super(...)` returns). No other code should
@@ -68,13 +67,25 @@ export abstract class Node extends EventTarget {
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | AddEventListenerOptions,
   ): void {
-    super.addEventListener(type, listener, options);
     if (listener === null) return;
-    const count = this._listenerCounts.get(type) ?? 0;
-    this._listenerCounts.set(type, count + 1);
-    if (count === 0) {
-      this._ownerDocument._native.addListenedNode(this._nodeId);
-    }
+    // Register the listener in the Rust-side ListenerStore.
+    // This replaces the JS EventTarget's internal listener map.
+    const opts: NativeAddEventListenerOptions | null =
+      typeof options === "boolean"
+        ? { capture: options, once: false, passive: false }
+        : options
+          ? {
+              capture: options.capture ?? false,
+              once: options.once ?? false,
+              passive: options.passive ?? false,
+            }
+          : null;
+    this._ownerDocument._native.addListener(
+      this._nodeId,
+      type,
+      listener as (...args: unknown[]) => unknown,
+      opts,
+    );
   }
 
   override removeEventListener(
@@ -82,19 +93,15 @@ export abstract class Node extends EventTarget {
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | EventListenerOptions,
   ): void {
-    super.removeEventListener(type, listener, options);
     if (listener === null) return;
-    const count = this._listenerCounts.get(type) ?? 0;
-    if (count > 1) {
-      this._listenerCounts.set(type, count - 1);
-      return;
-    }
-    if (count === 1) {
-      this._listenerCounts.delete(type);
-      if (this._listenerCounts.size === 0) {
-        this._ownerDocument._native.removeListenedNode(this._nodeId);
-      }
-    }
+    const capture =
+      typeof options === "boolean" ? options : (options?.capture ?? false);
+    this._ownerDocument._native.removeListener(
+      this._nodeId,
+      type,
+      listener as (...args: unknown[]) => unknown,
+      capture,
+    );
   }
 
   /** DOM-style numeric nodeType. */

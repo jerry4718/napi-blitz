@@ -26,17 +26,19 @@ export function nodeIdOf(n: Node): bigint {
 
 /**
  * Build an `EventPayload` that mimics what `Rust -> JS` would send for
- * a `click`. `chain` is the bubble path from the deepest target up to
- * (but not including) the document.
+ * a single dispatch step of a `click`. `receiver` is the node currently
+ * receiving the event, `phase` is 1=capture, 2=target, 3=bubble.
  */
 export function makeClickPayload(
   targetId: bigint,
-  chain: bigint[],
+  receiverId: bigint,
+  phase: number,
 ): EventPayload {
   return {
     eventType: "click",
     target: targetId,
-    chain,
+    receiver: receiverId,
+    phase,
     bubbles: true,
     cancelable: true,
     pointer: undefined,
@@ -45,6 +47,45 @@ export function makeClickPayload(
     input: undefined,
     ime: undefined,
   };
+}
+
+/**
+ * Drive a full capture → target → bubble dispatch by calling
+ * `_dispatchFromNative` for each step. `chain` is the propagation path
+ * from the target up to (but not including) the document.
+ *
+ * Returns the merged `DispatchResult` (flags OR-ed across all steps).
+ */
+export function dispatchChain(
+  doc: TestDocumentInternals,
+  targetId: bigint,
+  chain: bigint[],
+): { defaultPrevented: boolean; propagationStopped: boolean; requestRedraw: boolean } {
+  let result = { defaultPrevented: false, propagationStopped: false, requestRedraw: false };
+
+  const merge = (r: { defaultPrevented: boolean; propagationStopped: boolean; requestRedraw: boolean }) => {
+    result.defaultPrevented = result.defaultPrevented || r.defaultPrevented;
+    result.propagationStopped = result.propagationStopped || r.propagationStopped;
+    result.requestRedraw = result.requestRedraw || r.requestRedraw;
+  };
+
+  // Capture phase (root → target's parent), reversed
+  for (let i = chain.length - 1; i >= 1; i--) {
+    merge(doc._dispatchFromNative(makeClickPayload(targetId, chain[i], 1)));
+    if (result.propagationStopped) return result;
+  }
+
+  // Target phase
+  merge(doc._dispatchFromNative(makeClickPayload(targetId, targetId, 2)));
+  if (result.propagationStopped) return result;
+
+  // Bubble phase (target's parent → root)
+  for (let i = 1; i < chain.length; i++) {
+    merge(doc._dispatchFromNative(makeClickPayload(targetId, chain[i], 3)));
+    if (result.propagationStopped) return result;
+  }
+
+  return result;
 }
 
 /**

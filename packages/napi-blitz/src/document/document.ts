@@ -334,7 +334,13 @@ export abstract class Document extends Node implements DocumentInternals {
 
   /**
    * Called by Rust for each native dispatch step. Rust drives the
-   * capture/target/bubble walk; JS only dispatches to one receiver.
+   * capture/target/bubble walk; JS creates the Event object and asks
+   * the Rust-side ListenerStore to invoke matching listeners.
+   *
+   * In the first refactoring phase, listeners are stored in Rust
+   * (ListenerStore) instead of JS EventTarget. This method builds the
+   * JS Event object, then calls `invoke_listeners` on the native side
+   * to directly invoke matching Rust-stored callbacks.
    */
   protected _dispatchFromNative(payload: EventPayload): DispatchResult {
     const event = buildEvent(payload, this);
@@ -366,7 +372,16 @@ export abstract class Document extends Node implements DocumentInternals {
         value: payload.phase,
         writable: false,
       });
-      currentTarget.dispatchEvent(event);
+
+      // Invoke matching listeners from the Rust-side ListenerStore.
+      // capture phase = phase 1, target/bubble = phase 2/3.
+      const capture = payload.phase === 1;
+      this._native.invokeListeners(
+        payload.receiver,
+        payload.eventType,
+        capture,
+        event as unknown as object,
+      );
     }
 
     return {

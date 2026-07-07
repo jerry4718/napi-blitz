@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 
 import type {
+  AddEventListenerOptions,
   AppDispatchResult,
   AppEventPayload,
   AttrInit,
@@ -50,6 +51,7 @@ export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
 export const NativeNodeHandleCtor: typeof NativeNodeHandle = mod.NodeHandle;
 
 export type {
+  AddEventListenerOptions,
   AppDispatchResult,
   AppEventPayload,
   AttrInit,

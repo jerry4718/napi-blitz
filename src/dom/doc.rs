@@ -30,7 +30,7 @@ use blitz::{
     traits::events::UiEvent,
 };
 use napi::{
-    Env, Error, Result, Status,
+    Env, Error, JsValue, Result, Status,
     bindgen_prelude::BigInt,
     bindgen_prelude::{Function, FunctionRef, Uint8Array},
 };
@@ -38,6 +38,7 @@ use napi_derive::napi;
 use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth};
 
 use crate::dom::event::{JsBridge, JsEventHandler};
+use crate::dom::listener_store::{AddEventListenerOptions, ListenerStore};
 use crate::dom::payload::{DispatchResult, EventPayload};
 
 fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
@@ -158,6 +159,9 @@ impl SharedBaseDoc {
 pub struct SharedBridge {
     pub inner: Rc<RefCell<JsBridge>>,
     pub listened: Rc<RefCell<HashSet<usize>>>,
+    /// Rust-side listener store. Replaces JS-side EventTarget listener
+    /// management. Indexed by node_id, holds strong napi_ref to callbacks.
+    pub listeners: Rc<RefCell<ListenerStore>>,
 }
 
 impl SharedBridge {
@@ -165,6 +169,7 @@ impl SharedBridge {
         Self {
             inner: Rc::new(RefCell::new(bridge)),
             listened: Rc::new(RefCell::new(HashSet::new())),
+            listeners: Rc::new(RefCell::new(ListenerStore::new())),
         }
     }
 }
@@ -214,10 +219,12 @@ impl BlitzDocument for WindowDocument {
         // held here.
         let bridge_rc = self.bridge.inner.clone();
         let listened_rc = self.bridge.listened.clone();
+        let listeners_rc = self.bridge.listeners.clone();
         let mut bridge = bridge_rc.borrow_mut();
         let handler = JsEventHandler {
             bridge: &mut bridge,
             listened: &listened_rc,
+            listeners: &listeners_rc,
         };
 
         let mut driver = EventDriver::new(self, handler);
@@ -469,6 +476,97 @@ impl DocHandle {
         if let Some(id) = bigint_to_usize(id) {
             self.bridge.listened.borrow_mut().remove(&id);
         }
+    }
+
+    // ----- Rust-side ListenerStore API ───────────────────────────────
+    //
+    // These methods replace the JS-side `EventTarget.addEventListener` /
+    // `removeEventListener` for Node objects. The JS side calls
+    // `add_listener` / `remove_listener` instead of relying on the
+    // built-in EventTarget. Listeners are stored in Rust, indexed by
+    // node_id, and invoked directly from `handle_event` without
+    // round-tripping through the JS dispatch callback.
+
+    /// Register an event listener on a node. The callback is a JS
+    /// function. Returns `true` if a new listener was added, `false` if
+    /// an identical listener already existed (DOM idempotency).
+    #[napi]
+    pub fn add_listener(
+        &self,
+        env: Env,
+        node_id: BigInt,
+        event_type: String,
+        callback: Function,
+        options: Option<AddEventListenerOptions>,
+    ) -> Result<bool> {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return Ok(false);
+        };
+        let opts = options.unwrap_or_default();
+        let callback_value = callback.value().value;
+        let mut store = self.bridge.listeners.borrow_mut();
+        store.add(&env, nid, event_type, callback_value, opts)
+    }
+
+    /// Remove an event listener from a node. Returns `true` if a
+    /// matching listener was found and removed.
+    #[napi]
+    pub fn remove_listener(
+        &self,
+        env: Env,
+        node_id: BigInt,
+        event_type: String,
+        callback: Function,
+        capture: bool,
+    ) -> Result<bool> {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return Ok(false);
+        };
+        let callback_value = callback.value().value;
+        let mut store = self.bridge.listeners.borrow_mut();
+        store.remove(&env, nid, &event_type, callback_value, capture)
+    }
+
+    /// Check whether any listener exists for the given node (any event
+    /// type, any capture). Used by JS to decide whether to keep a node
+    /// wrapper alive.
+    #[napi]
+    pub fn has_listeners(&self, node_id: BigInt) -> bool {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return false;
+        };
+        self.bridge.listeners.borrow().has_listeners(nid)
+    }
+
+    /// Invoke all matching listeners for a node directly from Rust.
+    ///
+    /// Called by the JS dispatch callback (`_dispatchFromNative`) for
+    /// each chain node. The `event_value` is the raw JS Event object
+    /// created by `buildEvent` on the JS side. The listener callbacks
+    /// are invoked with `this=undefined` and the event as the sole
+    /// argument.
+    ///
+    /// Returns whether any listener was actually invoked.
+    #[napi]
+    pub fn invoke_listeners(
+        &self,
+        env: Env,
+        node_id: BigInt,
+        event_type: String,
+        capture: bool,
+        event_value: napi::bindgen_prelude::Unknown,
+    ) -> Result<bool> {
+        let Some(nid) = bigint_to_usize(node_id) else {
+            return Ok(false);
+        };
+        let event_napi_value = event_value.value().value;
+        let mut store = self.bridge.listeners.borrow_mut();
+        let ids = store.matching_ids(nid, &event_type, capture);
+        let has_listeners = !ids.is_empty();
+        if has_listeners {
+            store.invoke_listeners(&env, nid, &event_type, capture, event_napi_value)?;
+        }
+        Ok(has_listeners)
     }
 }
 
