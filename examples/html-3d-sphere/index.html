@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Sphere (HTML)</title>
+  <style>
+    html, body { border: 0; margin: 0; padding: 0; overflow: hidden; }
+  </style>
+</head>
+<body></body>
+<script>
+  const SPHERE_RADIUS_PX = 240;
+  const PERSPECTIVE = 800;
+  const LEV_MIN = 0;
+  const LEV_MAX = 4;
+
+  function rotateY(v, angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c };
+  }
+
+  function rotateX(v, angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+  }
+
+  function project(v) {
+    const scale = PERSPECTIVE / (PERSPECTIVE + v.z * SPHERE_RADIUS_PX + SPHERE_RADIUS_PX);
+    return {
+      x: SPHERE_RADIUS_PX + v.x * SPHERE_RADIUS_PX * scale,
+      y: SPHERE_RADIUS_PX - v.y * SPHERE_RADIUS_PX * scale,
+    };
+  }
+
+  function midpoint(a, b) {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+  }
+
+  function normalize(v) {
+    const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
+    return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
+
+  function generateIcosaSphere(level) {
+    const t = (1 + Math.sqrt(5)) / 2;
+
+    const verts = [
+      normalize({ x: -1, y: t, z: 0 }),
+      normalize({ x: 1, y: t, z: 0 }),
+      normalize({ x: -1, y: -t, z: 0 }),
+      normalize({ x: 1, y: -t, z: 0 }),
+      normalize({ x: 0, y: -1, z: t }),
+      normalize({ x: 0, y: 1, z: t }),
+      normalize({ x: 0, y: -1, z: -t }),
+      normalize({ x: 0, y: 1, z: -t }),
+      normalize({ x: t, y: 0, z: -1 }),
+      normalize({ x: t, y: 0, z: 1 }),
+      normalize({ x: -t, y: 0, z: -1 }),
+      normalize({ x: -t, y: 0, z: 1 }),
+    ];
+
+    const idxTris = [
+      [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+      [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+      [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+      [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+    ];
+
+    let faces = idxTris.map(([a, b, c]) => [verts[a], verts[b], verts[c]]);
+
+    for (let i = 0; i < level; i++) {
+      const subdivided = [];
+      for (const [a, b, c] of faces) {
+        const ab = normalize(midpoint(a, b));
+        const bc = normalize(midpoint(b, c));
+        const ca = normalize(midpoint(c, a));
+        subdivided.push([a, ab, ca]);
+        subdivided.push([b, bc, ab]);
+        subdivided.push([c, ca, bc]);
+        subdivided.push([ab, bc, ca]);
+      }
+      faces = subdivided;
+    }
+
+    return faces;
+  }
+
+  let level = 0;
+  let angleX = 0;
+  let angleY = 0;
+  let faces = generateIcosaSphere(level);
+  let faceEls = [];
+  let globalDoc = null;
+  let pendingLevelChange = null;
+
+  function rebuildFaces(container, document) {
+    for (const el of faceEls) {
+      el.remove();
+    }
+    faceEls = [];
+
+    const p0 = performance.now();
+    for (let i = 0; i < faces.length; i++) {
+      const div = document.createElement('div');
+      div.setAttribute('class', 'face');
+      container.appendChild(div);
+      faceEls.push(div);
+    }
+    console.log('rebuildFaces:', performance.now() - p0);
+  }
+
+  function renderFaces() {
+    const size = 2 * SPHERE_RADIUS_PX + 10;
+    for (let i = 0; i < faces.length; i++) {
+      const tri = faces[i];
+      const el = faceEls[i];
+      if (!el) continue;
+
+      const [a, b, c] = tri.map((v) => rotateX(rotateY(v, angleY), angleX));
+
+      const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+      const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      const visible = nz > 0;
+
+      const pa = project(a), pb = project(b), pc = project(c);
+      const clip = `polygon(${pa.x}px ${pa.y}px, ${pb.x}px ${pb.y}px, ${pc.x}px ${pc.y}px)`;
+
+      const lx = 0.4, ly = -0.6, lz = 0.6;
+      const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      let light = (nx * lx + ny * ly + nz * lz) / nLen;
+      light = Math.max(0.2, light * 0.6 + 0.5);
+
+      const hue = (i * 37 + level * 60) % 360;
+      const r = Math.round(180 + 75 * light * Math.cos((hue * Math.PI) / 180));
+      const g = Math.round(180 + 75 * light * Math.cos(((hue + 120) * Math.PI) / 180));
+      const bCol = Math.round(180 + 75 * light * Math.cos(((hue + 240) * Math.PI) / 180));
+
+      const s = el.style;
+      s.position = 'absolute';
+      s.width = `${size}px`;
+      s.height = `${size}px`;
+      s.left = '0';
+      s.top = '0';
+      s.background = `rgb(${r},${g},${bCol})`;
+      s.clipPath = clip;
+      s.opacity = visible ? '1' : '0.15';
+      s.pointerEvents = 'none';
+    }
+  }
+
+  function buildControlPanel(document) {
+    const panel = document.createElement('div');
+    panel.setAttribute('id', 'control-panel');
+
+    const title = document.createElement('div');
+    title.setAttribute('class', 'panel-title');
+    title.textContent = 'Sphere Controls';
+    panel.appendChild(title);
+
+    const row = document.createElement('div');
+    row.setAttribute('class', 'panel-row');
+
+    const label = document.createElement('span');
+    label.textContent = 'Level:';
+    row.appendChild(label);
+
+    const levelSpan = document.createElement('span');
+    levelSpan.setAttribute('id', 'level-display');
+    levelSpan.textContent = String(level);
+    row.appendChild(levelSpan);
+
+    panel.appendChild(row);
+
+    const btnRow = document.createElement('div');
+    btnRow.setAttribute('class', 'panel-btn-row');
+
+    const btnMinus = document.createElement('button');
+    btnMinus.setAttribute('id', 'btn-minus');
+    btnMinus.textContent = '−';
+    btnMinus.addEventListener('click', () => {
+      console.log('btn-minus::click');
+      changeLevel(-1);
+    });
+    btnRow.appendChild(btnMinus);
+
+    const btnPlus = document.createElement('button');
+    btnPlus.setAttribute('id', 'btn-plus');
+    btnPlus.textContent = '+';
+    btnPlus.addEventListener('click', () => {
+      console.log('btn-plus::click');
+      changeLevel(1);
+    });
+    btnRow.appendChild(btnPlus);
+
+    panel.appendChild(btnRow);
+
+    const stats = document.createElement('div');
+    stats.setAttribute('id', 'stats');
+    panel.appendChild(stats);
+
+    return panel;
+  }
+
+  function changeLevel(delta) {
+    const newLevel = Math.max(LEV_MIN, Math.min(LEV_MAX, level + delta));
+    if (newLevel === level) return;
+    pendingLevelChange = newLevel;
+  }
+
+  function applyLevelChange() {
+    if (pendingLevelChange === null) return;
+    level = pendingLevelChange;
+    pendingLevelChange = null;
+    faces = generateIcosaSphere(level);
+
+    const doc = globalDoc;
+    const container = doc.querySelector('#sphere-container');
+    if (container) rebuildFaces(container, doc);
+
+    const panel = doc.querySelector('#control-panel');
+    if (panel) updatePanel(panel);
+  }
+
+  function updatePanel(panel) {
+    const levelDisp = panel.querySelector('#level-display');
+    if (levelDisp) levelDisp.textContent = String(level);
+
+    const stats = panel.querySelector('#stats');
+    if (stats) stats.textContent = `Faces: ${faces.length}`;
+  }
+
+  function installStyles(document) {
+    const style = document.createElement('style');
+    style.textContent = `
+      body {
+        width: 100vw;
+        height: 100vh;
+        background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a14 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+      }
+      #sphere-container {
+        perspective: ${PERSPECTIVE}px;
+        perspective-origin: 50% 50%;
+        width: ${2 * SPHERE_RADIUS_PX + 10}px;
+        height: ${2 * SPHERE_RADIUS_PX + 10}px;
+        position: relative;
+      }
+      #control-panel {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0,0,0,0.75);
+        color: #e0e0e0;
+        padding: 16px 22px;
+        border-radius: 12px;
+        font-family: monospace;
+        font-size: 14px;
+        min-width: 220px;
+        user-select: none;
+        z-index: 10;
+      }
+      .panel-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; }
+      .panel-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+      .panel-btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+      .panel-btn-row button {
+        flex: 1; padding: 6px 0; font-size: 18px;
+        border: 1px solid #555; border-radius: 6px;
+        background: #2a2a3a; color: #ccc; cursor: pointer;
+      }
+      #stats { color: #e0e0e0; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  async function bootstrap() {
+    const document = window.document;
+    globalDoc = document;
+
+    installStyles(document);
+
+    const body = document.body;
+    const container = document.createElement('div');
+    container.setAttribute('id', 'sphere-container');
+    body.appendChild(container);
+
+    const panel = buildControlPanel(document);
+    body.appendChild(panel);
+
+    document.documentElement.addEventListener('click', (event) => {
+      const target = event.target;
+      console.log('document click target:', target?.tagName, target?.getAttribute?.('id'), target?.getAttribute?.('class'));
+    });
+
+    rebuildFaces(container, document);
+    updatePanel(panel);
+
+    let lastTime = performance.now();
+    const loop = () => {
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      angleX = (angleX + dt * 0.3) % (Math.PI * 2);
+      angleY = (angleY + dt * 0.5) % (Math.PI * 2);
+      const p0 = performance.now();
+      renderFaces();
+      console.log('renderFaces:', performance.now() - p0);
+    };
+
+    while (true) {
+      applyLevelChange();
+      loop();
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  }
+
+  bootstrap();
+</script>
+</html>

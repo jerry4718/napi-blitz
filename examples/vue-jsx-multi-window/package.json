@@ -5,14 +5,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "pnpm install && cross-env RUST_BACKTRACE=full node --import @oxc-node/core/register index.ts"
+    "start": "cross-env RUST_BACKTRACE=full node --import @oxc-node/core/register index.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
   "dependencies": {
-    "@ylcc/napi-blitz": "file:../../",
+    "@ylcc/napi-blitz": "workspace:*",
     "colord": "^2.9.3",
     "vue": "^3.5.27"
   },
