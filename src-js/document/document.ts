@@ -57,6 +57,9 @@ export abstract class Document extends Node implements DocumentInternals {
   override get parentNode(): Node | null { return null; }
   override get parentElement(): Node | null { return null; }
 
+  /** Document nodeType is always 9. */
+  override get nodeType(): number { return 9; }
+
   /** The first child of the Document is the <html> element. */
   override get firstChild(): Node | null { return this.documentElement; }
   override get lastChild(): Node | null { return this.documentElement; }

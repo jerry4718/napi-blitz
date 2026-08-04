@@ -26,6 +26,7 @@ use std::{collections::HashMap, ptr, rc::Weak};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 use crate::dom::doc::SharedDoc;
+use blitz::dom::BaseDocument;
 
 /// Data passed to the finalizer as `finalize_data`.
 /// Boxed and leaked; the finalizer reclaims it via `Box::from_raw`.
@@ -237,6 +238,8 @@ unsafe extern "C" fn node_finalizer(
     // been dropped already, `upgrade` returns `None` and there's nothing
     // we can do (the napi_ref will be leaked at refcount=0, minor cost).
     let Some(doc_rc) = hint.doc_weak.upgrade() else {
+        #[cfg(debug_assertions)]
+        println!("node_finalizer: {} doc_rc was None", hint.node_id);
         return;
     };
 
@@ -252,24 +255,78 @@ unsafe extern "C" fn node_finalizer(
         }
     }
 
+    let mut doc_mut = doc.base.borrow_mut();
+
+    let Some(hint_node) = doc_mut.get_node_mut(hint.node_id) else {
+        #[cfg(debug_assertions)]
+        println!("node_finalizer: {} was None", hint.node_id);
+        return;
+    };
+
     // 2. Check if the blitz node is detached. If so, drop it to reclaim
     //    Rust-side storage. A node with no parent is detached - it's
     //    not in the document tree and no JS wrapper references it
     //    (the finalizer just fired), so it's safe to reclaim.
-    let is_detached = doc
-        .base
-        .borrow()
-        .get_node(hint.node_id)
-        .map(|n| n.parent.is_none())
-        .unwrap_or(true);
+    let is_detached = hint_node.parent.is_none();
+
+    #[cfg(debug_assertions)]
+    println!(
+        "node_finalizer: {}, is_detached: {}",
+        hint.node_id, is_detached
+    );
 
     if is_detached {
-        let mut base = doc.base.borrow_mut();
-        // Re-check existence under the mutable borrow: another finalizer
-        // may have already removed this node via remove_and_drop_node.
-        if base.get_node(hint.node_id).is_some() {
-            let mut mutator = base.mutate();
-            mutator.remove_and_drop_node(hint.node_id);
+        // Check if any descendant still has a live JS wrapper.
+        // If none do, the entire subtree can be safely dropped.
+        let cache = doc.node_cache.borrow();
+        if !has_live_descendant(&doc_mut, &cache, hint.node_id) {
+            drop(cache);
+            doc_mut.mutate().remove_and_drop_node(hint.node_id);
         }
     }
+}
+
+/// Plan A: from a detached node, walk up to find the topmost ancestor
+/// that still exists in the slab, then check if that subtree has no
+/// live JS wrapper. If so, drop the entire subtree.
+///
+/// Called from `NodeHandle::remove` and `node_finalizer`.
+pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_id: usize) {
+    // Walk up to find the topmost node in the detached chain.
+    let mut top = node_id;
+    loop {
+        let parent = doc.get_node(top).and_then(|n| n.parent);
+        match parent {
+            Some(p) if doc.get_node(p).is_some() => {
+                top = p;
+            }
+            _ => break,
+        }
+    }
+
+    // If neither top nor any descendant has a live JS wrapper, and top
+    // is an ancestor (not the node itself), drop the whole subtree.
+    if top != node_id && !cache.entries.contains_key(&top) && !has_live_descendant(doc, cache, top)
+    {
+        doc.mutate().remove_and_drop_node(top);
+    }
+}
+
+/// Recursively check if any descendant of `node_id` has an entry in
+/// `node_cache` (i.e. still has a live JS wrapper).  Returns true if
+/// at least one descendant is still referenced from JS.
+pub fn has_live_descendant(doc: &BaseDocument, cache: &NodeCache, node_id: usize) -> bool {
+    let child_ids: Vec<_> = doc
+        .get_node(node_id)
+        .map(|n| n.children.to_vec())
+        .unwrap_or_default();
+    for child_id in child_ids {
+        if cache.entries.contains_key(&child_id) {
+            return true;
+        }
+        if has_live_descendant(doc, cache, child_id) {
+            return true;
+        }
+    }
+    false
 }

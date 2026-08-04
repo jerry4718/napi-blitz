@@ -38,6 +38,7 @@ use crate::dom::node_cache::NodeCache;
 use crate::dom::node_handle::NodeHandle;
 use crate::dom::payload::EventPayload;
 
+#[cfg(debug_assertions)]
 fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
     match event {
         UiEvent::PointerMove(_) => "PointerMove",
@@ -99,6 +100,10 @@ pub struct SharedDoc {
     pub node_cache: RefCell<NodeCache>,
     /// Strong napi_ref to the JS Document object
     pub doc_js_ref: RefCell<Option<sys::napi_ref>>,
+    /// Strong napi_ref to the JS Window's dispatchEvent function.
+    /// Set by `set_window_dispatch` from the JS Window constructor so
+    /// Rust can dispatch pointer events to the window-level EventTarget.
+    pub window_dispatch_ref: RefCell<Option<sys::napi_ref>>,
 }
 
 impl SharedDoc {
@@ -108,6 +113,7 @@ impl SharedDoc {
             host_dirty: Cell::new(false),
             node_cache: RefCell::new(NodeCache::new()),
             doc_js_ref: RefCell::new(None),
+            window_dispatch_ref: RefCell::new(None),
         }
     }
 
@@ -245,6 +251,7 @@ impl BlitzDocument for WindowDocument {
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
+        #[cfg(debug_assertions)]
         if should_log_ui_event(&event) {
             eprintln!("napi-blitz[ui]: enter kind={}", debug_ui_event_kind(&event));
         }
@@ -264,6 +271,7 @@ impl BlitzDocument for WindowDocument {
     }
 }
 
+#[cfg(debug_assertions)]
 fn should_log_ui_event(event: &UiEvent) -> bool {
     matches!(event, UiEvent::PointerDown(_) | UiEvent::PointerUp(_))
 }
@@ -414,6 +422,24 @@ impl DocHandle {
             sys::napi_create_reference(env.raw(), napi::JsValue::raw(&doc), 1, &mut napi_ref)
         })?;
         *self.doc.doc_js_ref.borrow_mut() = Some(napi_ref);
+        Ok(())
+    }
+
+    /// Store a JS function (the Window's `dispatchEvent` bound method)
+    /// so Rust can dispatch pointer events to the window-level
+    /// EventTarget during `handle_event`.
+    #[napi]
+    pub fn set_window_dispatch(
+        &self,
+        env: Env,
+        dispatch: Function<napi::bindgen_prelude::Unknown, napi::bindgen_prelude::Unknown>,
+    ) -> Result<()> {
+        gc::set_env(env.raw());
+        let mut napi_ref = std::ptr::null_mut();
+        napi::check_status!(unsafe {
+            sys::napi_create_reference(env.raw(), napi::JsValue::raw(&dispatch), 1, &mut napi_ref)
+        })?;
+        *self.doc.window_dispatch_ref.borrow_mut() = Some(napi_ref);
         Ok(())
     }
 }

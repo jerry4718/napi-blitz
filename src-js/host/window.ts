@@ -42,6 +42,13 @@ export class Window extends EventTarget {
     private readonly _document: HTMLDocument,
   ) {
     super();
+    // Register our dispatchEvent so Rust can forward pointer events
+    // (pointermove/pointerup) to window-level listeners during
+    // `handle_event`. The DOM chain walk only reaches DOM nodes; this
+    // lets `window.addEventListener('pointermove', ...)` work.
+    this._document._native.setWindowDispatch(
+      (event: unknown) => this.dispatchEvent(event as Event),
+    );
   }
 
   /** The HTMLDocument painted in this window. */

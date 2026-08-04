@@ -130,6 +130,16 @@ export abstract class Node extends EventTarget {
     return false;
   }
 
+  // ---- Root / containment ------------------------------------------------
+
+  getRootNode(_composed = false): Node {
+    let cur: Node | null = this;
+    while (cur.parentNode !== null) {
+      cur = cur.parentNode;
+    }
+    return cur;
+  }
+
   get isConnected(): boolean {
     let cur: Node | null = this;
     while (cur !== null) {

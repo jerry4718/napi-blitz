@@ -1,7 +1,12 @@
 import test from 'ava'
 import { BlitzApp } from '../dist/index.js'
 
-test('JS-created element subtrees can match ancestor descendant selectors without panicking', (t) => {
+// This test calls pumpAppEvents which triggers vello rendering.
+// CI containers lack GPU support (vello shaders need float16 capabilities),
+// so skip it in CI. Set CI=true in GitHub Actions by default.
+const testFn = process.env.CI ? test.skip : test
+
+testFn('JS-created element subtrees can match ancestor descendant selectors without panicking', (t) => {
   const app = BlitzApp.create()
   const window = app.openWindow({
     baseHtml:

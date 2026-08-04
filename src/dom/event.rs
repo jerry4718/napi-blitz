@@ -155,7 +155,16 @@ impl EventHandler for JsEventHandler {
         //    these values are cleared so async callbacks see null.
         reset_dispatch_state(&mut event_obj, &env);
 
-        // 9. Read back flags and write to blitz EventState.
+        // 9. Dispatch pointer events to the window-level EventTarget.
+        //    JS code may register `pointermove`/`pointerup` listeners on
+        //    the Window object (e.g. for drag tracking). The DOM chain
+        //    walk above only reaches DOM nodes, so we explicitly forward
+        //    here.
+        if is_pointer_event(event) {
+            let _ = dispatch_to_window(&event_obj, &shared_doc, &env);
+        }
+
+        // 10. Read back flags and write to blitz EventState.
         let default_prevented: bool = event_obj
             .get_named_property("defaultPrevented")
             .unwrap_or(false);
@@ -166,7 +175,7 @@ impl EventHandler for JsEventHandler {
             event_state.stop_propagation();
         }
 
-        // 9. Sweep stale cache entries periodically.
+        // 11. Sweep stale cache entries periodically.
         shared_doc.node_cache.borrow_mut().sweep(&env);
     }
 }
@@ -200,6 +209,67 @@ impl JsEventHandler {
             false
         })
     }
+}
+
+/// Check if the event is a pointer-type event that should also be
+/// forwarded to the window-level EventTarget.
+fn is_pointer_event(event: &DomEvent) -> bool {
+    matches!(
+        event.data,
+        DomEventData::PointerMove(_)
+            | DomEventData::PointerDown(_)
+            | DomEventData::PointerUp(_)
+            | DomEventData::PointerEnter(_)
+            | DomEventData::PointerLeave(_)
+            | DomEventData::PointerOver(_)
+            | DomEventData::PointerOut(_)
+            | DomEventData::MouseMove(_)
+            | DomEventData::MouseDown(_)
+            | DomEventData::MouseUp(_)
+            | DomEventData::MouseEnter(_)
+            | DomEventData::MouseLeave(_)
+            | DomEventData::MouseOver(_)
+            | DomEventData::MouseOut(_)
+            | DomEventData::Click(_)
+            | DomEventData::ContextMenu(_)
+            | DomEventData::DoubleClick(_)
+    )
+}
+
+/// Dispatch the event to the JS Window's `dispatchEvent` function.
+/// This lets `window.addEventListener('pointermove', ...)` work.
+fn dispatch_to_window(event: &Object, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
+    let dispatch_ref = doc.window_dispatch_ref.borrow();
+    let Some(napi_ref) = *dispatch_ref else {
+        return Ok(());
+    };
+    drop(dispatch_ref);
+
+    unsafe {
+        let mut dispatch_fn = std::ptr::null_mut();
+        napi::check_status!(napi::sys::napi_get_reference_value(
+            env.raw(),
+            napi_ref,
+            &mut dispatch_fn
+        ))?;
+
+        let event_val = JsValue::raw(event);
+        let args = [event_val];
+        let mut result = std::ptr::null_mut();
+        napi::check_status!(napi::sys::napi_call_function(
+            env.raw(),
+            {
+                let mut undef = std::ptr::null_mut();
+                napi::sys::napi_get_undefined(env.raw(), &mut undef);
+                undef
+            },
+            dispatch_fn,
+            args.len(),
+            args.as_ptr(),
+            &mut result,
+        ))?;
+    }
+    Ok(())
 }
 
 // ── NAPI call helpers (concentrated unsafe) ───────────────────────────

@@ -81,6 +81,12 @@ export declare class DocHandle {
   rootElementId(): bigint
   setDocJs(doc: object): void
   /**
+   * Store a JS function (the Window's `dispatchEvent` bound method)
+   * so Rust can dispatch pointer events to the window-level
+   * EventTarget during `handle_event`.
+   */
+  setWindowDispatch(dispatch: (arg: unknown) => unknown): void
+  /**
    * Replace document content from an HTML string. Useful for tests and
    * initial bootstrapping when `base_html` was not enough.
    */

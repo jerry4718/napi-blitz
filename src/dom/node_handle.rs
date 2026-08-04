@@ -328,6 +328,10 @@ impl NodeHandle {
         let mut mutator = base.mutate();
         mutator.remove_node(self.node_id);
         drop(mutator);
+
+        let cache = self.doc.node_cache.borrow();
+        crate::dom::node_cache::cleanup_detached_subtree(&mut base, &cache, self.node_id);
+
         drop(base);
         self.doc.mark_host_dirty();
     }
