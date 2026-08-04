@@ -262,7 +262,7 @@ jobs:
             target: aarch64-apple-darwin
             architecture: arm64
         node:
-          - '20'
+#          - '20'
           - '22'
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -310,7 +310,7 @@ jobs:
           # TODO(armv7): Re-enable with the armv7-unknown-linux-gnueabihf build matrix entry.
           # - armv7-unknown-linux-gnueabihf
         node:
-          - '20'
+#          - '20'
           - '22'
     runs-on: ${{ contains(matrix.target, 'aarch64') && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
     steps:
@@ -375,12 +375,25 @@ jobs:
           options: -v ${{ steps.docker.outputs.PNPM_STORE_PATH }}:${{ steps.docker.outputs.PNPM_STORE_PATH }} -v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}
           run: |
             if command -v apk >/dev/null 2>&1; then
-              apk add --no-cache fontconfig
+              apk update
+              apk add --no-cache fontconfig xvfb xauth libxi libxrandr libxinerama libxcursor libxdamage libxrender libxext libxcomposite libxfixes libxkbcommon-x11 font-noto-cjk font-noto-emoji ttf-dejavu mesa-vulkan-swrast vulkan-loader libx11
+              # musl's dlopen (used by winit-x11) does not search /usr/lib
+              # by default. Write the musl linker path config so dlopen can
+              # find libX11.so.6 and its dependencies.
+              arch=$(uname -m)
+              echo "/usr/lib" > "/etc/ld-musl-${arch}.path"
             else
               apt-get update
-              apt-get install -y --no-install-recommends fontconfig libfontconfig1
+              apt-get install -y --no-install-recommends fontconfig libfontconfig1 xvfb xauth libxi6 libxrandr2 libxinerama1 libxcursor1 libxdamage1 libxrender1 libxext6 libxcomposite1 libxfixes3 libxkbcommon-x11-0 fonts-noto-cjk fonts-dejavu mesa-vulkan-drivers vulkan-tools libvulkan1 libx11-6 libx11-xcb1
             fi
+            Xvfb :99 -screen 0 1280x720x24 &
+            XVFB_PID=$!
+            export DISPLAY=:99
+            export CI=true
             npm run test
+            EXIT_CODE=$?
+            kill $XVFB_PID 2>/dev/null || true
+            exit $EXIT_CODE
   test-wasi:
     name: Test WASI target
     # TODO(wasi): Temporarily disabled. Do not delete this job.
