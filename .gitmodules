@@ -1,0 +1,5 @@
+[submodule "external/blitz"]
+	path = external/blitz
+	url = https://github.com/jerry4718/blitz.git
+	branch = v0.3.0-beta.1
+	commit = e2a6734f18fb7a1bd33ad2769b011953ac780356

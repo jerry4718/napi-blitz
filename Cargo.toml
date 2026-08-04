@@ -75,3 +75,8 @@ napi-build = "2.3.2"
 lto = true
 codegen-units = 1
 strip = "symbols"
+
+[patch.crates-io]
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
