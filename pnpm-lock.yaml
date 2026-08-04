@@ -85,6 +85,25 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0
 
+  examples/vue-date-picker:
+    dependencies:
+      '@ylcc/napi-blitz':
+        specifier: workspace:*
+        version: link:../..
+      vue:
+        specifier: ^3.5.27
+        version: 3.5.38(typescript@5.9.3)
+    devDependencies:
+      '@oxc-node/core':
+        specifier: ^0.0.35
+        version: 0.0.35(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)
+      '@types/node':
+        specifier: ^22.7.4
+        version: 22.19.21
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
+
   examples/vue-jsx-dom:
     dependencies:
       '@ylcc/napi-blitz':
