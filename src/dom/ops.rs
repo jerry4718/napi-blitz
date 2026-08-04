@@ -4,16 +4,22 @@
 //! perform wrapping on the Rust side via `SharedWrapper::wrap_node` and
 //! return JS Node objects directly. JS never calls `wrapNode` itself.
 
-use blitz::dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, local_name, ns};
-use blitz::html::DocumentHtmlParser;
-use napi::{Env, Error, Result, bindgen_prelude::{BigInt, Object}};
+use blitz::{
+    dom::BaseDocument,
+    dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, local_name, ns},
+    html::DocumentHtmlParser,
+};
+use napi::{
+    Env, Error, Result,
+    bindgen_prelude::{BigInt, Object},
+};
 use napi_derive::napi;
-use style::Atom;
-use style::invalidation::element::restyle_hints::RestyleHint;
-use style::properties::PropertyId;
+use style::{Atom, invalidation::element::restyle_hints::RestyleHint, properties::PropertyId};
 
-use crate::dom::doc::{DocHandle, wrap_node};
-use crate::dom::node_handle::NodeHandle;
+use crate::dom::{
+    doc::{DocHandle, wrap_node},
+    node_handle::NodeHandle,
+};
 
 /// Plain attribute pair used by the create/insert APIs.
 #[napi(object)]
@@ -152,7 +158,11 @@ impl DocHandle {
 
     /// Find all nodes by CSS selector. Returns wrapped JS Node objects.
     #[napi]
-    pub fn query_selector_all<'a>(&self, selector: String, env: &'a Env) -> Result<Vec<Object<'a>>> {
+    pub fn query_selector_all<'a>(
+        &self,
+        selector: String,
+        env: &'a Env,
+    ) -> Result<Vec<Object<'a>>> {
         let state = self.doc.base.borrow();
         match state.query_selector_all(&selector) {
             Ok(ids) => {
@@ -222,10 +232,7 @@ impl DocHandle {
     /// Lookup by `id=` attribute, like `document.getElementById`.
     #[napi]
     pub fn get_element_by_id<'a>(&self, id: String, env: &'a Env) -> Option<Object<'a>> {
-        let node_id = self.doc
-            .base
-            .borrow()
-            .get_element_by_id(&id)?;
+        let node_id = self.doc.base.borrow().get_element_by_id(&id)?;
         wrap_node(&self.doc, node_id, env).ok()
     }
 
@@ -254,10 +261,7 @@ impl DocHandle {
     pub fn node_handle(&self, id: BigInt) -> Option<NodeHandle> {
         let node_id = js_node_id_to_usize(&id);
         self.doc.base.borrow().get_node(node_id)?;
-        Some(NodeHandle::new(
-            node_id,
-            self.doc.clone(),
-        ))
+        Some(NodeHandle::new(node_id, self.doc.clone()))
     }
 }
 
@@ -827,35 +831,44 @@ impl DocHandle {
         dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u64)
     }
 
-   /// All element ids matching the given local tag name, in tree order.
-   /// Mirrors `getElementsByTagName(name)` minus the live-collection
-   /// semantics — JS gets a snapshot.
-   #[napi]
+    /// All element ids matching the given local tag name, in tree order.
+    /// Mirrors `getElementsByTagName(name)` minus the live-collection
+    /// semantics — JS gets a snapshot.
+    #[napi]
     pub fn find_all_by_local_name<'a>(&self, name: String, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
         let ids = dfs_collect(&state, 0, |n| n.data.is_element_with_tag_name(&needle));
         drop(state);
-        ids.into_iter().filter_map(|id| wrap_node(&self.doc, id, env).ok()).collect()
+        ids.into_iter()
+            .filter_map(|id| wrap_node(&self.doc, id, env).ok())
+            .collect()
     }
 
-   /// All element ids matching the given local tag name, scoped to the
-   /// subtree rooted at `root_id` (exclusive — `root_id` itself is not
-   /// checked). Pre-order DFS from `root_id`'s children.
+    /// All element ids matching the given local tag name, scoped to the
+    /// subtree rooted at `root_id` (exclusive — `root_id` itself is not
+    /// checked). Pre-order DFS from `root_id`'s children.
     #[napi]
-    pub fn find_all_by_local_name_in<'a>(&self, root: &NodeHandle, name: String, env: &'a Env) -> Vec<Object<'a>> {
+    pub fn find_all_by_local_name_in<'a>(
+        &self,
+        root: &NodeHandle,
+        name: String,
+        env: &'a Env,
+    ) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
         let ids = dfs_collect_children(&state, root.node_id, |n| {
             n.data.is_element_with_tag_name(&needle)
         });
         drop(state);
-        ids.into_iter().filter_map(|id| wrap_node(&self.doc, id, env).ok()).collect()
+        ids.into_iter()
+            .filter_map(|id| wrap_node(&self.doc, id, env).ok())
+            .collect()
     }
 
-   /// All element ids in the subtree rooted at `root_id` (exclusive),
-   /// i.e. every descendant element regardless of tag. Backs
-   /// `element.getElementsByTagName("*")`.
+    /// All element ids in the subtree rooted at `root_id` (exclusive),
+    /// i.e. every descendant element regardless of tag. Backs
+    /// `element.getElementsByTagName("*")`.
     #[napi]
     pub fn find_all_elements_in<'a>(&self, root: &NodeHandle, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
@@ -863,31 +876,40 @@ impl DocHandle {
             n.data.downcast_element().is_some()
         });
         drop(state);
-        ids.into_iter().filter_map(|id| wrap_node(&self.doc, id, env).ok()).collect()
+        ids.into_iter()
+            .filter_map(|id| wrap_node(&self.doc, id, env).ok())
+            .collect()
     }
 
-   /// All element ids whose `class` attribute contains `class_name` as
-   /// one of its whitespace-separated tokens. Document-scoped.
+    /// All element ids whose `class` attribute contains `class_name` as
+    /// one of its whitespace-separated tokens. Document-scoped.
     #[napi]
     pub fn find_all_by_class_name<'a>(&self, class_name: String, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = class_name;
         let ids = dfs_collect(&state, 0, |n| node_has_class(n, &needle));
         drop(state);
-        ids.into_iter().filter_map(|id| wrap_node(&self.doc, id, env).ok()).collect()
+        ids.into_iter()
+            .filter_map(|id| wrap_node(&self.doc, id, env).ok())
+            .collect()
     }
 
-   /// All element ids whose `class` attribute contains `class_name`,
-   /// scoped to the subtree rooted at `root_id` (exclusive).
+    /// All element ids whose `class` attribute contains `class_name`,
+    /// scoped to the subtree rooted at `root_id` (exclusive).
     #[napi]
-    pub fn find_all_by_class_name_in<'a>(&self, root: &NodeHandle, class_name: String, env: &'a Env) -> Vec<Object<'a>> {
+    pub fn find_all_by_class_name_in<'a>(
+        &self,
+        root: &NodeHandle,
+        class_name: String,
+        env: &'a Env,
+    ) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = class_name;
-        let ids = dfs_collect_children(&state, root.node_id, |n| {
-            node_has_class(n, &needle)
-        });
+        let ids = dfs_collect_children(&state, root.node_id, |n| node_has_class(n, &needle));
         drop(state);
-        ids.into_iter().filter_map(|id| wrap_node(&self.doc, id, env).ok()).collect()
+        ids.into_iter()
+            .filter_map(|id| wrap_node(&self.doc, id, env).ok())
+            .collect()
     }
 
     /// `<html>` element. Uses the `local_name!` macro for a zero-cost
@@ -933,8 +955,6 @@ impl DocHandle {
 // traversal. `dfs_collect_children` starts at `root`'s children, excluding
 // `root` itself — for element-scoped lookups where the spec says the
 // element itself is not part of the result.
-
-use blitz::dom::BaseDocument;
 
 /// Check whether a node's `class` attribute contains `class_name` as one
 /// of its whitespace-separated tokens. Returns false for non-elements.

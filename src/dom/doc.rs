@@ -18,8 +18,8 @@ use std::{
 
 use blitz::{
     dom::{
-        BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut,
-        Document as BlitzDocument, DocumentConfig, EventDriver, FontContext, NodeData,
+        BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
+        DocumentConfig, EventDriver, FontContext, NodeData,
     },
     html::{DocumentHtmlParser, HtmlProvider},
     traits::events::UiEvent,
@@ -41,6 +41,7 @@ use crate::dom::payload::EventPayload;
 fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
     match event {
         UiEvent::PointerMove(_) => "PointerMove",
+        UiEvent::PointerCancel(_) => "PointerCancel",
         UiEvent::PointerUp(_) => "PointerUp",
         UiEvent::PointerDown(_) => "PointerDown",
         UiEvent::Wheel(_) => "Wheel",
@@ -125,11 +126,7 @@ impl SharedDoc {
 ///
 /// Uses `GlobalCreators` for JS constructor lookup and `SharedDoc`
 /// for doc type lookup, node_cache, and doc_js ref.
-pub fn wrap_node<'a>(
-    doc: &Rc<SharedDoc>,
-    node_id: usize,
-    env: &'a Env,
-) -> Result<Object<'a>> {
+pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: usize, env: &'a Env) -> Result<Object<'a>> {
     // 1. Check cache.
     let cached = {
         let cache = doc.node_cache.borrow();
@@ -176,9 +173,7 @@ pub fn wrap_node<'a>(
     let ctor_napi_ref = gc::get_node_constructor(node_type).ok_or_else(|| {
         Error::new(
             Status::GenericFailure,
-            format!(
-                "No JS constructor registered for nodeType {node_type} (node_id={node_id})"
-            ),
+            format!("No JS constructor registered for nodeType {node_type} (node_id={node_id})"),
         )
     })?;
     let doc_js_napi_ref = doc
@@ -434,7 +429,12 @@ pub fn register_node_constructor(
     gc::set_env(env.raw());
     let mut napi_ref = std::ptr::null_mut();
     napi::check_status!(unsafe {
-        sys::napi_create_reference(env.raw(), napi::JsValue::raw(&constructor), 1, &mut napi_ref)
+        sys::napi_create_reference(
+            env.raw(),
+            napi::JsValue::raw(&constructor),
+            1,
+            &mut napi_ref,
+        )
     })?;
     gc::insert_node_constructor(node_type, napi_ref);
     Ok(())

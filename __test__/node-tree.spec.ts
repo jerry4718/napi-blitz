@@ -6,7 +6,7 @@ import { HTMLDocument } from "../dist/index.js";
 import { pluckDocument } from "./_helpers.ts";
 
 test("appendChild / parentNode / childNodes are on Node", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   const a = doc.createElement("div");
   const b = doc.createElement("span");
@@ -22,7 +22,7 @@ test("appendChild / parentNode / childNodes are on Node", (t) => {
 });
 
 test("insertBefore inserts at the right position", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   const a = doc.createElement("a");
   const b = doc.createElement("b");
@@ -38,7 +38,7 @@ test("insertBefore inserts at the right position", (t) => {
 });
 
 test("removeChild detaches the node", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   const a = doc.createElement("div");
   body.appendChild(a);
@@ -48,7 +48,7 @@ test("removeChild detaches the node", (t) => {
 });
 
 test("Node.remove() detaches self", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   const a = doc.createElement("div");
   body.appendChild(a);
@@ -57,7 +57,7 @@ test("Node.remove() detaches self", (t) => {
 });
 
 test("contains walks ancestors", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   const outer = doc.createElement("div");
   const inner = doc.createElement("span");
@@ -69,7 +69,7 @@ test("contains walks ancestors", (t) => {
 });
 
 test("native node ids are bigint and reject negative ids", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const native = pluckDocument(doc)._native;
 
   t.is(typeof native.rootNodeId(), "bigint");
@@ -78,7 +78,7 @@ test("native node ids are bigint and reject negative ids", (t) => {
 });
 
 test("cloneNode(false) shallow-copies a node without children", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const div = doc.createElement("div");
   div.id = "src";
   div.appendChild(doc.createElement("span"));
@@ -99,7 +99,7 @@ test("cloneNode(false) shallow-copies a node without children", (t) => {
 });
 
 test("cloneNode(true) deep-copies the whole subtree", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const div = doc.createElement("div");
   div.id = "src";
   div.innerHTML = "<span>a</span><p>b</p>";
@@ -112,7 +112,7 @@ test("cloneNode(true) deep-copies the whole subtree", (t) => {
 });
 
 test("cloneNode preserves inline style attribute", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const div = doc.createElement("div");
   div.setAttribute("style", "color: red");
 

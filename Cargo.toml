@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [features]
 default = [ "native-window" ]
 native-window = []
+buffer-surface = []
 
 [dependencies]
 napi-derive = "3.5.6"
@@ -20,7 +21,7 @@ version = "3.9.3"
 features = ["napi6", "async"]
 
 [dependencies.blitz]
-version = "=0.3.0-alpha.5"
+version = "=0.3.0-beta.1"
 default-features = false
 features = ["net"]
 
@@ -29,9 +30,9 @@ features = ["net"]
 # `blitz-dom` dependency picks up `system_fonts` too. Without this,
 # fontique does not register system fonts and text renders as empty boxes.
 [dependencies.blitz-dom]
-version = "=0.3.0-alpha.5"
+version = "=0.3.0-beta.1"
 default-features = false
-features = ["system_fonts"]
+features = ["system-fonts"]
 
 # Stylo / selectors, pinned to the same versions blitz uses so the
 # trait impls in blitz-dom's private `stylo` module (which are written
@@ -39,7 +40,7 @@ features = ["system_fonts"]
 # crate's lib name is `style`, so we import it under that name to match
 # blitz's own usage.
 [dependencies.style]
-version = "0.18.0"
+version = "0.19.0"
 package = "stylo"
 [dependencies.selectors]
 version = "0.38.0"

@@ -7,8 +7,10 @@
 //! that are not `Send`/`Sync`. Node.js runs JS on a single thread, so
 //! thread-local storage is correct and avoids unsafe `Sync` impls.
 
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+};
 
 use napi::{Env, Error, Result, Status, sys};
 
@@ -38,27 +40,16 @@ pub fn env() -> Result<Env> {
         g.env_raw
             .get()
             .map(Env::from_raw)
-            .ok_or_else(|| {
-                Error::new(
-                    Status::GenericFailure,
-                    "GlobalCreators env not initialized",
-                )
-            })
+            .ok_or_else(|| Error::new(Status::GenericFailure, "GlobalCreators env not initialized"))
     })
 }
 
 pub fn insert_node_constructor(node_type: u32, napi_ref: sys::napi_ref) {
-    GLOBAL_CREATORS.with(|g| {
-        g.node_constructors
-            .borrow_mut()
-            .insert(node_type, napi_ref)
-    });
+    GLOBAL_CREATORS.with(|g| g.node_constructors.borrow_mut().insert(node_type, napi_ref));
 }
 
 pub fn get_node_constructor(node_type: u32) -> Option<sys::napi_ref> {
-    GLOBAL_CREATORS.with(|g| {
-        Some(*g.node_constructors.borrow().get(&node_type)?)
-    })
+    GLOBAL_CREATORS.with(|g| Some(*g.node_constructors.borrow().get(&node_type)?))
 }
 
 pub fn set_event_factory(napi_ref: sys::napi_ref) {

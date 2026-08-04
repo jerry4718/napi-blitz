@@ -12,14 +12,14 @@ import {
 } from "../dist/index.js";
 
 test("HTMLDocument has documentElement / head / body", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   t.is(doc.documentElement.tagName, "html");
   t.is(doc.head?.tagName, "head");
   t.is(doc.body?.tagName, "body");
 });
 
 test("document.title round-trips through <title> element", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
 
   // Empty document: no <title>, getter is "".
   t.is(doc.title, "");
@@ -43,7 +43,7 @@ test("document.title round-trips through <title> element", (t) => {
 });
 
 test("getElementsByTagName returns a snapshot in tree order", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const body = doc.body!;
   body.innerHTML = "<div><span></span></div><span></span>";
 
@@ -62,7 +62,7 @@ test("getElementsByTagName returns a snapshot in tree order", (t) => {
 });
 
 test("Document.getElementsByClassName matches class tokens", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   doc.body!.innerHTML =
     '<div class="foo bar"></div><span class="foo"></span><p class="bar baz"></p>';
 
@@ -83,7 +83,7 @@ test("Document.getElementsByClassName matches class tokens", (t) => {
 });
 
 test("Element.getElementsByTagName is scoped to descendants", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   doc.body!.innerHTML =
     "<section><div><span></span></div><span></span></section><span id=outer></span>";
 
@@ -107,7 +107,7 @@ test("Element.getElementsByTagName is scoped to descendants", (t) => {
 });
 
 test("Element.getElementsByClassName is scoped to descendants", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   doc.body!.innerHTML =
     '<div class="root"><span class="foo"></span><p class="foo bar"></p></div>';
 
@@ -126,7 +126,7 @@ test("Element.getElementsByClassName is scoped to descendants", (t) => {
 });
 
 test("Element.querySelector / querySelectorAll are scoped to descendants", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   doc.body!.innerHTML =
     '<div id="root"><p class="a">1</p><span class="a">2</span><p class="b">3</p></div>';
 
@@ -158,7 +158,7 @@ test("Element.querySelector / querySelectorAll are scoped to descendants", (t) =
 });
 
 test("Element.querySelector supports id and compound selectors", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   doc.body!.innerHTML =
     '<ul><li id="first" class="item">a</li><li class="item">b</li></ul>';
 
@@ -178,7 +178,7 @@ test("Element.querySelector supports id and compound selectors", (t) => {
 });
 
 test("createElement returns an HTMLElement; identity is stable", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const div = doc.createElement("div");
   t.true(div instanceof HTMLElement);
   t.true(div instanceof Element);
@@ -191,7 +191,7 @@ test("createElement returns an HTMLElement; identity is stable", (t) => {
 });
 
 test("createTextNode returns a Text wrapper", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const t1 = doc.createTextNode("hi");
   t.true(t1 instanceof Text);
   t.is(t1.data, "hi");
@@ -200,7 +200,7 @@ test("createTextNode returns a Text wrapper", (t) => {
 });
 
 test("createComment returns a Comment wrapper", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   // Standard API: createComment accepts optional initial data. The
   // native side ignores it (blitz has no Comment payload yet); the JS
   // wrapper logs a one-shot warning. Silence it for the duration of

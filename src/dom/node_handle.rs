@@ -3,10 +3,12 @@ use napi::{Env, Error, Result, bindgen_prelude::Object};
 use napi_derive::napi;
 use style::properties::PropertyId;
 
-use crate::dom::doc::{SharedDoc, wrap_node};
-use crate::dom::ops::{
-    AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
-    set_detached_attribute,
+use crate::dom::{
+    doc::{SharedDoc, wrap_node},
+    ops::{
+        AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
+        set_detached_attribute,
+    },
 };
 use std::rc::Rc;
 
@@ -47,7 +49,10 @@ impl NodeHandle {
 
     #[napi]
     pub fn parent_node<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let parent_id = self.doc.base.borrow()
+        let parent_id = self
+            .doc
+            .base
+            .borrow()
             .get_node(self.node_id)
             .and_then(|n| n.parent)?;
         wrap_node(&self.doc, parent_id, env).ok()
@@ -55,7 +60,10 @@ impl NodeHandle {
 
     #[napi]
     pub fn first_child<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let child_id = self.doc.base.borrow()
+        let child_id = self
+            .doc
+            .base
+            .borrow()
             .get_node(self.node_id)
             .and_then(|n| n.children.first().copied())?;
         wrap_node(&self.doc, child_id, env).ok()
@@ -63,7 +71,10 @@ impl NodeHandle {
 
     #[napi]
     pub fn last_child<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let child_id = self.doc.base.borrow()
+        let child_id = self
+            .doc
+            .base
+            .borrow()
             .get_node(self.node_id)
             .and_then(|n| n.children.last().copied())?;
         wrap_node(&self.doc, child_id, env).ok()
@@ -93,11 +104,15 @@ impl NodeHandle {
 
     #[napi]
     pub fn child_nodes<'a>(&self, env: &'a Env) -> Vec<Object<'a>> {
-        let children: Vec<usize> = self.doc.base.borrow()
+        let children: Vec<usize> = self
+            .doc
+            .base
+            .borrow()
             .get_node(self.node_id)
             .map(|n| n.children.clone())
             .unwrap_or_default();
-        children.into_iter()
+        children
+            .into_iter()
             .filter_map(|id| wrap_node(&self.doc, id, env).ok())
             .collect()
     }
@@ -285,7 +300,12 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn insert_before<'a>(&mut self, node: &NodeHandle, anchor: Option<&NodeHandle>, env: &'a Env) -> Object<'a> {
+    pub fn insert_before<'a>(
+        &mut self,
+        node: &NodeHandle,
+        anchor: Option<&NodeHandle>,
+        env: &'a Env,
+    ) -> Object<'a> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         match anchor {
@@ -401,7 +421,11 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn query_selector_all<'a>(&self, selector: String, env: &'a Env) -> Result<Vec<Object<'a>>> {
+    pub fn query_selector_all<'a>(
+        &self,
+        selector: String,
+        env: &'a Env,
+    ) -> Result<Vec<Object<'a>>> {
         let ids: Vec<usize> = {
             let base = self.doc.base.borrow();
             let selector_list = base

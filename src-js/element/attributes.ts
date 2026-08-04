@@ -16,7 +16,7 @@
 // `length`, indexed access, and `getNamedItem` will land when we add a
 // proper `Attr` wrapper.
 
-import type { NativeNodeHandle } from "../native";
+import type { AttrInit, NativeNodeHandle } from "../native";
 
 /** The shape user code sees behind `el.attributes`. */
 export type AttributesMap = Record<string, string>;
@@ -54,7 +54,7 @@ export function makeAttributesProxy(
     },
 
     ownKeys(): string[] {
-      return handle.getAttributes().map((a) => a.name);
+      return handle.getAttributes().map((a: AttrInit) => a.name);
     },
 
     getOwnPropertyDescriptor(_, prop): PropertyDescriptor | undefined {

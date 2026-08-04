@@ -83,7 +83,7 @@ export class BlitzApp extends EventTarget {
     // Wire the native -> JS bridge so winit `CloseRequested` reaches
     // us as a `close` event on the right window. The handler runs
     // synchronously inside `pumpAppEvents`.
-    this._native.setAppEventHandler((payload) =>
+    this._native.setAppEventHandler((payload: AppEventPayload) =>
       this._dispatchFromNative(payload),
     );
   }

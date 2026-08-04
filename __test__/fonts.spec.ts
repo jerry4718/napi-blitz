@@ -66,7 +66,7 @@ test("FontFace.load() rejects URL-string sources", async (t) => {
 });
 
 test("document.fonts is a stable FontFaceSet singleton", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const set = doc.fonts;
   t.true(set instanceof FontFaceSet);
   t.is(doc.fonts, set);
@@ -82,7 +82,7 @@ test("FontFaceSet.add registers, has/size/iterate, delete/clear work", async (t)
   // turns out to be undecodable does not throw on `add`.)
   const buf = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const face = new FontFace("Stub", buf);
   await face.load();
 
@@ -117,7 +117,7 @@ test("FontFaceSet.add registers, has/size/iterate, delete/clear work", async (t)
 });
 
 test("FontFaceSet.add rejects non-FontFace arguments", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   t.throws(
     () => doc.fonts.add({ family: "X" } as unknown as FontFace),
     { instanceOf: TypeError },
@@ -125,7 +125,7 @@ test("FontFaceSet.add rejects non-FontFace arguments", (t) => {
 });
 
 test("FontFaceSet.add rejects URL-source faces with a clear error", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const face = new FontFace("X", "url(./missing.ttf)");
   t.throws(() => doc.fonts.add(face), { instanceOf: TypeError });
   t.false(doc.fonts.has(face));
@@ -135,7 +135,7 @@ test("FontFaceSet surfaces invalid CSS descriptors from the engine", (t) => {
   // The native side parses weight/style/stretch as CSS and throws
   // InvalidArg on garbage. The error must propagate, not be swallowed,
   // and the face must not be added.
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const face = new FontFace("X", new Uint8Array(4), {
     weight: "not-a-real-weight",
   });

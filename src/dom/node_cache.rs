@@ -21,9 +21,7 @@
 //!      `remove_and_drop_node` on the blitz document to reclaim the
 //!      Rust-side node storage.
 
-use std::collections::HashMap;
-use std::ptr;
-use std::rc::Weak;
+use std::{collections::HashMap, ptr, rc::Weak};
 
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
@@ -119,10 +117,7 @@ impl NodeCache {
         self.entries.insert(node_id, napi_ref);
 
         // Attach finalizer for eager cleanup.
-        let hint = Box::new(FinalizerHint {
-            node_id,
-            doc_weak,
-        });
+        let hint = Box::new(FinalizerHint { node_id, doc_weak });
         let hint_ptr = Box::into_raw(hint);
         let status = unsafe {
             sys::napi_add_finalizer(
@@ -269,9 +264,12 @@ unsafe extern "C" fn node_finalizer(
         .unwrap_or(true);
 
     if is_detached {
-        println!("node_finalizer with is_detached");
         let mut base = doc.base.borrow_mut();
-        let mut mutator = base.mutate();
-        mutator.remove_and_drop_node(hint.node_id);
+        // Re-check existence under the mutable borrow: another finalizer
+        // may have already removed this node via remove_and_drop_node.
+        if base.get_node(hint.node_id).is_some() {
+            let mut mutator = base.mutate();
+            mutator.remove_and_drop_node(hint.node_id);
+        }
     }
 }

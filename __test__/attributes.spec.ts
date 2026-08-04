@@ -6,7 +6,7 @@ import test from "ava";
 import { HTMLDocument } from "../dist/index.js";
 
 test("getAttribute / setAttribute / removeAttribute round trip", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div");
   el.setAttribute("data-x", "1");
   t.is(el.getAttribute("data-x"), "1");
@@ -17,7 +17,7 @@ test("getAttribute / setAttribute / removeAttribute round trip", (t) => {
 });
 
 test("attributes proxy: get / set / delete / in / ownKeys", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div");
   el.attributes.id = "foo";
   el.attributes["data-x"] = "1";
@@ -35,7 +35,7 @@ test("attributes proxy: get / set / delete / in / ownKeys", (t) => {
 });
 
 test("element.id and className shortcuts", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div");
   el.id = "hi";
   el.className = "a b";

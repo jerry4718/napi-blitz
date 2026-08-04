@@ -17,23 +17,25 @@
 //! serializing an `EventPayload` and calling into JS for every receiver,
 //! we build the Event once and call `dispatchEvent` directly.
 
+use crate::dom::{
+    doc::{SharedDoc, wrap_node},
+    global_creators as gc,
+    payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData},
+};
 use blitz::{
-    dom::{Document as BlitzDocument, NodeData},
+    dom::{Document as BlitzDocument, EventHandler, NodeData},
     traits::events::{
         BlitzImeEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, DomEvent, DomEventData,
         DomEventKind, EventState, KeyState,
     },
 };
-use blitz::dom::EventHandler;
 use napi::{
     Env, JsValue, Result,
-    bindgen_prelude::{FromNapiValue, Function, JsObjectValue, Object, ToNapiValue, Unknown},
+    bindgen_prelude::{
+        FnArgs, FromNapiValue, Function, JsObjectValue, Object, ToNapiValue, Unknown,
+    },
 };
-use napi::bindgen_prelude::FnArgs;
 use std::rc::{Rc, Weak};
-use crate::dom::doc::{SharedDoc, wrap_node};
-use crate::dom::global_creators as gc;
-use crate::dom::payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData};
 
 const CAPTURING_PHASE: u32 = 1;
 const AT_TARGET: u32 = 2;
@@ -127,12 +129,14 @@ impl EventHandler for JsEventHandler {
             if propagation_stopped {
                 break;
             }
-            propagation_stopped = self.dispatch_to_node(nid, &event_obj, CAPTURING_PHASE, &shared_doc, &env);
+            propagation_stopped =
+                self.dispatch_to_node(nid, &event_obj, CAPTURING_PHASE, &shared_doc, &env);
         }
 
         // 6. Target phase.
         if !propagation_stopped {
-            propagation_stopped = self.dispatch_to_node(target_nid, &event_obj, AT_TARGET, &shared_doc, &env);
+            propagation_stopped =
+                self.dispatch_to_node(target_nid, &event_obj, AT_TARGET, &shared_doc, &env);
         }
 
         // 7. Bubble phase (target's parent → root).
@@ -141,7 +145,8 @@ impl EventHandler for JsEventHandler {
                 if propagation_stopped {
                     break;
                 }
-                propagation_stopped = self.dispatch_to_node(nid, &event_obj, BUBBLING_PHASE, &shared_doc, &env);
+                propagation_stopped =
+                    self.dispatch_to_node(nid, &event_obj, BUBBLING_PHASE, &shared_doc, &env);
             }
         }
 
@@ -151,7 +156,9 @@ impl EventHandler for JsEventHandler {
         reset_dispatch_state(&mut event_obj, &env);
 
         // 9. Read back flags and write to blitz EventState.
-        let default_prevented: bool = event_obj.get_named_property("defaultPrevented").unwrap_or(false);
+        let default_prevented: bool = event_obj
+            .get_named_property("defaultPrevented")
+            .unwrap_or(false);
         if default_prevented {
             event_state.prevent_default();
         }
@@ -246,7 +253,7 @@ fn call_event_factory(
 fn call_dispatch_event(node: &Object, event: &Object, _env: &Env) -> Result<bool> {
     let dispatch_fn: Function<Object, bool> = node.get_named_property("dispatchEvent")?;
     // Use apply so `this` is the node object (required by EventTarget.dispatchEvent).
-    let _ = dispatch_fn.apply(node.clone(), event.clone())?;
+    let _ = dispatch_fn.apply(*node, *event)?;
     // Read cancelBubble from the event.
     let cancel: bool = event.get_named_property("cancelBubble")?;
     Ok(cancel)
@@ -265,21 +272,16 @@ fn reset_dispatch_state(event: &mut Object, _env: &Env) {
 
 /// Set `event.target` to a lazy getter that calls `wrap_node` only when
 /// JS code reads the property.
-fn set_lazy_target(
-    event: &Object,
-    node_id: usize,
-    doc: &Rc<SharedDoc>,
-    env: &Env,
-) -> Result<()> {
+fn set_lazy_target(event: &Object, node_id: usize, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
     let doc_clone = doc.clone();
-    let getter: Function<(), Unknown> = env.create_function_from_closure("target_getter", move |ctx| {
-        let env_raw = ctx.env.raw();
-        let n = wrap_node(&doc_clone, node_id, &ctx.env)?;
-        let raw = JsValue::raw(&n);
-        unsafe { Unknown::from_napi_value(env_raw, raw) }
-    })?;
-    let setter: Function<Unknown, Unknown> =
-        event.get_named_property("__setLazyTarget")?;
+    let getter: Function<(), Unknown> =
+        env.create_function_from_closure("target_getter", move |ctx| {
+            let env_raw = ctx.env.raw();
+            let n = wrap_node(&doc_clone, node_id, ctx.env)?;
+            let raw = JsValue::raw(&n);
+            unsafe { Unknown::from_napi_value(env_raw, raw) }
+        })?;
+    let setter: Function<Unknown, Unknown> = event.get_named_property("__setLazyTarget")?;
     let getter_raw = JsValue::raw(&getter);
     let getter_unknown = unsafe { Unknown::from_napi_value(env.raw(), getter_raw) }?;
     setter.call(getter_unknown)?;
@@ -296,17 +298,20 @@ fn set_lazy_current_target(
     env: &Env,
 ) -> Result<()> {
     let doc_clone = doc.clone();
-    let getter: Function<(), Unknown> = env.create_function_from_closure("currentTarget_getter", move |ctx| {
-        let env_raw = ctx.env.raw();
-        let n = wrap_node(&doc_clone, node_id, &ctx.env)?;
-        let raw = JsValue::raw(&n);
-        unsafe { Unknown::from_napi_value(env_raw, raw) }
-    })?;
+    let getter: Function<(), Unknown> =
+        env.create_function_from_closure("currentTarget_getter", move |ctx| {
+            let env_raw = ctx.env.raw();
+            let n = wrap_node(&doc_clone, node_id, ctx.env)?;
+            let raw = JsValue::raw(&n);
+            unsafe { Unknown::from_napi_value(env_raw, raw) }
+        })?;
     let setter: Function<FnArgs<(Unknown, u32)>, Unknown> =
         event.get_named_property("__setLazyCurrentTarget")?;
     let getter_raw = JsValue::raw(&getter);
     let getter_unknown = unsafe { Unknown::from_napi_value(env.raw(), getter_raw) }?;
-    setter.call(FnArgs { data: (getter_unknown, phase) })?;
+    setter.call(FnArgs {
+        data: (getter_unknown, phase),
+    })?;
     Ok(())
 }
 

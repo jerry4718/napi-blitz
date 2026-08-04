@@ -3,6 +3,7 @@
 // `Element` interface that are independent of the HTML namespace.
 
 import { Node } from "../base/node";
+import type { AttrInit } from "../native";
 import { makeAttributesProxy, type AttributesMap } from "./attributes";
 
 export class Element extends Node {
@@ -62,7 +63,7 @@ export class Element extends Node {
 
   /** Snapshot of attribute names. */
   getAttributeNames(): string[] {
-    return this._handle.getAttributes().map((a) => a.name);
+    return this._handle.getAttributes().map((a: AttrInit) => a.name);
   }
 
   // ---- Convenience id / class --------------------------------------------

@@ -6,7 +6,7 @@ import test from "ava";
 import { HTMLDocument, HTMLElement } from "../dist/index.js";
 
 test("style is a stable Proxy on HTMLElement", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div");
   t.true(el instanceof HTMLElement);
   // Same identity across reads.
@@ -14,7 +14,7 @@ test("style is a stable Proxy on HTMLElement", (t) => {
 });
 
 test("style.color set/read/delete round-trips", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
   el.style.color = "red";
   // stylo may serialize `red` as `rgb(255, 0, 0)`; just check
@@ -31,7 +31,7 @@ test("style.color set/read/delete round-trips", (t) => {
 });
 
 test("style.fontSize (camelCase) maps to kebab-case `font-size`", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
   el.style.fontSize = "12px";
 
@@ -47,7 +47,7 @@ test("style.fontSize (camelCase) maps to kebab-case `font-size`", (t) => {
 });
 
 test("style.cssText returns a serialized block and reparses on set", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
   el.style.color = "red";
   el.style.margin = "0";
@@ -64,7 +64,7 @@ test("style.cssText returns a serialized block and reparses on set", (t) => {
 });
 
 test("getPropertyValue / setProperty / removeProperty methods (CSSOM)", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
 
   el.style.setProperty("color", "blue");
@@ -81,7 +81,7 @@ test("getPropertyValue / setProperty / removeProperty methods (CSSOM)", (t) => {
 });
 
 test("length and item(i) follow declaration order", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
   el.style.color = "red";
   el.style.padding = "0";
@@ -95,7 +95,7 @@ test("length and item(i) follow declaration order", (t) => {
 });
 
 test("unknown CSS properties are ignored, not thrown", (t) => {
-  const doc = new HTMLDocument();
+  const doc = HTMLDocument.create();
   const el = doc.createElement("div") as HTMLElement;
   // stylo refuses unknown properties silently; getter/setter don't throw.
   t.notThrows(() => {
