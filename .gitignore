@@ -198,3 +198,7 @@ Temporary Items
 
 .idea/
 .ignore/
+
+# napi-rs generated platform packages (build output)
+npm/
+npm-split/
