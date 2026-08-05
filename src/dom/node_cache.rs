@@ -283,8 +283,11 @@ unsafe extern "C" fn node_finalizer(
         if !has_live_descendant(&doc_mut, &cache, hint.node_id) {
             drop(cache);
             doc_mut.mutate().remove_and_drop_node(hint.node_id);
+            return;
         }
     }
+
+    cleanup_detached_subtree(&mut doc_mut, &doc.node_cache.borrow(), hint.node_id);
 }
 
 /// Plan A: from a detached node, walk up to find the topmost ancestor
@@ -296,21 +299,33 @@ pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_
     // Walk up to find the topmost node in the detached chain.
     let mut top = node_id;
     loop {
-        let parent = doc.get_node(top).and_then(|n| n.parent);
-        match parent {
-            Some(p) if doc.get_node(p).is_some() => {
-                top = p;
-            }
-            _ => break,
+        let Some(p) = doc.get_node(top).and_then(|n| n.parent) else {
+            break;
+        };
+        if doc.get_node(p).is_none() {
+            break;
         }
+        top = p;
     }
 
-    // If neither top nor any descendant has a live JS wrapper, and top
-    // is an ancestor (not the node itself), drop the whole subtree.
-    if top != node_id && !cache.entries.contains_key(&top) && !has_live_descendant(doc, cache, top)
-    {
-        doc.mutate().remove_and_drop_node(top);
+    if top == node_id {
+        return;
     }
+
+    if cache.entries.contains_key(&top) {
+        return;
+    }
+
+    if has_live_descendant(doc, cache, top) {
+        return;
+    }
+
+    #[cfg(debug_assertions)]
+    println!(
+        "cleanup_detached_subtree: node_id: {}, top: {} ",
+        node_id, top
+    );
+    doc.mutate().remove_and_drop_node(top);
 }
 
 /// Recursively check if any descendant of `node_id` has an entry in
