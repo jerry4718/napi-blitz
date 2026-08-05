@@ -51,5 +51,14 @@ export type {
   PumpResult,
 } from "./native";
 
+export {
+  pickFile,
+  pickFiles,
+  pickFolder,
+  pickFolders,
+  saveFile,
+} from "./native";
+export type { DialogOptions, FileFilter } from "./native";
+
 import "./register"; // side effect: registers JS constructors with Rust
 

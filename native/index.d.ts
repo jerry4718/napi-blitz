@@ -371,6 +371,18 @@ export interface AttrInit {
   namespace?: string
 }
 
+/** Options shared by all dialog methods. */
+export interface DialogOptions {
+  /** Dialog title. */
+  title?: string
+  /** Starting directory. */
+  directory?: string
+  /** Starting file name (save dialog) or default name. */
+  fileName?: string
+  /** Extension filters. */
+  filters?: Array<FileFilter>
+}
+
 /** Configuration passed to `DocHandle.create`. */
 export interface DocHandleConfig {
   uaStylesheets?: Array<string>
@@ -402,6 +414,14 @@ export interface EventPayload {
   ime?: ImeData
 }
 
+/** Extension filter entry, e.g. `{ name: "Images", extensions: ["png", "jpg"] }`. */
+export interface FileFilter {
+  /** Display name shown in the filter dropdown. */
+  name: string
+  /** File extensions without leading dot, e.g. `["png", "jpg"]`. */
+  extensions: Array<string>
+}
+
 export interface ImeData {
   /** "enabled" | "disabled" | "preedit" | "commit" | "deleteSurrounding" */
   kind: string
@@ -429,6 +449,18 @@ export interface KeyData {
   state: string
   text?: string
 }
+
+/** Open a single-file picker. Returns the chosen path or `null`. */
+export declare function pickFile(options?: DialogOptions | undefined | null): Promise<string | null>
+
+/** Open a multi-file picker. Returns an array of paths (may be empty). */
+export declare function pickFiles(options?: DialogOptions | undefined | null): Promise<Array<string>>
+
+/** Open a single-folder picker. Returns the chosen path or `null`. */
+export declare function pickFolder(options?: DialogOptions | undefined | null): Promise<string | null>
+
+/** Open a multi-folder picker. Returns an array of paths (may be empty). */
+export declare function pickFolders(options?: DialogOptions | undefined | null): Promise<Array<string>>
 
 export interface PointerData {
   /** "mouse" | "pen" | "finger" */
@@ -472,6 +504,9 @@ export interface RegisterFontOptions {
 }
 
 export declare function registerNodeConstructor(nodeType: number, constructor: (arg: unknown) => unknown): void
+
+/** Open a save-file dialog. Returns the chosen path or `null`. */
+export declare function saveFile(options?: DialogOptions | undefined | null): Promise<string | null>
 
 export interface WheelData {
   /** "lines" | "pixels" */

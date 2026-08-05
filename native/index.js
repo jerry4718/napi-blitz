@@ -590,10 +590,15 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { BlitzApp, DocHandle, NodeHandle, Window, registerEventFactory, registerNodeConstructor } = nativeBinding
+const { BlitzApp, DocHandle, NodeHandle, Window, pickFile, pickFiles, pickFolder, pickFolders, registerEventFactory, registerNodeConstructor, saveFile } = nativeBinding
 export { BlitzApp }
 export { DocHandle }
 export { NodeHandle }
 export { Window }
+export { pickFile }
+export { pickFiles }
+export { pickFolder }
+export { pickFolders }
 export { registerEventFactory }
 export { registerNodeConstructor }
+export { saveFile }

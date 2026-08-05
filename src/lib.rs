@@ -10,14 +10,11 @@
 //!   `@ylcc/wasm-blitz`.
 
 mod dom;
-pub use dom::{DocHandle, DocHandleConfig, NodeHandle};
+
+mod dialog;
 
 #[cfg(feature = "buffer-surface")]
 mod buffer_surface;
-#[cfg(feature = "buffer-surface")]
-pub use buffer_surface::{BufferFrame, BufferRenderer, BufferRendererOptions};
 
 #[cfg(feature = "native-window")]
 mod native_window;
-#[cfg(feature = "native-window")]
-pub use native_window::{AppDispatchResult, AppEventPayload, BlitzApp, Window};

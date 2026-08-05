@@ -78,6 +78,9 @@ version = "0.13.4"
 default-features = false
 features = ["native-tls-vendored"]
 
+[dependencies.rfd]
+version = "0.17.2"
+
 [build-dependencies]
 napi-build = "2.3.2"
 

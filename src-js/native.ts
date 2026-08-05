@@ -16,9 +16,11 @@ import type {
   AppEventPayload,
   AttrInit,
   BlitzApp as NativeBlitzApp,
+  DialogOptions,
   DocHandle as NativeDocHandle,
   DocHandleConfig,
   EventPayload,
+  FileFilter,
   ImeData,
   InputData,
   KeyData,
@@ -42,6 +44,11 @@ interface NativeModuleShape {
   NodeHandle: typeof NativeNodeHandle;
   registerNodeConstructor: typeof _registerNodeConstructor;
   registerEventFactory: typeof _registerEventFactory;
+  pickFile: (options?: DialogOptions | null) => Promise<string | null>;
+  pickFiles: (options?: DialogOptions | null) => Promise<string[]>;
+  pickFolder: (options?: DialogOptions | null) => Promise<string | null>;
+  pickFolders: (options?: DialogOptions | null) => Promise<string[]>;
+  saveFile: (options?: DialogOptions | null) => Promise<string | null>;
 }
 
 // Both `src/native.ts` and `dist/native.js` sit one directory below the
@@ -57,12 +64,20 @@ export const NativeNodeHandleCtor: typeof NativeNodeHandle = mod.NodeHandle;
 export const registerNodeConstructor = mod.registerNodeConstructor;
 export const registerEventFactory = mod.registerEventFactory;
 
+export const pickFile = mod.pickFile;
+export const pickFiles = mod.pickFiles;
+export const pickFolder = mod.pickFolder;
+export const pickFolders = mod.pickFolders;
+export const saveFile = mod.saveFile;
+
 export type {
   AppDispatchResult,
   AppEventPayload,
   AttrInit,
+  DialogOptions,
   DocHandleConfig,
   EventPayload,
+  FileFilter,
   ImeData,
   InputData,
   KeyData,
