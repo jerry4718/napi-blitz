@@ -454,4 +454,34 @@ impl NodeHandle {
         }
         Ok(out)
     }
+
+    #[napi]
+    pub fn get_bounding_client_rect(&self) -> Option<DomRect> {
+        let base = self.doc.base.borrow();
+        let node = base.get_node(self.node_id)?;
+        let pos = node.absolute_position(0.0, 0.0);
+        let layout = node.final_layout();
+        Some(DomRect {
+            x: pos.x as f64,
+            y: pos.y as f64,
+            width: layout.size.width as f64,
+            height: layout.size.height as f64,
+            top: pos.y as f64,
+            left: pos.x as f64,
+            bottom: (pos.y + layout.size.height) as f64,
+            right: (pos.x + layout.size.width) as f64,
+        })
+    }
+}
+
+#[napi(object)]
+pub struct DomRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub top: f64,
+    pub left: f64,
+    pub bottom: f64,
+    pub right: f64,
 }

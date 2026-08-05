@@ -3,7 +3,7 @@
 // `Element` interface that are independent of the HTML namespace.
 
 import { Node } from "../base/node";
-import type { AttrInit } from "../native";
+import type { AttrInit, DomRect } from "../native";
 import { makeAttributesProxy, type AttributesMap } from "./attributes";
 
 export class Element extends Node {
@@ -136,5 +136,9 @@ export class Element extends Node {
    */
   querySelectorAll(selector: string): Element[] {
     return this._handle.querySelectorAll(selector) as Element[];
+  }
+
+  getBoundingClientRect(): DomRect | null {
+    return this._handle.getBoundingClientRect();
   }
 }

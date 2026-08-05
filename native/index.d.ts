@@ -321,6 +321,7 @@ export declare class NodeHandle {
   outerHtml(): string | null
   querySelector(selector: string): object | null
   querySelectorAll(selector: string): Array<object>
+  getBoundingClientRect(): DomRect | null
 }
 
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */
@@ -387,6 +388,17 @@ export interface DialogOptions {
 export interface DocHandleConfig {
   uaStylesheets?: Array<string>
   baseHtml?: string
+}
+
+export interface DomRect {
+  x: number
+  y: number
+  width: number
+  height: number
+  top: number
+  left: number
+  bottom: number
+  right: number
 }
 
 /**
