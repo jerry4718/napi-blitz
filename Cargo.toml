@@ -15,6 +15,7 @@ buffer-surface = []
 [dependencies]
 napi-derive = "3.5.6"
 winit = "0.31.0-beta.2"
+log = "0.4"
 
 [dependencies.napi]
 version = "3.9.3"
@@ -40,13 +41,16 @@ features = ["system-fonts"]
 # crate's lib name is `style`, so we import it under that name to match
 # blitz's own usage.
 [dependencies.style]
-version = "0.19.0"
+git = "https://github.com/servo/stylo"
+rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde"
 package = "stylo"
 [dependencies.selectors]
-version = "0.38.0"
+git = "https://github.com/servo/stylo"
+rev = "2d289c14fdf46952d52cabce63b1f0dc55b2ccde"
+package = "selectors"
 
 [dependencies.anyrender_vello]
-version = "0.11.0"
+version = "0.13.0"
 
 [dependencies.parley]
 version = "0.10"
@@ -59,6 +63,12 @@ features = ["std"]
 [dependencies.fontique]
 version = "0.10.0"
 features = ["fontconfig-dlopen"]
+
+# Force icu_provider to use the `log` framework instead of bare `eprintln!`
+# in debug builds, so ICU4X data errors can be filtered.
+[dependencies.icu_provider]
+version = "2.1.1"
+features = ["logging"]
 
 # Unify reqwest's TLS feature for Linux builds so openssl-sys builds
 # OpenSSL from source instead of trying to locate a target sysroot via pkg-config.
@@ -77,6 +87,11 @@ codegen-units = 1
 strip = "symbols"
 
 [patch.crates-io]
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", branch = "v0.3.0-beta.1" }
+blitz = { path = "external/blitz/packages/blitz" }
+blitz-dom = { path = "external/blitz/packages/blitz-dom" }
+blitz-traits = { path = "external/blitz/packages/blitz-traits" }
+blitz-html = { path = "external/blitz/packages/blitz-html" }
+blitz-net = { path = "external/blitz/packages/blitz-net" }
+blitz-paint = { path = "external/blitz/packages/blitz-paint" }
+blitz-shell = { path = "external/blitz/packages/blitz-shell" }
+stylo_taffy = { path = "external/blitz/packages/stylo_taffy" }

@@ -1,4 +1,4 @@
-use blitz::dom::{LocalName, NodeData};
+use blitz::dom::{LocalName, NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
 use napi_derive::napi;
 use style::properties::PropertyId;
@@ -20,12 +20,12 @@ const NODE_TYPE_OTHER: u32 = 0;
 
 #[napi]
 pub struct NodeHandle {
-    pub(crate) node_id: usize,
+    pub(crate) node_id: NodeId,
     pub(crate) doc: Rc<SharedDoc>,
 }
 
 impl NodeHandle {
-    pub(crate) fn new(node_id: usize, doc: Rc<SharedDoc>) -> Self {
+    pub(crate) fn new(node_id: NodeId, doc: Rc<SharedDoc>) -> Self {
         Self { node_id, doc }
     }
 }
@@ -39,10 +39,10 @@ impl NodeHandle {
             return NODE_TYPE_OTHER;
         };
         match &node.data {
-            NodeData::Document => NODE_TYPE_DOCUMENT,
+            NodeData::Document(_) => NODE_TYPE_DOCUMENT,
             NodeData::Element(_) => NODE_TYPE_ELEMENT,
             NodeData::Text(_) => NODE_TYPE_TEXT,
-            NodeData::Comment => NODE_TYPE_COMMENT,
+            NodeData::Comment { .. } => NODE_TYPE_COMMENT,
             _ => NODE_TYPE_OTHER,
         }
     }
@@ -104,12 +104,12 @@ impl NodeHandle {
 
     #[napi]
     pub fn child_nodes<'a>(&self, env: &'a Env) -> Vec<Object<'a>> {
-        let children: Vec<usize> = self
+        let children: Vec<NodeId> = self
             .doc
             .base
             .borrow()
             .get_node(self.node_id)
-            .map(|n| n.children.clone())
+            .map(|n| n.children.iter().copied().collect())
             .unwrap_or_default();
         children
             .into_iter()
@@ -139,9 +139,9 @@ impl NodeHandle {
             return;
         }
 
-        let children: Vec<usize> = base
+        let children: Vec<NodeId> = base
             .get_node(self.node_id)
-            .map(|n| n.children.clone())
+            .map(|n| n.children.iter().copied().collect())
             .unwrap_or_default();
         {
             let mut mutator = base.mutate();
@@ -289,14 +289,14 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn append_child<'a>(&mut self, child: &NodeHandle, env: &'a Env) -> Object<'a> {
+    pub fn append_child<'a>(&mut self, child: &NodeHandle, env: &'a Env) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.append_children(self.node_id, &[child.node_id]);
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, child.node_id, env).unwrap()
+        wrap_node(&self.doc, child.node_id, env)
     }
 
     #[napi]
@@ -305,7 +305,7 @@ impl NodeHandle {
         node: &NodeHandle,
         anchor: Option<&NodeHandle>,
         env: &'a Env,
-    ) -> Object<'a> {
+    ) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         match anchor {
@@ -319,7 +319,7 @@ impl NodeHandle {
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, node.node_id, env).unwrap()
+        wrap_node(&self.doc, node.node_id, env)
     }
 
     #[napi]
@@ -337,18 +337,18 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn replace_with<'a>(&mut self, node: &NodeHandle, env: &'a Env) -> Object<'a> {
+    pub fn replace_with<'a>(&mut self, node: &NodeHandle, env: &'a Env) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.replace_node_with(self.node_id, &[node.node_id]);
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, node.node_id, env).unwrap()
+        wrap_node(&self.doc, node.node_id, env)
     }
 
     #[napi]
-    pub fn clone_node<'a>(&self, deep: bool, env: &'a Env) -> Object<'a> {
+    pub fn clone_node<'a>(&self, deep: bool, env: &'a Env) -> Result<Object<'a>> {
         let new_id = if deep {
             let mut base = self.doc.base.borrow_mut();
             let mut mutator = base.mutate();
@@ -359,14 +359,14 @@ impl NodeHandle {
         } else {
             let mut base = self.doc.base.borrow_mut();
             let Some(data) = base.get_node(self.node_id).map(|node| node.data.clone()) else {
-                return wrap_node(&self.doc, self.node_id, env).unwrap();
+                return wrap_node(&self.doc, self.node_id, env);
             };
             let clone_id = base.create_node(data);
             drop(base);
             clone_id
         };
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, new_id, env).unwrap()
+        wrap_node(&self.doc, new_id, env)
     }
 
     #[napi]
@@ -430,7 +430,7 @@ impl NodeHandle {
         selector: String,
         env: &'a Env,
     ) -> Result<Vec<Object<'a>>> {
-        let ids: Vec<usize> = {
+        let ids: Vec<NodeId> = {
             let base = self.doc.base.borrow();
             let selector_list = base
                 .try_parse_selector_list(&selector)

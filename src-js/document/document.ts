@@ -117,7 +117,7 @@ export abstract class Document extends Node implements DocumentInternals {
   }
 
   createComment(data?: string): Comment {
-    const comment = this._native.createCommentNode() as Comment;
+    const comment = this._native.createCommentNode(data || '') as Comment;
     if (data !== undefined && data !== "") {
       comment.data = data;
     }

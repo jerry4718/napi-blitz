@@ -23,7 +23,7 @@ use crate::dom::{
     payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData},
 };
 use blitz::{
-    dom::{Document as BlitzDocument, EventHandler, NodeData},
+    dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
     traits::events::{
         BlitzImeEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, DomEvent, DomEventData,
         DomEventKind, EventState, KeyState,
@@ -50,7 +50,7 @@ pub struct JsEventHandler {
 
 /// Normalize the event target: if it's an `AnonymousBlock` (blitz internal
 /// layout node), walk up to the first non-anonymous ancestor.
-fn normalize_event_target(doc: &dyn BlitzDocument, target: usize) -> usize {
+fn normalize_event_target(doc: &dyn BlitzDocument, target: NodeId) -> NodeId {
     let inner = doc.inner();
     let mut node_id = target;
     while let Some(node) = inner.get_node(node_id) {
@@ -69,7 +69,7 @@ fn normalize_event_target(doc: &dyn BlitzDocument, target: usize) -> usize {
 }
 
 /// Check if a node is an `AnonymousBlock` (blitz internal layout node).
-fn is_anonymous(doc: &dyn BlitzDocument, node_id: usize) -> bool {
+fn is_anonymous(doc: &dyn BlitzDocument, node_id: NodeId) -> bool {
     doc.inner()
         .get_node(node_id)
         .map(|n| matches!(n.data, NodeData::AnonymousBlock(_)))
@@ -79,7 +79,7 @@ fn is_anonymous(doc: &dyn BlitzDocument, node_id: usize) -> bool {
 impl EventHandler for JsEventHandler {
     fn handle_event(
         &mut self,
-        chain: &[usize],
+        chain: &[NodeId],
         event: &mut DomEvent,
         doc: &mut dyn BlitzDocument,
         event_state: &mut EventState,
@@ -116,7 +116,7 @@ impl EventHandler for JsEventHandler {
         let _ = set_lazy_target(&event_obj, target_nid, &shared_doc, &env);
 
         // 4. Filter anonymous nodes from the chain.
-        let clean_chain: Vec<usize> = chain
+        let clean_chain: Vec<NodeId> = chain
             .iter()
             .copied()
             .filter(|&nid| !is_anonymous(doc, nid))
@@ -185,7 +185,7 @@ impl JsEventHandler {
     /// was stopped (stopPropagation / stopImmediatePropagation).
     fn dispatch_to_node(
         &self,
-        node_id: usize,
+        node_id: NodeId,
         event: &Object,
         phase: u32,
         doc: &Rc<SharedDoc>,
@@ -204,10 +204,7 @@ impl JsEventHandler {
         let _ = set_lazy_current_target(event, node_id, phase, doc, env);
 
         // 3. Call node.dispatchEvent(event) and read back cancelBubble.
-        call_dispatch_event(&node, event, env).unwrap_or_else(|e| {
-            eprintln!("napi-blitz: dispatchEvent failed for node {node_id}: {e}");
-            false
-        })
+        call_dispatch_event(&node, event, env).unwrap_or(false)
     }
 }
 
@@ -322,9 +319,7 @@ fn call_event_factory(
 /// Call `node.dispatchEvent(event)` and return `true` if propagation stopped.
 fn call_dispatch_event(node: &Object, event: &Object, _env: &Env) -> Result<bool> {
     let dispatch_fn: Function<Object, bool> = node.get_named_property("dispatchEvent")?;
-    // Use apply so `this` is the node object (required by EventTarget.dispatchEvent).
     let _ = dispatch_fn.apply(*node, *event)?;
-    // Read cancelBubble from the event.
     let cancel: bool = event.get_named_property("cancelBubble")?;
     Ok(cancel)
 }
@@ -342,7 +337,7 @@ fn reset_dispatch_state(event: &mut Object, _env: &Env) {
 
 /// Set `event.target` to a lazy getter that calls `wrap_node` only when
 /// JS code reads the property.
-fn set_lazy_target(event: &Object, node_id: usize, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
+fn set_lazy_target(event: &Object, node_id: NodeId, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
     let doc_clone = doc.clone();
     let getter: Function<(), Unknown> =
         env.create_function_from_closure("target_getter", move |ctx| {
@@ -362,7 +357,7 @@ fn set_lazy_target(event: &Object, node_id: usize, doc: &Rc<SharedDoc>, env: &En
 /// the given phase value.
 fn set_lazy_current_target(
     event: &Object,
-    node_id: usize,
+    node_id: NodeId,
     phase: u32,
     doc: &Rc<SharedDoc>,
     env: &Env,

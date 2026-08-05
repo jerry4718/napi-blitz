@@ -6,7 +6,7 @@
 
 use blitz::{
     dom::BaseDocument,
-    dom::{Attribute as BlitzAttribute, LocalName, Namespace, QualName, local_name, ns},
+    dom::{Attribute as BlitzAttribute, LocalName, Namespace, NodeId, QualName, local_name, ns},
     html::DocumentHtmlParser,
 };
 use napi::{
@@ -37,12 +37,12 @@ pub(crate) fn make_qual_name(local: &str, namespace: Option<&str>) -> QualName {
     }
 }
 
-fn js_node_id_to_usize(id: &BigInt) -> usize {
+fn js_to_node_id(id: &BigInt) -> NodeId {
     let (signed, value, lossless) = id.get_u64();
     if signed || !lossless {
-        return usize::MAX;
+        return NodeId::default();
     }
-    usize::try_from(value).unwrap_or(usize::MAX)
+    NodeId::from_u64(value)
 }
 
 /// Mark a node as needing style/layout work after mutating its inline
@@ -57,7 +57,7 @@ fn js_node_id_to_usize(id: &BigInt) -> usize {
 ///
 /// Until blitz-dom exposes a fully invalidating style-property mutator, keep
 /// the parsed-style mutation path but add the public invalidation pieces here.
-pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, node_id: usize) {
+pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, node_id: NodeId) {
     state.snapshot_node(node_id);
     if let Some(node) = state.get_node_mut(node_id) {
         node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
@@ -66,7 +66,7 @@ pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, no
 
 pub(crate) fn set_detached_attribute(
     state: &mut blitz::dom::BaseDocument,
-    node_id: usize,
+    node_id: NodeId,
     name: QualName,
     value: &str,
 ) -> bool {
@@ -107,7 +107,7 @@ pub(crate) fn set_detached_attribute(
 
 pub(crate) fn remove_detached_attribute(
     state: &mut blitz::dom::BaseDocument,
-    node_id: usize,
+    node_id: NodeId,
     name: &QualName,
 ) -> bool {
     let Some(node) = state.get_node_mut(node_id) else {
@@ -190,7 +190,7 @@ impl DocHandle {
             .try_parse_selector_list(&selector)
             .map_err(|err| Error::from_reason(format!("query_selector_in: {err:?}")))?;
 
-        let Some(root_node) = state.get_node(js_node_id_to_usize(&root_id)) else {
+        let Some(root_node) = state.get_node(js_to_node_id(&root_id)) else {
             return Ok(None);
         };
 
@@ -202,7 +202,7 @@ impl DocHandle {
             &mut result,
             style::dom_apis::MayUseInvalidation::Yes,
         );
-        Ok(result.map(|node| node.id as u64))
+        Ok(result.map(|node| node.id.as_u64()))
     }
 
     /// Element-scoped `querySelectorAll`: all matches in the subtree rooted
@@ -214,7 +214,7 @@ impl DocHandle {
             .try_parse_selector_list(&selector)
             .map_err(|err| Error::from_reason(format!("query_selector_all_in: {err:?}")))?;
 
-        let Some(root_node) = state.get_node(js_node_id_to_usize(&root_id)) else {
+        let Some(root_node) = state.get_node(js_to_node_id(&root_id)) else {
             return Ok(Vec::new());
         };
 
@@ -226,7 +226,7 @@ impl DocHandle {
             &mut results,
             style::dom_apis::MayUseInvalidation::Yes,
         );
-        Ok(results.iter().map(|node| node.id as u64).collect())
+        Ok(results.iter().map(|node| node.id.as_u64()).collect())
     }
 
     /// Lookup by `id=` attribute, like `document.getElementById`.
@@ -244,7 +244,7 @@ impl DocHandle {
     #[napi]
     pub fn find_title_node<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
         let id = self.find_first_static(local_name!("title"))?;
-        wrap_node(&self.doc, id as usize, env).ok()
+        wrap_node(&self.doc, id, env).ok()
     }
 
     /// True iff the given node id currently exists in the document.
@@ -253,13 +253,13 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&id))
+            .get_node(js_to_node_id(&id))
             .is_some()
     }
 
     #[napi]
     pub fn node_handle(&self, id: BigInt) -> Option<NodeHandle> {
-        let node_id = js_node_id_to_usize(&id);
+        let node_id = js_to_node_id(&id);
         self.doc.base.borrow().get_node(node_id)?;
         Some(NodeHandle::new(node_id, self.doc.clone()))
     }
@@ -307,12 +307,12 @@ impl DocHandle {
         wrap_node(&self.doc, node_id, env)
     }
 
-    /// Create an empty comment node. Returns a wrapped JS Node.
+    /// Create a comment node with the given content. Returns a wrapped JS Node.
     #[napi]
-    pub fn create_comment_node<'a>(&mut self, env: &'a Env) -> Result<Object<'a>> {
+    pub fn create_comment_node<'a>(&mut self, text: String, env: &'a Env) -> Result<Object<'a>> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        let node_id = mutator.create_comment_node();
+        let node_id = mutator.create_comment_node(&text);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -324,7 +324,7 @@ impl DocHandle {
     pub fn deep_clone_node(&mut self, node_id: BigInt) -> u64 {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.deep_clone_node(js_node_id_to_usize(&node_id)) as u64
+        mutator.deep_clone_node(js_to_node_id(&node_id)).as_u64()
     }
 
     /// Shallow-clone a node: same data (tag name, attributes, text
@@ -338,14 +338,14 @@ impl DocHandle {
     #[napi]
     pub fn shallow_clone_node(&mut self, node_id: BigInt) -> u64 {
         let mut state = self.doc.base.borrow_mut();
-        let Some(source) = state.get_node(js_node_id_to_usize(&node_id)) else {
+        let Some(source) = state.get_node(js_to_node_id(&node_id)) else {
             return 0;
         };
         // Cloning `NodeData` deep-copies attributes, text, and the
         // (Arc-shared) parsed `style` declaration block. We never
         // touch `children` / `parent` so the clone starts detached.
         let data = source.data.clone();
-        state.create_node(data) as u64
+        state.create_node(data).as_u64()
     }
 }
 
@@ -357,9 +357,9 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.parent)
-            .map(|id| id as u64)
+            .map(|id| id.as_u64())
     }
 
     /// First child id, if any.
@@ -368,9 +368,9 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.children.first().copied())
-            .map(|id| id as u64)
+            .map(|id| id.as_u64())
     }
 
     /// Last child id, if any.
@@ -379,9 +379,9 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.children.last().copied())
-            .map(|id| id as u64)
+            .map(|id| id.as_u64())
     }
 
     /// All children, in document order.
@@ -390,8 +390,8 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
-            .map(|n| n.children.iter().map(|id| *id as u64).collect())
+            .get_node(js_to_node_id(&node_id))
+            .map(|n| n.children.iter().map(|id| id.as_u64()).collect())
             .unwrap_or_default()
     }
 
@@ -401,9 +401,9 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.forward(1))
-            .map(|n| n.id as u64)
+            .map(|n| n.id.as_u64())
     }
 
     /// Previous sibling id, if any.
@@ -412,9 +412,9 @@ impl DocHandle {
         self.doc
             .base
             .borrow()
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.backward(1))
-            .map(|n| n.id as u64)
+            .map(|n| n.id.as_u64())
     }
 }
 
@@ -431,15 +431,15 @@ impl DocHandle {
     #[napi]
     pub fn node_type(&self, node_id: BigInt) -> u32 {
         let state = self.doc.base.borrow();
-        let Some(node) = state.get_node(js_node_id_to_usize(&node_id)) else {
+        let Some(node) = state.get_node(js_to_node_id(&node_id)) else {
             return NODE_TYPE_OTHER;
         };
         use blitz::dom::NodeData;
         match &node.data {
-            NodeData::Document => NODE_TYPE_DOCUMENT,
+            NodeData::Document(_) => NODE_TYPE_DOCUMENT,
             NodeData::Element(_) => NODE_TYPE_ELEMENT,
             NodeData::Text(_) => NODE_TYPE_TEXT,
-            NodeData::Comment => NODE_TYPE_COMMENT,
+            NodeData::Comment { .. } => NODE_TYPE_COMMENT,
             _ => NODE_TYPE_OTHER,
         }
     }
@@ -450,7 +450,7 @@ impl DocHandle {
     pub fn tag_name(&self, node_id: BigInt) -> Option<String> {
         let state = self.doc.base.borrow();
         state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.element_data())
             .map(|el| el.name.local.to_string())
     }
@@ -461,7 +461,7 @@ impl DocHandle {
     pub fn text_content(&self, node_id: BigInt) -> Option<String> {
         let state = self.doc.base.borrow();
         state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .map(|n| n.text_content())
     }
 
@@ -469,7 +469,7 @@ impl DocHandle {
     #[napi]
     pub fn get_attribute(&self, node_id: BigInt, name: String) -> Option<String> {
         let state = self.doc.base.borrow();
-        let node = state.get_node(js_node_id_to_usize(&node_id))?;
+        let node = state.get_node(js_to_node_id(&node_id))?;
         let local = LocalName::from(name.as_str());
         node.attr(local).map(|s| s.to_string())
     }
@@ -479,7 +479,7 @@ impl DocHandle {
     #[napi]
     pub fn get_attributes(&self, node_id: BigInt) -> Vec<AttrInit> {
         let state = self.doc.base.borrow();
-        let Some(node) = state.get_node(js_node_id_to_usize(&node_id)) else {
+        let Some(node) = state.get_node(js_to_node_id(&node_id)) else {
             return Vec::new();
         };
         let Some(attrs) = node.attrs() else {
@@ -508,7 +508,7 @@ impl DocHandle {
         namespace: Option<String>,
     ) {
         let mut state = self.doc.base.borrow_mut();
-        let node_id = js_node_id_to_usize(&node_id);
+        let node_id = js_to_node_id(&node_id);
         let name = make_qual_name(&name, namespace.as_deref());
         if set_detached_attribute(&mut state, node_id, name.clone(), &value) {
             drop(state);
@@ -526,7 +526,7 @@ impl DocHandle {
     #[napi]
     pub fn remove_attribute(&mut self, node_id: BigInt, name: String, namespace: Option<String>) {
         let mut state = self.doc.base.borrow_mut();
-        let node_id = js_node_id_to_usize(&node_id);
+        let node_id = js_to_node_id(&node_id);
         let name = make_qual_name(&name, namespace.as_deref());
         if remove_detached_attribute(&mut state, node_id, &name) {
             drop(state);
@@ -544,7 +544,7 @@ impl DocHandle {
     #[napi]
     pub fn set_style_property(&mut self, node_id: BigInt, name: String, value: String) {
         let mut state = self.doc.base.borrow_mut();
-        let node_id = js_node_id_to_usize(&node_id);
+        let node_id = js_to_node_id(&node_id);
         mark_inline_style_mutated(&mut state, node_id);
         state.set_style_property(node_id, &name, &value);
         drop(state);
@@ -555,7 +555,7 @@ impl DocHandle {
     #[napi]
     pub fn remove_style_property(&mut self, node_id: BigInt, name: String) {
         let mut state = self.doc.base.borrow_mut();
-        let node_id = js_node_id_to_usize(&node_id);
+        let node_id = js_to_node_id(&node_id);
         mark_inline_style_mutated(&mut state, node_id);
         state.remove_style_property(node_id, &name);
         drop(state);
@@ -574,7 +574,7 @@ impl DocHandle {
     pub fn get_style_property(&self, node_id: BigInt, name: String) -> Option<String> {
         let state = self.doc.base.borrow();
         let element_data = state
-            .get_node(js_node_id_to_usize(&node_id))?
+            .get_node(js_to_node_id(&node_id))?
             .element_data()?;
         let block = element_data.style_attribute.as_ref()?;
         let property_id = PropertyId::parse_enabled_for_all_content(&name).ok()?;
@@ -602,7 +602,7 @@ impl DocHandle {
     pub fn get_style_property_names(&self, node_id: BigInt) -> Vec<String> {
         let state = self.doc.base.borrow();
         let Some(element_data) = state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.element_data())
         else {
             return Vec::new();
@@ -626,7 +626,7 @@ impl DocHandle {
     pub fn get_style_attribute(&self, node_id: BigInt) -> String {
         let state = self.doc.base.borrow();
         let Some(element_data) = state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .and_then(|n| n.element_data())
         else {
             return String::new();
@@ -648,12 +648,12 @@ impl DocHandle {
         let mut state = self.doc.base.borrow_mut();
         // For text/comment nodes we update the existing data.
         let is_text = state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .map(|n| n.is_text_node())
             .unwrap_or(false);
         if is_text {
             let mut mutator = state.mutate();
-            mutator.set_node_text(js_node_id_to_usize(&node_id), &text);
+            mutator.set_node_text(js_to_node_id(&node_id), &text);
             drop(mutator);
             drop(state);
             self.doc.mark_host_dirty();
@@ -661,9 +661,9 @@ impl DocHandle {
         }
 
         // Otherwise reset element children to a single text node.
-        let children: Vec<usize> = state
-            .get_node(js_node_id_to_usize(&node_id))
-            .map(|n| n.children.clone())
+        let children: Vec<NodeId> = state
+            .get_node(js_to_node_id(&node_id))
+            .map(|n| n.children.iter().copied().collect::<Vec<NodeId>>())
             .unwrap_or_default();
         {
             let mut mutator = state.mutate();
@@ -671,7 +671,7 @@ impl DocHandle {
                 mutator.remove_and_drop_node(*c);
             }
             let text_id = mutator.create_text_node(&text);
-            mutator.append_children(js_node_id_to_usize(&node_id), &[text_id]);
+            mutator.append_children(js_to_node_id(&node_id), &[text_id]);
         }
         drop(state);
         self.doc.mark_host_dirty();
@@ -686,8 +686,8 @@ impl DocHandle {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         mutator.append_children(
-            js_node_id_to_usize(&parent_id),
-            &[js_node_id_to_usize(&child_id)],
+            js_to_node_id(&parent_id),
+            &[js_to_node_id(&child_id)],
         );
         drop(mutator);
         drop(state);
@@ -697,26 +697,27 @@ impl DocHandle {
     /// Insert `node` immediately before `anchor`. If `anchor` is None, behaves
     /// like `appendChild`. Matches `Node.insertBefore`.
     #[napi]
-    pub fn insert_before(&mut self, parent_id: BigInt, node_id: BigInt, anchor_id: Option<BigInt>) {
+    pub fn insert_before(&mut self, parent_id: BigInt, node_id: BigInt, anchor_id: Option<BigInt>) -> Result<()> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         match anchor_id {
             Some(anchor) => {
                 mutator.insert_nodes_before(
-                    js_node_id_to_usize(&anchor),
-                    &[js_node_id_to_usize(&node_id)],
+                    js_to_node_id(&anchor),
+                    &[js_to_node_id(&node_id)],
                 );
             }
             None => {
                 mutator.append_children(
-                    js_node_id_to_usize(&parent_id),
-                    &[js_node_id_to_usize(&node_id)],
+                    js_to_node_id(&parent_id),
+                    &[js_to_node_id(&node_id)],
                 );
             }
         }
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
+        Ok(())
     }
 
     /// Insert `node` immediately after `anchor`.
@@ -725,8 +726,8 @@ impl DocHandle {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         mutator.insert_nodes_after(
-            js_node_id_to_usize(&anchor_id),
-            &[js_node_id_to_usize(&node_id)],
+            js_to_node_id(&anchor_id),
+            &[js_to_node_id(&node_id)],
         );
         drop(mutator);
         drop(state);
@@ -740,7 +741,7 @@ impl DocHandle {
     pub fn remove(&mut self, node_id: BigInt) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.remove_node(js_node_id_to_usize(&node_id));
+        mutator.remove_node(js_to_node_id(&node_id));
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -751,7 +752,7 @@ impl DocHandle {
     pub fn drop_node(&mut self, node_id: BigInt) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.remove_and_drop_node(js_node_id_to_usize(&node_id));
+        mutator.remove_and_drop_node(js_to_node_id(&node_id));
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -763,8 +764,8 @@ impl DocHandle {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         mutator.replace_node_with(
-            js_node_id_to_usize(&anchor_id),
-            &[js_node_id_to_usize(&node_id)],
+            js_to_node_id(&anchor_id),
+            &[js_to_node_id(&node_id)],
         );
         drop(mutator);
         drop(state);
@@ -776,7 +777,7 @@ impl DocHandle {
     pub fn set_inner_html(&mut self, node_id: BigInt, html: String) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.set_inner_html(js_node_id_to_usize(&node_id), &html);
+        mutator.set_inner_html(js_to_node_id(&node_id), &html);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -788,7 +789,7 @@ impl DocHandle {
     pub fn outer_html(&self, node_id: BigInt) -> Option<String> {
         let state = self.doc.base.borrow();
         state
-            .get_node(js_node_id_to_usize(&node_id))
+            .get_node(js_to_node_id(&node_id))
             .map(|n| n.outer_html())
     }
 
@@ -797,7 +798,7 @@ impl DocHandle {
     #[napi]
     pub fn inner_html(&self, node_id: BigInt) -> Option<String> {
         let state = self.doc.base.borrow();
-        let node = state.get_node(js_node_id_to_usize(&node_id))?;
+        let node = state.get_node(js_to_node_id(&node_id))?;
         let mut out = String::new();
         for &child_id in &node.children {
             if let Some(child) = state.get_node(child_id) {
@@ -828,7 +829,7 @@ impl DocHandle {
     pub fn find_first_by_local_name(&self, name: String) -> Option<u64> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u64)
+        dfs_find(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id.as_u64())
     }
 
     /// All element ids matching the given local tag name, in tree order.
@@ -838,7 +839,7 @@ impl DocHandle {
     pub fn find_all_by_local_name<'a>(&self, name: String, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
-        let ids = dfs_collect(&state, 0, |n| n.data.is_element_with_tag_name(&needle));
+        let ids = dfs_collect(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle));
         drop(state);
         ids.into_iter()
             .filter_map(|id| wrap_node(&self.doc, id, env).ok())
@@ -887,7 +888,7 @@ impl DocHandle {
     pub fn find_all_by_class_name<'a>(&self, class_name: String, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = class_name;
-        let ids = dfs_collect(&state, 0, |n| node_has_class(n, &needle));
+        let ids = dfs_collect(&state, state.root_node().id, |n| node_has_class(n, &needle));
         drop(state);
         ids.into_iter()
             .filter_map(|id| wrap_node(&self.doc, id, env).ok())
@@ -918,19 +919,19 @@ impl DocHandle {
     #[napi]
     pub fn html_element<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
         let id = self.find_first_static(local_name!("html"))?;
-        wrap_node(&self.doc, id as usize, env).ok()
+        wrap_node(&self.doc, id, env).ok()
     }
 
     #[napi]
     pub fn head_element<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
         let id = self.find_first_static(local_name!("head"))?;
-        wrap_node(&self.doc, id as usize, env).ok()
+        wrap_node(&self.doc, id, env).ok()
     }
 
     #[napi]
     pub fn body_element<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
         let id = self.find_first_static(local_name!("body"))?;
-        wrap_node(&self.doc, id as usize, env).ok()
+        wrap_node(&self.doc, id, env).ok()
     }
 }
 
@@ -938,9 +939,9 @@ impl DocHandle {
     /// Shared fast-path for `local_name!`-constructed atoms. Bypasses the
     /// `LocalName::from(&str)` allocation that `find_first_by_local_name`
     /// has to do for the runtime-string case.
-    fn find_first_static(&self, needle: LocalName) -> Option<u64> {
+    fn find_first_static(&self, needle: LocalName) -> Option<NodeId> {
         let state = self.doc.base.borrow();
-        dfs_find(&state, 0, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id as u64)
+        dfs_find(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle))
     }
 }
 
@@ -967,11 +968,11 @@ fn node_has_class(node: &blitz::dom::Node, class_name: &str) -> bool {
 
 /// Find the first node id (pre-order, starting from `root` inclusive)
 /// where `pred` returns true.
-fn dfs_find<F>(doc: &BaseDocument, root: usize, pred: F) -> Option<usize>
+fn dfs_find<F>(doc: &BaseDocument, root: NodeId, pred: F) -> Option<NodeId>
 where
     F: Fn(&blitz::dom::Node) -> bool,
 {
-    let mut stack: Vec<usize> = vec![root];
+    let mut stack: Vec<NodeId> = vec![root];
     while let Some(id) = stack.pop() {
         let node = doc.get_node(id)?;
         if pred(node) {
@@ -986,12 +987,12 @@ where
 
 /// Collect every node id (pre-order, starting from `root` inclusive)
 /// where `pred` returns true.
-fn dfs_collect<F>(doc: &BaseDocument, root: usize, pred: F) -> Vec<usize>
+fn dfs_collect<F>(doc: &BaseDocument, root: NodeId, pred: F) -> Vec<NodeId>
 where
     F: Fn(&blitz::dom::Node) -> bool,
 {
     let mut out = Vec::new();
-    let mut stack: Vec<usize> = vec![root];
+    let mut stack: Vec<NodeId> = vec![root];
     while let Some(id) = stack.pop() {
         let Some(node) = doc.get_node(id) else {
             break;
@@ -1009,7 +1010,7 @@ where
 /// Collect every node id (pre-order, starting from `root`'s children,
 /// excluding `root` itself) where `pred` returns true. Used for
 /// element-scoped lookups.
-fn dfs_collect_children<F>(doc: &BaseDocument, root: usize, pred: F) -> Vec<usize>
+fn dfs_collect_children<F>(doc: &BaseDocument, root: NodeId, pred: F) -> Vec<NodeId>
 where
     F: Fn(&blitz::dom::Node) -> bool,
 {
@@ -1017,7 +1018,7 @@ where
         Some(n) => n,
         None => return Vec::new(),
     };
-    let mut stack: Vec<usize> = root_node.children.iter().rev().copied().collect();
+    let mut stack: Vec<NodeId> = root_node.children.iter().rev().copied().collect();
     let mut out = Vec::new();
     while let Some(id) = stack.pop() {
         let Some(node) = doc.get_node(id) else {

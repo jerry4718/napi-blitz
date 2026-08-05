@@ -26,34 +26,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-    optionalDependencies:
-      '@ylcc/napi-blitz-darwin-arm64':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-darwin-x64':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-freebsd-x64':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-linux-arm64-gnu':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-linux-arm64-musl':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-linux-x64-gnu':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-linux-x64-musl':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-win32-arm64-msvc':
-        specifier: 0.0.203
-        version: 0.0.203
-      '@ylcc/napi-blitz-win32-x64-msvc':
-        specifier: 0.0.203
-        version: 0.0.203
 
   __test__: {}
 
@@ -1024,64 +996,6 @@ packages:
 
   '@vue/shared@3.5.38':
     resolution: {integrity: sha512-FTW0AFZNaK5/mOqvGBwVfUlNLU38TiQn4+DQgIFUnrBBJQ1crMJ82yeGQLV5jyKFsO8yRukpbuP7x+nRbH6aug==}
-
-  '@ylcc/napi-blitz-darwin-arm64@0.0.203':
-    resolution: {integrity: sha512-Qi76pEEcmFh7ZfNfDzUeu33ZAvD57HDDsT1lLc6Yzw9sg/1TPW6yOqtSW4Tl2EC/mLbPZrvxhtlqJC+9cuKikw==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@ylcc/napi-blitz-darwin-x64@0.0.203':
-    resolution: {integrity: sha512-j1pjrD4NQ084lvppB5geWxUTQiY7OzBdcoeZ9Wk2Te/uf+RKrh8GKYWKsfJyk5T58OZtli2BVD5pJTKIAIxEpw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@ylcc/napi-blitz-freebsd-x64@0.0.203':
-    resolution: {integrity: sha512-8nzuUupoqMIQ+E26wVXR1LqPVwlduTKB8fkuS/41ykXJWFkPMUBMSsFOQ3aB4EeWZuQFb64Fvuv6l8UJ46on4Q==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [freebsd]
-
-  '@ylcc/napi-blitz-linux-arm64-gnu@0.0.203':
-    resolution: {integrity: sha512-ykyiXAYydg/D8zCMrccduqpc9ASBLPChhQvg8lggvrQOSieXT1R+uJNxOvhzWc2KYPWQ9e+L6BQVe2Jwcx08dA==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@ylcc/napi-blitz-linux-arm64-musl@0.0.203':
-    resolution: {integrity: sha512-WLHQL0Kx4Nbj7eKJmN2whY9Yn+EAJr3Psj9GVn6iJFXlT8ouyhReUuRfSfFfvh8qdnuAmO8J1/d+0oowHNjDOA==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [musl]
-
-  '@ylcc/napi-blitz-linux-x64-gnu@0.0.203':
-    resolution: {integrity: sha512-Fx5zIv33GX0BYuSa2jxLY/SMTrQWrWhfYl3NxOubaIMYxYbvp2jYWC83clBmBpx/92be3ng+HkqXEeLtHpk5Ig==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  '@ylcc/napi-blitz-linux-x64-musl@0.0.203':
-    resolution: {integrity: sha512-oMnYyuEiwlPfk1pjpoJt7rnljaYNqfrO8554Vuh1cU3CW7p7n1x4E/yj3mo7DVaK5BEKuQVwwSjHkgyM8L2ltg==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  '@ylcc/napi-blitz-win32-arm64-msvc@0.0.203':
-    resolution: {integrity: sha512-YRTpLfMzya6mKLkealykN1AcMxecTInDow7H3im0MfbNOB3V4Xv91Mg2qT02L3epH2D2gSdRHcjV/EkNCVDYZg==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@ylcc/napi-blitz-win32-x64-msvc@0.0.203':
-    resolution: {integrity: sha512-CzaDfi9NVPs2R3rjx87hTXgdwBi2hE29yQ8P3kU30tpEHh/QKt6NCKW/PSwU3gxObfFwUwls51XTCtz19VIM0w==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
 
   abbrev@3.0.0:
     resolution: {integrity: sha512-+/kfrslGQ7TNV2ecmQwMJj/B65g5KVq1/L3SGVZ3tCYGqlzFuFCGBZJtMP99wH3NpEUyAjn0zPdPUg0D+DwrOA==}
@@ -2605,33 +2519,6 @@ snapshots:
       vue: 3.5.38(typescript@5.9.3)
 
   '@vue/shared@3.5.38': {}
-
-  '@ylcc/napi-blitz-darwin-arm64@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-darwin-x64@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-freebsd-x64@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-linux-arm64-gnu@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-linux-arm64-musl@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-linux-x64-gnu@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-linux-x64-musl@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-win32-arm64-msvc@0.0.203':
-    optional: true
-
-  '@ylcc/napi-blitz-win32-x64-msvc@0.0.203':
-    optional: true
 
   abbrev@3.0.0: {}
 

@@ -19,7 +19,7 @@ use std::{
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
-        DocumentConfig, EventDriver, FontContext, NodeData,
+        DocumentConfig, EventDriver, FontContext, NodeData, NodeId,
     },
     html::{DocumentHtmlParser, HtmlProvider},
     traits::events::UiEvent,
@@ -132,7 +132,7 @@ impl SharedDoc {
 ///
 /// Uses `GlobalCreators` for JS constructor lookup and `SharedDoc`
 /// for doc type lookup, node_cache, and doc_js ref.
-pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: usize, env: &'a Env) -> Result<Object<'a>> {
+pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Result<Object<'a>> {
     // 1. Check cache.
     let cached = {
         let cache = doc.node_cache.borrow();
@@ -148,10 +148,10 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: usize, env: &'a Env) -> Resul
         .borrow()
         .get_node(node_id)
         .map(|n| match &n.data {
-            NodeData::Document => 9u32,
+            NodeData::Document(_) => 9u32,
             NodeData::Element(_) => 1u32,
             NodeData::Text(_) => 3u32,
-            NodeData::Comment => 8u32,
+            NodeData::Comment{ .. } => 8u32,
             _ => 0u32,
         })
         .unwrap_or(0);
@@ -406,12 +406,12 @@ impl DocHandle {
 
     #[napi]
     pub fn root_node_id(&self) -> u64 {
-        self.doc.base.borrow().root_node().id as u64
+        self.doc.base.borrow().root_node().id.as_u64()
     }
 
     #[napi]
     pub fn root_element_id(&self) -> u64 {
-        self.doc.base.borrow().root_element().id as u64
+        self.doc.base.borrow().root_element().id.as_u64()
     }
 
     #[napi]

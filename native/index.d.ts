@@ -130,8 +130,8 @@ export declare class DocHandle {
   createElement(localName: string, namespace?: string | undefined | null, attrs?: Array<AttrInit> | undefined | null): object
   /** Create a text node with the given content. Returns a wrapped JS Node. */
   createTextNode(text: string): object
-  /** Create an empty comment node. Returns a wrapped JS Node. */
-  createCommentNode(): object
+  /** Create a comment node with the given content. Returns a wrapped JS Node. */
+  createCommentNode(text: string): object
   /** Deep-clone an existing node and return the new node's id. */
   deepCloneNode(nodeId: bigint): bigint
   /**

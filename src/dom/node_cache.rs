@@ -27,11 +27,12 @@ use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 use crate::dom::doc::SharedDoc;
 use blitz::dom::BaseDocument;
+use blitz::dom::NodeId;
 
 /// Data passed to the finalizer as `finalize_data`.
 /// Boxed and leaked; the finalizer reclaims it via `Box::from_raw`.
 struct FinalizerHint {
-    node_id: usize,
+    node_id: NodeId,
     /// Weak reference to the `SharedDoc`. At finalize time `upgrade()`
     /// returns `None` if the document has already been dropped, in which
     /// case we only delete the napi_ref.
@@ -40,7 +41,7 @@ struct FinalizerHint {
 
 /// Weak-reference cache: `blitz_node_id -> napi_ref (refcount=0)`.
 pub struct NodeCache {
-    pub entries: HashMap<usize, sys::napi_ref>,
+    pub entries: HashMap<NodeId, sys::napi_ref>,
 }
 
 impl NodeCache {
@@ -55,7 +56,7 @@ impl NodeCache {
     /// Returns `None` if the cache has no entry for `node_id` **or** if the
     /// weak reference is dead (the JS object has been garbage-collected).
     /// Stale entries are NOT removed here (use `sweep` for that).
-    pub fn get(&self, node_id: usize, env: &Env) -> Option<Object<'_>> {
+    pub fn get(&self, node_id: NodeId, env: &Env) -> Option<Object<'_>> {
         let napi_ref = *self.entries.get(&node_id)?;
         let mut value = ptr::null_mut();
         // SAFETY: `napi_ref` was created by `napi_create_reference` on the same
@@ -73,8 +74,8 @@ impl NodeCache {
     /// Try to retrieve a cached JS Node object by raw napi_ref lookup.
     /// This avoids the `&self` borrow by taking the HashMap directly.
     pub fn get_from_map<'a>(
-        entries: &HashMap<usize, sys::napi_ref>,
-        node_id: usize,
+        entries: &HashMap<NodeId, sys::napi_ref>,
+        node_id: NodeId,
         env: &'a Env,
     ) -> Option<Object<'a>> {
         let napi_ref = *entries.get(&node_id)?;
@@ -98,7 +99,7 @@ impl NodeCache {
     /// the NodeCache and the blitz document.
     pub fn insert(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
         obj: &Object,
         env: &Env,
         doc_weak: Weak<SharedDoc>,
@@ -141,7 +142,7 @@ impl NodeCache {
     }
 
     /// Explicitly remove a cache entry and delete the underlying `napi_ref`.
-    pub fn remove(&mut self, node_id: usize, env: &Env) {
+    pub fn remove(&mut self, node_id: NodeId, env: &Env) {
         self.remove_internal(node_id, env);
     }
 
@@ -151,7 +152,7 @@ impl NodeCache {
     /// keep the HashMap from growing without bound. With the finalizer in
     /// place this is less necessary but still useful as a backstop.
     pub fn sweep(&mut self, env: &Env) {
-        let stale: Vec<usize> = self
+        let stale: Vec<NodeId> = self
             .entries
             .iter()
             .filter_map(|(&id, &napi_ref)| {
@@ -182,7 +183,7 @@ impl NodeCache {
 
     // ---- internal helpers ----
 
-    fn remove_internal(&mut self, node_id: usize, env: &Env) {
+    fn remove_internal(&mut self, node_id: NodeId, env: &Env) {
         if let Some(napi_ref) = self.entries.remove(&node_id) {
             // SAFETY: `napi_ref` was created by `napi_create_reference` and has
             // not been deleted yet. `napi_delete_reference` is safe to call
@@ -291,7 +292,7 @@ unsafe extern "C" fn node_finalizer(
 /// live JS wrapper. If so, drop the entire subtree.
 ///
 /// Called from `NodeHandle::remove` and `node_finalizer`.
-pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_id: usize) {
+pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_id: NodeId) {
     // Walk up to find the topmost node in the detached chain.
     let mut top = node_id;
     loop {
@@ -315,7 +316,7 @@ pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_
 /// Recursively check if any descendant of `node_id` has an entry in
 /// `node_cache` (i.e. still has a live JS wrapper).  Returns true if
 /// at least one descendant is still referenced from JS.
-pub fn has_live_descendant(doc: &BaseDocument, cache: &NodeCache, node_id: usize) -> bool {
+pub fn has_live_descendant(doc: &BaseDocument, cache: &NodeCache, node_id: NodeId) -> bool {
     let child_ids: Vec<_> = doc
         .get_node(node_id)
         .map(|n| n.children.to_vec())
