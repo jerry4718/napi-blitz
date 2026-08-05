@@ -141,4 +141,15 @@ export class Element extends Node {
   getBoundingClientRect(): DomRect | null {
     return this._handle.getBoundingClientRect();
   }
+
+  get scrollTop(): number { return this._handle.scrollTop; }
+  set scrollTop(v: number) { this._handle.scrollTop = v; }
+
+  get scrollLeft(): number { return this._handle.scrollLeft; }
+  set scrollLeft(v: number) { this._handle.scrollLeft = v; }
+
+  get scrollHeight(): number { return this._handle.scrollHeight; }
+  get scrollWidth(): number { return this._handle.scrollWidth; }
+  get clientHeight(): number { return this._handle.clientHeight; }
+  get clientWidth(): number { return this._handle.clientWidth; }
 }

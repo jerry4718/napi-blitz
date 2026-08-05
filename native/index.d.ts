@@ -322,6 +322,14 @@ export declare class NodeHandle {
   querySelector(selector: string): object | null
   querySelectorAll(selector: string): Array<object>
   getBoundingClientRect(): DomRect | null
+  get scrollTop(): number
+  set scrollTop(value: number)
+  get scrollLeft(): number
+  set scrollLeft(value: number)
+  get scrollHeight(): number
+  get scrollWidth(): number
+  get clientHeight(): number
+  get clientWidth(): number
 }
 
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */

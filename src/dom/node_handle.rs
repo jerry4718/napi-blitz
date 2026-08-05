@@ -468,6 +468,82 @@ impl NodeHandle {
             right: (pos.x + layout.size.width) as f64,
         })
     }
+
+    #[napi(getter)]
+    pub fn scroll_top(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| n.scroll_offset().y)
+            .unwrap_or(0.0)
+    }
+
+    #[napi(setter)]
+    pub fn set_scroll_top(&mut self, value: f64) {
+        let mut base = self.doc.base.borrow_mut();
+        if let Some(node) = base.get_node_mut(self.node_id) {
+            let offset = node.scroll_offset_mut();
+            offset.y = value;
+        }
+        drop(base);
+        self.doc.mark_host_dirty();
+    }
+
+    #[napi(getter)]
+    pub fn scroll_left(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| n.scroll_offset().x)
+            .unwrap_or(0.0)
+    }
+
+    #[napi(setter)]
+    pub fn set_scroll_left(&mut self, value: f64) {
+        let mut base = self.doc.base.borrow_mut();
+        if let Some(node) = base.get_node_mut(self.node_id) {
+            let offset = node.scroll_offset_mut();
+            offset.x = value;
+        }
+        drop(base);
+        self.doc.mark_host_dirty();
+    }
+
+    #[napi(getter)]
+    pub fn scroll_height(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| {
+                let layout = n.final_layout();
+                layout.content_size.height as f64
+            })
+            .unwrap_or(0.0)
+    }
+
+    #[napi(getter)]
+    pub fn scroll_width(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| {
+                let layout = n.final_layout();
+                layout.content_size.width as f64
+            })
+            .unwrap_or(0.0)
+    }
+
+    #[napi(getter)]
+    pub fn client_height(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| n.final_layout().content_box_height() as f64)
+            .unwrap_or(0.0)
+    }
+
+    #[napi(getter)]
+    pub fn client_width(&self) -> f64 {
+        let base = self.doc.base.borrow();
+        base.get_node(self.node_id)
+            .map(|n| n.final_layout().content_box_width() as f64)
+            .unwrap_or(0.0)
+    }
 }
 
 #[napi(object)]
