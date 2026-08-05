@@ -298,10 +298,7 @@ unsafe extern "C" fn node_finalizer(
 pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_id: NodeId) {
     // Walk up to find the topmost node in the detached chain.
     let mut top = node_id;
-    loop {
-        let Some(p) = doc.get_node(top).and_then(|n| n.parent) else {
-            break;
-        };
+    while let Some(p) = doc.get_node(top).and_then(|n| n.parent) {
         if doc.get_node(p).is_none() {
             break;
         }

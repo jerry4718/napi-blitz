@@ -53,7 +53,9 @@ fn build_dialog(opts: Option<&DialogOptions>) -> rfd::AsyncFileDialog {
 #[napi]
 pub async fn pick_file(options: Option<DialogOptions>) -> Option<String> {
     let d = build_dialog(options.as_ref());
-    d.pick_file().await.map(|h| h.path().to_string_lossy().into_owned())
+    d.pick_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
 }
 
 /// Open a multi-file picker. Returns an array of paths (may be empty).
@@ -72,7 +74,9 @@ pub async fn pick_files(options: Option<DialogOptions>) -> Vec<String> {
 #[napi]
 pub async fn pick_folder(options: Option<DialogOptions>) -> Option<String> {
     let d = build_dialog(options.as_ref());
-    d.pick_folder().await.map(|h| h.path().to_string_lossy().into_owned())
+    d.pick_folder()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
 }
 
 /// Open a multi-folder picker. Returns an array of paths (may be empty).
@@ -91,5 +95,7 @@ pub async fn pick_folders(options: Option<DialogOptions>) -> Vec<String> {
 #[napi]
 pub async fn save_file(options: Option<DialogOptions>) -> Option<String> {
     let d = build_dialog(options.as_ref());
-    d.save_file().await.map(|h| h.path().to_string_lossy().into_owned())
+    d.save_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
 }

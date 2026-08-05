@@ -573,9 +573,7 @@ impl DocHandle {
     #[napi]
     pub fn get_style_property(&self, node_id: BigInt, name: String) -> Option<String> {
         let state = self.doc.base.borrow();
-        let element_data = state
-            .get_node(js_to_node_id(&node_id))?
-            .element_data()?;
+        let element_data = state.get_node(js_to_node_id(&node_id))?.element_data()?;
         let block = element_data.style_attribute.as_ref()?;
         let property_id = PropertyId::parse_enabled_for_all_content(&name).ok()?;
 
@@ -685,10 +683,7 @@ impl DocHandle {
     pub fn append_child(&mut self, parent_id: BigInt, child_id: BigInt) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.append_children(
-            js_to_node_id(&parent_id),
-            &[js_to_node_id(&child_id)],
-        );
+        mutator.append_children(js_to_node_id(&parent_id), &[js_to_node_id(&child_id)]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -697,21 +692,20 @@ impl DocHandle {
     /// Insert `node` immediately before `anchor`. If `anchor` is None, behaves
     /// like `appendChild`. Matches `Node.insertBefore`.
     #[napi]
-    pub fn insert_before(&mut self, parent_id: BigInt, node_id: BigInt, anchor_id: Option<BigInt>) -> Result<()> {
+    pub fn insert_before(
+        &mut self,
+        parent_id: BigInt,
+        node_id: BigInt,
+        anchor_id: Option<BigInt>,
+    ) -> Result<()> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         match anchor_id {
             Some(anchor) => {
-                mutator.insert_nodes_before(
-                    js_to_node_id(&anchor),
-                    &[js_to_node_id(&node_id)],
-                );
+                mutator.insert_nodes_before(js_to_node_id(&anchor), &[js_to_node_id(&node_id)]);
             }
             None => {
-                mutator.append_children(
-                    js_to_node_id(&parent_id),
-                    &[js_to_node_id(&node_id)],
-                );
+                mutator.append_children(js_to_node_id(&parent_id), &[js_to_node_id(&node_id)]);
             }
         }
         drop(mutator);
@@ -725,10 +719,7 @@ impl DocHandle {
     pub fn insert_after(&mut self, anchor_id: BigInt, node_id: BigInt) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.insert_nodes_after(
-            js_to_node_id(&anchor_id),
-            &[js_to_node_id(&node_id)],
-        );
+        mutator.insert_nodes_after(js_to_node_id(&anchor_id), &[js_to_node_id(&node_id)]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -763,10 +754,7 @@ impl DocHandle {
     pub fn replace_with(&mut self, anchor_id: BigInt, node_id: BigInt) {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.replace_node_with(
-            js_to_node_id(&anchor_id),
-            &[js_to_node_id(&node_id)],
-        );
+        mutator.replace_node_with(js_to_node_id(&anchor_id), &[js_to_node_id(&node_id)]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -829,7 +817,10 @@ impl DocHandle {
     pub fn find_first_by_local_name(&self, name: String) -> Option<u64> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
-        dfs_find(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle)).map(|id| id.as_u64())
+        dfs_find(&state, state.root_node().id, |n| {
+            n.data.is_element_with_tag_name(&needle)
+        })
+        .map(|id| id.as_u64())
     }
 
     /// All element ids matching the given local tag name, in tree order.
@@ -839,7 +830,9 @@ impl DocHandle {
     pub fn find_all_by_local_name<'a>(&self, name: String, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let needle = LocalName::from(name.as_str());
-        let ids = dfs_collect(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle));
+        let ids = dfs_collect(&state, state.root_node().id, |n| {
+            n.data.is_element_with_tag_name(&needle)
+        });
         drop(state);
         ids.into_iter()
             .filter_map(|id| wrap_node(&self.doc, id, env).ok())
@@ -941,7 +934,9 @@ impl DocHandle {
     /// has to do for the runtime-string case.
     fn find_first_static(&self, needle: LocalName) -> Option<NodeId> {
         let state = self.doc.base.borrow();
-        dfs_find(&state, state.root_node().id, |n| n.data.is_element_with_tag_name(&needle))
+        dfs_find(&state, state.root_node().id, |n| {
+            n.data.is_element_with_tag_name(&needle)
+        })
     }
 }
 

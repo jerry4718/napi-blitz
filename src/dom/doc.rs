@@ -151,7 +151,7 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
             NodeData::Document(_) => 9u32,
             NodeData::Element(_) => 1u32,
             NodeData::Text(_) => 3u32,
-            NodeData::Comment{ .. } => 8u32,
+            NodeData::Comment { .. } => 8u32,
             _ => 0u32,
         })
         .unwrap_or(0);
