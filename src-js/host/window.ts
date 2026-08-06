@@ -27,9 +27,9 @@
 // expects the window to disappear immediately. The Rust side mirrors
 // this: `BlitzApp.close_window` runs synchronously.
 
-import type { BlitzApp } from "./app";
-import type { HTMLDocument } from "../document/html-document";
-import type { Window as NativeWindow } from "../native";
+import type {BlitzApp} from "./app";
+import type {HTMLDocument} from "../document/html-document";
+import type {MonitorInfo, VideoModeInfo, Window as NativeWindow,} from "../native";
 
 export class Window extends EventTarget {
   /**
@@ -88,7 +88,7 @@ export class Window extends EventTarget {
    * OS-initiated closes routed through the native bridge.
    */
   _dispatchClose(): boolean {
-    const event = new Event("close", { cancelable: true });
+    const event = new Event("close", {cancelable: true});
     this.dispatchEvent(event);
     return !event.defaultPrevented;
   }
@@ -104,9 +104,12 @@ export class Window extends EventTarget {
    * `pumpAppEvents` has run since open) or has been closed.
    */
   get innerSize(): [number, number] | null {
-    const dims = this._app._native.getWindowInnerSize(this._nativeWindow);
-    if (dims === null) return null;
-    return [dims[0], dims[1]];
+    try {
+      const dims = this._nativeWindow.getSize();
+      return [dims[0], dims[1]];
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -115,7 +118,7 @@ export class Window extends EventTarget {
    * events on the document for the actual outcome.
    */
   resize(width: number, height: number): void {
-    this._app._native.setWindowInnerSize(this._nativeWindow, width, height);
+    this._nativeWindow.setSize(width, height);
   }
 
   /**
@@ -124,11 +127,82 @@ export class Window extends EventTarget {
    * `pumpAppEvents`).
    */
   get resizable(): boolean | null {
-    return this._app._native.getWindowResizable(this._nativeWindow);
+    try {
+      return this._nativeWindow.getResizable();
+    } catch {
+      return null;
+    }
+  }
+
+  get currentMonitor(): MonitorInfo | null {
+    return this._nativeWindow.currentMonitor();
   }
 
   set resizable(value: boolean) {
-    this._app._native.setWindowResizable(this._nativeWindow, value);
+    this._nativeWindow.setResizable(value);
+  }
+
+  setTitle(title: string): void {
+    this._nativeWindow.setTitle(title);
+  }
+
+  setSize(width: number, height: number): void {
+    this._nativeWindow.setSize(width, height);
+  }
+
+  setMinSize(width: number, height: number): void {
+    this._nativeWindow.setMinSize(width, height);
+  }
+
+  setMaxSize(width: number, height: number): void {
+    this._nativeWindow.setMaxSize(width, height);
+  }
+
+  setResizable(value: boolean): void {
+    this._nativeWindow.setResizable(value);
+  }
+
+  setMaximized(value: boolean): void {
+    this._nativeWindow.setMaximized(value);
+  }
+
+  setVisible(value: boolean): void {
+    this._nativeWindow.setVisible(value);
+  }
+
+  setTransparent(value: boolean): void {
+    this._nativeWindow.setTransparent(value);
+  }
+
+  setBlur(value: boolean): void {
+    this._nativeWindow.setBlur(value);
+  }
+
+  setDecorations(value: boolean): void {
+    this._nativeWindow.setDecorations(value);
+  }
+
+  setFullscreenBorderless(monitor: MonitorInfo): void {
+    this._nativeWindow.setFullscreenBorderless(monitor);
+  }
+
+  setFullscreenExclusive(
+    monitor: MonitorInfo,
+    videoMode: VideoModeInfo,
+  ): void {
+    this._nativeWindow.setFullscreenExclusive(monitor, videoMode);
+  }
+
+  setFullscreenNone(): void {
+    this._nativeWindow.setFullscreenNone();
+  }
+
+  setEnabledButtons(buttons: string[]): void {
+    this._nativeWindow.setEnabledButtons(buttons);
+  }
+
+  setWindowIcon(data: Uint8Array): void {
+    this._nativeWindow.setWindowIcon(data);
   }
 }
 

@@ -7,16 +7,10 @@
 // when Document dispatches along the chain (target first), and consumers
 // who need ancestors can walk up via `Document.parentOf(...)`.
 
-import type {
-  EventPayload,
-  KeyData,
-  PointerData,
-  WheelData,
-  InputData,
-  ImeData,
-} from "../native";
+import type {EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,} from "../native";
 
 /** Forward declaration to avoid an import cycle with `document.ts`. */
+
 // DocumentLike removed - buildEvent no longer needs a document reference.
 
 /** Base class for every event we dispatch into the JS layer. */
@@ -67,66 +61,141 @@ export class BlitzPointerEvent extends BlitzDomEvent {
     this._pointer = pointer;
   }
 
-  get pageX() { return this._pointer.pageX; }
-  get pageY() { return this._pointer.pageY; }
-  get clientX() { return this._pointer.clientX; }
-  get clientY() { return this._pointer.clientY; }
-  get screenX() { return this._pointer.screenX; }
-  get screenY() { return this._pointer.screenY; }
-  get button() { return this._pointer.button; }
-  get buttons() { return this._pointer.buttons; }
-  get pressure() { return this._pointer.pressure; }
-  get isPrimary() { return this._pointer.isPrimary; }
-  get pointerType() { return this._pointer.kind; }
-  get pointerId() { return this._pointer.pointerId; }
+  get pageX() {
+    return this._pointer.pageX;
+  }
+
+  get pageY() {
+    return this._pointer.pageY;
+  }
+
+  get clientX() {
+    return this._pointer.clientX;
+  }
+
+  get clientY() {
+    return this._pointer.clientY;
+  }
+
+  get screenX() {
+    return this._pointer.screenX;
+  }
+
+  get screenY() {
+    return this._pointer.screenY;
+  }
+
+  get button() {
+    return this._pointer.button;
+  }
+
+  get buttons() {
+    return this._pointer.buttons;
+  }
+
+  get pressure() {
+    return this._pointer.pressure;
+  }
+
+  get isPrimary() {
+    return this._pointer.isPrimary;
+  }
+
+  get pointerType() {
+    return this._pointer.kind;
+  }
+
+  get pointerId() {
+    return this._pointer.pointerId;
+  }
 }
 
 /** Mouse wheel / scroll wheel events. */
 export class BlitzWheelEvent extends BlitzDomEvent {
   private readonly _wheel: WheelData;
+
   constructor(payload: EventPayload, wheel: WheelData) {
     super(payload);
     this._wheel = wheel;
   }
-  get deltaX() { return this._wheel.deltaX; }
-  get deltaY() { return this._wheel.deltaY; }
-  get deltaMode() { return this._wheel.mode; }
+
+  get deltaX() {
+    return this._wheel.deltaX;
+  }
+
+  get deltaY() {
+    return this._wheel.deltaY;
+  }
+
+  get deltaMode() {
+    return this._wheel.mode;
+  }
 }
 
 /** Keyboard events. */
 export class BlitzKeyboardEvent extends BlitzDomEvent {
   private readonly _key: KeyData;
+
   constructor(payload: EventPayload, key: KeyData) {
     super(payload);
     this._key = key;
   }
-  get key() { return this._key.key; }
-  get code() { return this._key.code; }
-  get location() { return this._key.location; }
-  get repeat() { return this._key.repeat; }
-  get isComposing() { return this._key.isComposing; }
-  get text() { return this._key.text; }
+
+  get key() {
+    return this._key.key;
+  }
+
+  get code() {
+    return this._key.code;
+  }
+
+  get location() {
+    return this._key.location;
+  }
+
+  get repeat() {
+    return this._key.repeat;
+  }
+
+  get isComposing() {
+    return this._key.isComposing;
+  }
+
+  get text() {
+    return this._key.text;
+  }
 }
 
 /** `<input>` value events. */
 export class BlitzInputEvent extends BlitzDomEvent {
   private readonly _input: InputData;
+
   constructor(payload: EventPayload, input: InputData) {
     super(payload);
     this._input = input;
   }
-  get value() { return this._input.value; }
+
+  get value() {
+    return this._input.value;
+  }
 }
 
 /** IME composition events. */
 export class BlitzImeEvent extends BlitzDomEvent {
   private readonly _ime: ImeData;
+
   constructor(payload: EventPayload, ime: ImeData) {
     super(payload);
     this._ime = ime;
   }
-  get imeKind() { return this._ime.kind; }
-  get text() { return this._ime.text; }
+
+  get imeKind() {
+    return this._ime.kind;
+  }
+
+  get text() {
+    return this._ime.text;
+  }
 }
 
 /**

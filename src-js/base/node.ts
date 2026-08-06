@@ -11,8 +11,8 @@
 //     (Rust does the wrapping via NodeCache).
 //   - EventTarget is fully inherited from Node.js built-in — no override.
 
-import type { NativeNodeHandle } from "../native";
-import type { DocumentInternals, NodeInternals } from "../internal/internal";
+import type {NativeNodeHandle} from "../native";
+import type {DocumentInternals, NodeInternals} from "../internal/internal";
 
 /** DOM nodeType constants. Mirrors the web spec. */
 export const NodeTypes = {
@@ -44,6 +44,7 @@ export abstract class Node extends EventTarget {
   get textContent(): string | null {
     return this._handle.textContent();
   }
+
   set textContent(value: string) {
     this._handle.setTextContent(value);
   }
@@ -155,4 +156,4 @@ export abstract class Node extends EventTarget {
 
 // Internals shape declaration: re-export so other modules in this package
 // can import the canonical `NodeInternals` from one place.
-export type { NodeInternals };
+export type {NodeInternals};

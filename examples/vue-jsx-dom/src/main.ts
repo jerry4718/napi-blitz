@@ -15,7 +15,7 @@ import {
   HTMLElement,
   HTMLDocument,
   Node,
-  type OpenWindowInit,
+  WindowOptions,
 } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
 import process from 'node:process'
@@ -157,12 +157,10 @@ let nodeGlobalDoc: HTMLDocument | null = null
 export async function bootstrap() {
   const app = BlitzApp.create()
 
-  const windowInit: OpenWindowInit = {
-    baseHtml: BASE_HTML,
-    title: 'Blitz DOM Demo',
-  }
-  const window = app.openWindow(windowInit)
-  const document = window.document
+  const document = HTMLDocument.create({ baseHtml: BASE_HTML })
+  const options = WindowOptions.builder()
+  options.title('Blitz DOM Demo')
+  app.openWindow(document, options)
   nodeGlobalDoc = document
 
   const body = document.body!

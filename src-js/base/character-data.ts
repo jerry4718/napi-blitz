@@ -9,13 +9,14 @@
 // Comment nodes until blitz grows a string payload. Text nodes work as
 // expected.
 
-import { Node } from "./node";
+import {Node} from "./node";
 
 export abstract class CharacterData extends Node {
   /** The character data of this node (Text content or Comment text). */
   get data(): string {
     return this._handle.textContent() ?? "";
   }
+
   set data(value: string) {
     this._handle.setTextContent(value);
   }

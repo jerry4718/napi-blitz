@@ -1,6 +1,6 @@
 // `Text` — a CharacterData node holding text content.
 
-import { CharacterData } from "./character-data";
+import {CharacterData} from "./character-data";
 
 export class Text extends CharacterData {
   /**

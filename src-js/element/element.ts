@@ -2,9 +2,9 @@
 // subclass is `HTMLElement`; this base class hosts the parts of the DOM
 // `Element` interface that are independent of the HTML namespace.
 
-import { Node } from "../base/node";
-import type { AttrInit, DomRect } from "../native";
-import { makeAttributesProxy, type AttributesMap } from "./attributes";
+import {Node} from "../base/node";
+import type {AttrInit, DomRect} from "../native";
+import {type AttributesMap, makeAttributesProxy} from "./attributes";
 
 export class Element extends Node {
   private _attributesProxy: AttributesMap | null = null;
@@ -71,6 +71,7 @@ export class Element extends Node {
   get id(): string {
     return this.getAttribute("id") ?? "";
   }
+
   set id(value: string) {
     this.setAttribute("id", value);
   }
@@ -78,6 +79,7 @@ export class Element extends Node {
   get className(): string {
     return this.getAttribute("class") ?? "";
   }
+
   set className(value: string) {
     this.setAttribute("class", value);
   }
@@ -87,6 +89,7 @@ export class Element extends Node {
   get innerHTML(): string {
     return this._handle.innerHtml() ?? "";
   }
+
   set innerHTML(value: string) {
     this._handle.setInnerHtml(value);
   }
@@ -142,14 +145,35 @@ export class Element extends Node {
     return this._handle.getBoundingClientRect();
   }
 
-  get scrollTop(): number { return this._handle.scrollTop; }
-  set scrollTop(v: number) { this._handle.scrollTop = v; }
+  get scrollTop(): number {
+    return this._handle.scrollTop;
+  }
 
-  get scrollLeft(): number { return this._handle.scrollLeft; }
-  set scrollLeft(v: number) { this._handle.scrollLeft = v; }
+  set scrollTop(v: number) {
+    this._handle.scrollTop = v;
+  }
 
-  get scrollHeight(): number { return this._handle.scrollHeight; }
-  get scrollWidth(): number { return this._handle.scrollWidth; }
-  get clientHeight(): number { return this._handle.clientHeight; }
-  get clientWidth(): number { return this._handle.clientWidth; }
+  get scrollLeft(): number {
+    return this._handle.scrollLeft;
+  }
+
+  set scrollLeft(v: number) {
+    this._handle.scrollLeft = v;
+  }
+
+  get scrollHeight(): number {
+    return this._handle.scrollHeight;
+  }
+
+  get scrollWidth(): number {
+    return this._handle.scrollWidth;
+  }
+
+  get clientHeight(): number {
+    return this._handle.clientHeight;
+  }
+
+  get clientWidth(): number {
+    return this._handle.clientWidth;
+  }
 }

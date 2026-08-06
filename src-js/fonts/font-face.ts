@@ -87,7 +87,8 @@ export class FontFace {
     // Catch handler kept silent so the unhandled-rejection guard never
     // fires before the user attaches their own handler. The `loaded`
     // getter still rejects to consumers that await it.
-    this._loaded.catch(() => {});
+    this._loaded.catch(() => {
+    });
 
     if (typeof source === "string") {
       // Per spec the string form is a CSS `src` descriptor list. We
@@ -130,7 +131,7 @@ export class FontFace {
       this._status = "error";
       const err = new TypeError(
         "FontFace.load: URL-string sources are not supported. " +
-          "Pass an ArrayBuffer/TypedArray, or use a `@font-face` CSS rule.",
+        "Pass an ArrayBuffer/TypedArray, or use a `@font-face` CSS rule.",
       );
       this._rejectLoaded(err);
       return this._loaded;

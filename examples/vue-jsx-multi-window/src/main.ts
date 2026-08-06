@@ -18,6 +18,8 @@ import process from 'node:process'
 
 import {
     BlitzApp,
+    HTMLDocument,
+    WindowOptions,
     type Window as BlitzWindow,
 } from '@ylcc/napi-blitz'
 
@@ -44,13 +46,10 @@ const MAIN_BASE_HTML = `<!DOCTYPE html>
 export async function bootstrap() {
     const app = BlitzApp.create()
 
-    const main = app.openWindow({
-        baseHtml: MAIN_BASE_HTML,
-        title: 'Main · napi-blitz multi-window',
-        width: 720,
-        height: 520,
-    })
-    const mainDocument = main.document
+    const mainDocument = HTMLDocument.create({ baseHtml: MAIN_BASE_HTML })
+    const mainOptions = WindowOptions.builder()
+    mainOptions.title('Main · napi-blitz multi-window').size(720, 520)
+    const main = app.openWindow(mainDocument, mainOptions)
 
     const childWindows = shallowRef<BlitzWindow[]>([])
 

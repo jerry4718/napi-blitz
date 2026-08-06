@@ -5,14 +5,14 @@
 // module registers everything; subsequent imports are no-ops (the Rust
 // side stores in a global, and JS classes don't change).
 
-import { registerNodeConstructor, registerEventFactory } from "./native";
-import { NodeTypes } from "./base/node";
-import { Text } from "./base/text";
-import { Comment } from "./base/comment";
-import { Document } from "./document/document";
-import { HTMLElement } from "./element/html-element";
-import { buildEvent } from "./events/events";
-import type { EventPayload } from "./native";
+import type {EventPayload} from "./native";
+import {registerEventFactory, registerNodeConstructor} from "./native";
+import {NodeTypes} from "./base/node";
+import {Text} from "./base/text";
+import {Comment} from "./base/comment";
+import {Document} from "./document/document";
+import {HTMLElement} from "./element/html-element";
+import {buildEvent} from "./events/events";
 
 registerNodeConstructor(NodeTypes.TEXT_NODE, Text as unknown as (arg: unknown) => unknown);
 registerNodeConstructor(NodeTypes.COMMENT_NODE, Comment as unknown as (arg: unknown) => unknown);

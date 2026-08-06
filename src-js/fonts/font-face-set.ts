@@ -20,8 +20,8 @@
 //     because every add resolves synchronously. `EventTarget` methods
 //     are still inherited so `addEventListener` is a safe no-op.
 
-import type { NativeDocHandle, RegisterFontOptions } from "../native";
-import { FontFace } from "./font-face";
+import type {NativeDocHandle, RegisterFontOptions} from "../native";
+import {FontFace} from "./font-face";
 
 /** Standard `FontFaceSet.status` values. */
 export type FontFaceSetLoadStatus = "loading" | "loaded";
@@ -86,7 +86,7 @@ export class FontFaceSet extends EventTarget {
     if (face._hasUrlSource()) {
       throw new TypeError(
         "FontFaceSet.add: URL-string sources are not supported. " +
-          "Pass an ArrayBuffer/TypedArray, or use a `@font-face` CSS rule.",
+        "Pass an ArrayBuffer/TypedArray, or use a `@font-face` CSS rule.",
       );
     }
 
@@ -165,8 +165,8 @@ export class FontFaceSet extends EventTarget {
     return {
       next(): IteratorResult<[FontFace, FontFace]> {
         const r = inner.next();
-        if (r.done) return { value: undefined, done: true };
-        return { value: [r.value, r.value], done: false };
+        if (r.done) return {value: undefined, done: true};
+        return {value: [r.value, r.value], done: false};
       },
       [Symbol.iterator](): IterableIterator<[FontFace, FontFace]> {
         return this;

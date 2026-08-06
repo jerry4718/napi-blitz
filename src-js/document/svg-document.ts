@@ -1,5 +1,6 @@
 // `SVGDocument` — concrete Document for SVG content.
 
-import { Document } from "./document";
+import {Document} from "./document";
 
-export class SVGDocument extends Document {}
+export class SVGDocument extends Document {
+}

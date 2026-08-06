@@ -2,25 +2,33 @@
 
 import test from "ava";
 
-import { BlitzApp } from "../dist/index.js";
+import { BlitzApp, HTMLDocument, WindowOptions } from "../dist/index.js";
 
 test("window surface dimensions are validated before reaching winit", (t) => {
   const app = BlitzApp.create();
+  const document = () => HTMLDocument.create();
 
-  t.throws(() => app.openWindow({ width: -1, height: 100 }), {
+  const negative = WindowOptions.builder();
+  negative.size(-1, 100);
+  t.throws(() => app.openWindow(document(), negative), {
     message: /width must be >= 1/,
   });
-  t.throws(() => app.openWindow({ width: 100.5, height: 100 }), {
+
+  const fractional = WindowOptions.builder();
+  fractional.size(100.5, 100);
+  t.throws(() => app.openWindow(document(), fractional), {
     message: /width must be an integer/,
   });
-  t.throws(() => app.openWindow({ width: Number.POSITIVE_INFINITY, height: 100 }), {
+
+  const infinite = WindowOptions.builder();
+  infinite.size(Number.POSITIVE_INFINITY, 100);
+  t.throws(() => app.openWindow(document(), infinite), {
     message: /width must be finite/,
   });
-  t.throws(() => app.openWindow({ width: 100 }), {
-    message: /width and height must be provided together/,
-  });
 
-  const window = app.openWindow({ width: 100, height: 100 });
+  const valid = WindowOptions.builder();
+  valid.size(100, 100);
+  const window = app.openWindow(document(), valid);
 
   t.throws(() => window.resize(-1, 100), {
     message: /width must be >= 1/,
