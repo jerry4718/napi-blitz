@@ -15,6 +15,7 @@
 //! reference back to the live winit `Arc<dyn Window>` — the application
 //! does. The JS layer's `Window` class delegates these calls to the app.
 
+use napi::bindgen_prelude::Uint8Array;
 use napi_derive::napi;
 
 /// Options accepted by `BlitzApp.openWindow`. All fields are optional and
@@ -39,6 +40,30 @@ pub struct WindowOptions {
     /// Whether the window is initially resizable. Defaults to winit's
     /// platform default (typically `true`).
     pub resizable: Option<bool>,
+    /// Minimum surface width in physical pixels. Pair with `minHeight`.
+    pub min_width: Option<f64>,
+    /// Minimum surface height in physical pixels. Pair with `minWidth`.
+    pub min_height: Option<f64>,
+    /// Maximum surface width in physical pixels. Pair with `maxHeight`.
+    pub max_width: Option<f64>,
+    /// Maximum surface height in physical pixels. Pair with `maxWidth`.
+    pub max_height: Option<f64>,
+    /// Whether the window is initially maximized.
+    pub maximized: Option<bool>,
+    /// Whether the window is initially visible. Defaults to `true`.
+    pub visible: Option<bool>,
+    /// Whether the window background is initially transparent.
+    pub transparent: Option<bool>,
+    /// Whether the window has a blur effect behind it.
+    pub blur: Option<bool>,
+    /// Whether the window has decorations (title bar, borders). Defaults to `true`.
+    pub decorations: Option<bool>,
+    /// Whether the window starts in fullscreen (borderless).
+    pub fullscreen: Option<bool>,
+    /// Window buttons to enable. Array of `"close"`, `"minimize"`, `"maximize"`.
+    pub enabled_buttons: Option<Vec<String>>,
+    /// Window icon as raw RGBA8 pixels. `[width, height, ...rgba_data]`.
+    pub window_icon: Option<Uint8Array>,
 }
 
 /// Handle to an open window. Construct via `BlitzApp.openWindow`.

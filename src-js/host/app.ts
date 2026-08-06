@@ -59,6 +59,30 @@ export interface OpenWindowInit extends DocumentInit {
   height?: number;
   /** Whether the window is initially resizable by the user. */
   resizable?: boolean;
+  /** Minimum surface width, physical pixels. Pair with `minHeight`. */
+  minWidth?: number;
+  /** Minimum surface height, physical pixels. Pair with `minWidth`. */
+  minHeight?: number;
+  /** Maximum surface width, physical pixels. Pair with `maxHeight`. */
+  maxWidth?: number;
+  /** Maximum surface height, physical pixels. Pair with `maxWidth`. */
+  maxHeight?: number;
+  /** Whether the window is initially maximized. */
+  maximized?: boolean;
+  /** Whether the window is initially visible. Defaults to `true`. */
+  visible?: boolean;
+  /** Whether the window background is initially transparent. */
+  transparent?: boolean;
+  /** Whether the window has a blur effect behind it. */
+  blur?: boolean;
+  /** Whether the window has decorations (title bar, borders). Defaults to `true`. */
+  decorations?: boolean;
+  /** Whether the window starts in fullscreen (borderless). */
+  fullscreen?: boolean;
+  /** Window buttons to enable. Array of `"close"`, `"minimize"`, `"maximize"`. */
+  enabledButtons?: string[];
+  /** Window icon as raw bytes: 8-byte header (u32 LE width + u32 LE height) + RGBA8 pixel data. */
+  windowIcon?: Uint8Array;
 }
 
 /** `Document`'s package-private fields, viewed by `BlitzApp`. */
@@ -211,14 +235,36 @@ export class BlitzApp extends EventTarget {
  * to winit's defaults without us having to construct a placeholder.
  */
 function buildWindowOptions(init: OpenWindowInit): WindowOptions | undefined {
-  const { title, width, height, resizable } = init;
+  const {
+    title, width, height, resizable,
+    minWidth, minHeight, maxWidth, maxHeight,
+    maximized, visible, transparent, blur, decorations,
+    fullscreen, enabledButtons, windowIcon,
+  } = init;
   if (
     title === undefined &&
     width === undefined &&
     height === undefined &&
-    resizable === undefined
+    resizable === undefined &&
+    minWidth === undefined &&
+    minHeight === undefined &&
+    maxWidth === undefined &&
+    maxHeight === undefined &&
+    maximized === undefined &&
+    visible === undefined &&
+    transparent === undefined &&
+    blur === undefined &&
+    decorations === undefined &&
+    fullscreen === undefined &&
+    enabledButtons === undefined &&
+    windowIcon === undefined
   ) {
     return undefined;
   }
-  return { title, width, height, resizable };
+  return {
+    title, width, height, resizable,
+    minWidth, minHeight, maxWidth, maxHeight,
+    maximized, visible, transparent, blur, decorations,
+    fullscreen, enabledButtons, windowIcon,
+  };
 }

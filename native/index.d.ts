@@ -572,4 +572,28 @@ export interface WindowOptions {
    * platform default (typically `true`).
    */
   resizable?: boolean
+  /** Minimum surface width in physical pixels. Pair with `minHeight`. */
+  minWidth?: number
+  /** Minimum surface height in physical pixels. Pair with `minWidth`. */
+  minHeight?: number
+  /** Maximum surface width in physical pixels. Pair with `maxHeight`. */
+  maxWidth?: number
+  /** Maximum surface height in physical pixels. Pair with `maxWidth`. */
+  maxHeight?: number
+  /** Whether the window is initially maximized. */
+  maximized?: boolean
+  /** Whether the window is initially visible. Defaults to `true`. */
+  visible?: boolean
+  /** Whether the window background is initially transparent. */
+  transparent?: boolean
+  /** Whether the window has a blur effect behind it. */
+  blur?: boolean
+  /** Whether the window has decorations (title bar, borders). Defaults to `true`. */
+  decorations?: boolean
+  /** Whether the window starts in fullscreen (borderless). */
+  fullscreen?: boolean
+  /** Window buttons to enable. Array of `"close"`, `"minimize"`, `"maximize"`. */
+  enabledButtons?: Array<string>
+  /** Window icon as raw RGBA8 pixels. `[width, height, ...rgba_data]`. */
+  windowIcon?: Uint8Array
 }

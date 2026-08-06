@@ -17,14 +17,15 @@ use blitz::{
 };
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{BigInt, Function, FunctionRef},
+    bindgen_prelude::{BigInt, Function, FunctionRef, Uint8Array},
 };
 use napi_derive::napi;
 use std::sync::Arc;
 use winit::{
     dpi::PhysicalSize,
     event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus},
-    window::WindowAttributes,
+    monitor::Fullscreen,
+    window::{WindowAttributes, WindowButtons},
 };
 
 use crate::{
@@ -439,6 +440,56 @@ fn build_window_attributes(options: Option<WindowOptions>) -> Result<WindowAttri
     if let Some(resizable) = options.resizable {
         attrs = attrs.with_resizable(resizable);
     }
+    match (options.min_width, options.min_height) {
+        (Some(w), Some(h)) => {
+            let w = parse_surface_dimension("minWidth", w)?;
+            let h = parse_surface_dimension("minHeight", h)?;
+            attrs = attrs.with_min_surface_size(PhysicalSize::new(w, h));
+        }
+        (None, None) => {}
+        _ => {
+            return Err(Error::from_reason(
+                "minWidth and minHeight must be provided together".to_string(),
+            ));
+        }
+    }
+    match (options.max_width, options.max_height) {
+        (Some(w), Some(h)) => {
+            let w = parse_surface_dimension("maxWidth", w)?;
+            let h = parse_surface_dimension("maxHeight", h)?;
+            attrs = attrs.with_max_surface_size(PhysicalSize::new(w, h));
+        }
+        (None, None) => {}
+        _ => {
+            return Err(Error::from_reason(
+                "maxWidth and maxHeight must be provided together".to_string(),
+            ));
+        }
+    }
+    if let Some(maximized) = options.maximized {
+        attrs = attrs.with_maximized(maximized);
+    }
+    if let Some(visible) = options.visible {
+        attrs = attrs.with_visible(visible);
+    }
+    if let Some(transparent) = options.transparent {
+        attrs = attrs.with_transparent(transparent);
+    }
+    if let Some(blur) = options.blur {
+        attrs = attrs.with_blur(blur);
+    }
+    if let Some(decorations) = options.decorations {
+        attrs = attrs.with_decorations(decorations);
+    }
+    if let Some(true) = options.fullscreen {
+        attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+    if let Some(buttons) = options.enabled_buttons {
+        attrs = attrs.with_enabled_buttons(parse_window_buttons(buttons)?);
+    }
+    if let Some(icon_data) = options.window_icon {
+        attrs = attrs.with_window_icon(Some(parse_window_icon(&icon_data)?));
+    }
     Ok(attrs)
 }
 
@@ -456,4 +507,54 @@ fn parse_surface_dimension(name: &str, value: f64) -> Result<u32> {
         return Err(Error::from_reason(format!("{name} exceeds u32::MAX")));
     }
     Ok(value as u32)
+}
+
+/// Parse JS string array into winit `WindowButtons` bitflags.
+/// Accepted values: `"close"`, `"minimize"`, `"maximize"`.
+fn parse_window_buttons(buttons: Vec<String>) -> Result<WindowButtons> {
+    let mut flags = WindowButtons::empty();
+    for btn in buttons {
+        match btn.as_str() {
+            "close" => flags |= WindowButtons::CLOSE,
+            "minimize" => flags |= WindowButtons::MINIMIZE,
+            "maximize" => flags |= WindowButtons::MAXIMIZE,
+            other => {
+                return Err(Error::from_reason(format!(
+                    "enabledButtons: unknown button \"{other}\", expected close/minimize/maximize"
+                )));
+            }
+        }
+    }
+    Ok(flags)
+}
+
+/// Parse window icon from raw bytes. Expected layout:
+/// `[width_u32_le, height_u32_le, ...rgba8_pixels]` (8 byte header + w*h*4 bytes).
+fn parse_window_icon(data: &Uint8Array) -> Result<winit::icon::Icon> {
+    let bytes = data.as_ref();
+    if bytes.len() < 8 {
+        return Err(Error::from_reason(
+            "windowIcon: data too short, expected 8-byte header (width, height) + RGBA pixels",
+        ));
+    }
+    let width = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let height = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    let pixels = &bytes[8..];
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| Error::from_reason("windowIcon: width*height*4 overflows usize"))?;
+    if pixels.len() < expected {
+        return Err(Error::from_reason(format!(
+            "windowIcon: pixel data is {} bytes, expected {expected} ({}x{}x4)",
+            pixels.len(),
+            width,
+            height
+        )));
+    }
+    winit::icon::RgbaIcon::new(pixels[..expected].to_vec(), width, height)
+        .map(winit::icon::Icon::from)
+        .map_err(|e| {
+            Error::from_reason(format!("windowIcon: failed to create icon: {e}"))
+        })
 }
