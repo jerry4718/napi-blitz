@@ -820,7 +820,7 @@ impl DocHandle {
         dfs_find(&state, state.root_node().id, |n| {
             n.data.is_element_with_tag_name(&needle)
         })
-            .map(|id| id.as_u64())
+        .map(|id| id.as_u64())
     }
 
     /// All element ids matching the given local tag name, in tree order.

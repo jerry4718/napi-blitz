@@ -2,15 +2,26 @@
 authors = ["ZhangChao <jerry4718@qq.com>"]
 edition = "2024"
 name = "napi_blitz"
-version = "0.0.206"
+version = "0.0.207"
 
 [lib]
 crate-type = ["cdylib"]
 
 [features]
-default = [ "native-window" ]
+default = ["native-window", "vello-hybrid"]
 native-window = []
 buffer-surface = []
+
+# Renderer backends (pick one at build time)
+vello = ["dep:anyrender_vello"]
+vello-hybrid = ["dep:anyrender_vello_hybrid"]
+vello-cpu = ["vello-cpu-pixels"]
+vello-cpu-pixels = ["vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
+vello-cpu-softbuffer = ["vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
+vello-cpu-base = ["dep:anyrender_vello_cpu"]
+skia = ["dep:anyrender_skia"]
+skia-pixels = ["dep:anyrender_skia", "anyrender_skia/pixels_window_renderer"]
+skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_renderer"]
 
 [dependencies]
 napi-derive = "3.5.6"
@@ -46,11 +57,21 @@ package = "stylo"
 [dependencies.selectors]
 version = "0.40.0"
 
-#[dependencies.anyrender_vello]
-#version = "0.13.0"
+[dependencies.anyrender_vello]
+version = "0.13.0"
+optional = true
 
 [dependencies.anyrender_vello_hybrid]
 version = "0.9.0"
+optional = true
+
+[dependencies.anyrender_vello_cpu]
+version = "0.15.0"
+optional = true
+
+[dependencies.anyrender_skia]
+version = "0.10.0"
+optional = true
 
 [dependencies.parley]
 version = "0.10"
@@ -94,22 +115,22 @@ strip = "symbols"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 #
-#[patch.crates-io]
-#blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-#stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-
 [patch.crates-io]
-blitz = { path = "external/blitz/packages/blitz" }
-blitz-dom = { path = "external/blitz/packages/blitz-dom" }
-blitz-traits = { path = "external/blitz/packages/blitz-traits" }
-blitz-html = { path = "external/blitz/packages/blitz-html" }
-blitz-net = { path = "external/blitz/packages/blitz-net" }
-blitz-paint = { path = "external/blitz/packages/blitz-paint" }
-blitz-shell = { path = "external/blitz/packages/blitz-shell" }
-stylo_taffy = { path = "external/blitz/packages/stylo_taffy" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+
+#[patch.crates-io]
+#blitz = { path = "external/blitz/packages/blitz" }
+#blitz-dom = { path = "external/blitz/packages/blitz-dom" }
+#blitz-traits = { path = "external/blitz/packages/blitz-traits" }
+#blitz-html = { path = "external/blitz/packages/blitz-html" }
+#blitz-net = { path = "external/blitz/packages/blitz-net" }
+#blitz-paint = { path = "external/blitz/packages/blitz-paint" }
+#blitz-shell = { path = "external/blitz/packages/blitz-shell" }
+#stylo_taffy = { path = "external/blitz/packages/stylo_taffy" }

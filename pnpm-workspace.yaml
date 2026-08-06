@@ -4,12 +4,12 @@ packages:
   - benchmark
   - __test__
 minimumReleaseAgeExclude:
-  - '@ylcc/napi-blitz-darwin-arm64@0.0.206'
-  - '@ylcc/napi-blitz-darwin-x64@0.0.206'
-  - '@ylcc/napi-blitz-freebsd-x64@0.0.206'
-  - '@ylcc/napi-blitz-linux-arm64-gnu@0.0.206'
-  - '@ylcc/napi-blitz-linux-arm64-musl@0.0.206'
-  - '@ylcc/napi-blitz-linux-x64-gnu@0.0.206'
-  - '@ylcc/napi-blitz-linux-x64-musl@0.0.206'
-  - '@ylcc/napi-blitz-win32-arm64-msvc@0.0.206'
-  - '@ylcc/napi-blitz-win32-x64-msvc@0.0.206'
+  - '@ylcc/napi-blitz-darwin-arm64@0.0.207'
+  - '@ylcc/napi-blitz-darwin-x64@0.0.207'
+  - '@ylcc/napi-blitz-freebsd-x64@0.0.207'
+  - '@ylcc/napi-blitz-linux-arm64-gnu@0.0.207'
+  - '@ylcc/napi-blitz-linux-arm64-musl@0.0.207'
+  - '@ylcc/napi-blitz-linux-x64-gnu@0.0.207'
+  - '@ylcc/napi-blitz-linux-x64-musl@0.0.207'
+  - '@ylcc/napi-blitz-win32-arm64-msvc@0.0.207'
+  - '@ylcc/napi-blitz-win32-x64-msvc@0.0.207'
