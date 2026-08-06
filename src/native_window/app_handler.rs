@@ -10,9 +10,10 @@
 //! contract — the bridge stays owned by `BlitzApp` and can be swapped
 //! at runtime via `setAppEventHandler`.
 
-use anyrender_vello::VelloWindowRenderer;
-use blitz::shell::{BlitzApplication, View};
-use blitz::traits::shell::DummyShellProvider;
+use blitz::{
+    shell::{BlitzApplication, View},
+    traits::shell::DummyShellProvider,
+};
 use napi::bindgen_prelude::BigInt;
 use std::sync::Arc;
 use winit::{
@@ -20,12 +21,13 @@ use winit::{
     window::WindowId,
 };
 
-use crate::native_window::app_bridge::{
-    APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload, JsAppBridge,
+use crate::{
+    native_window::app_bridge::{APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload, JsAppBridge},
+    renderer::CurrentRenderer,
 };
 
 pub struct JsAppHandler<'a> {
-    pub inner: &'a mut BlitzApplication<VelloWindowRenderer>,
+    pub inner: &'a mut BlitzApplication<CurrentRenderer>,
     pub bridge: Option<&'a JsAppBridge>,
     /// Mirrors `BlitzApp::outstanding_windows` — decremented when the
     /// OS-initiated `CloseRequested` path successfully tears down a

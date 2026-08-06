@@ -9,27 +9,33 @@
 
 use std::time::Duration;
 
-use anyrender_vello::VelloWindowRenderer;
-use blitz::shell::{
-    BlitzApplication, BlitzShellProxy, EventLoop, WindowConfig, create_default_event_loop,
+use blitz::{
+    shell::{
+        BlitzApplication, BlitzShellProxy, EventLoop, WindowConfig, create_default_event_loop,
+    },
+    traits::shell::DummyShellProvider,
 };
-use blitz::traits::shell::DummyShellProvider;
 use napi::{
     Env, Error, Result,
     bindgen_prelude::{BigInt, Function, FunctionRef},
 };
 use napi_derive::napi;
 use std::sync::Arc;
-use winit::dpi::PhysicalSize;
-use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
-use winit::window::WindowAttributes;
-
-use crate::dom::doc::{DocHandle, make_window_document};
-use crate::native_window::app_bridge::{
-    APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge,
+use winit::{
+    dpi::PhysicalSize,
+    event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus},
+    window::WindowAttributes,
 };
-use crate::native_window::app_handler::JsAppHandler;
-use crate::native_window::window::{Window, WindowOptions};
+
+use crate::{
+    dom::doc::{DocHandle, make_window_document},
+    native_window::{
+        app_bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
+        app_handler::JsAppHandler,
+        window::{Window, WindowOptions},
+    },
+    renderer::CurrentRenderer,
+};
 
 /// Result of one `pumpAppEvents` call.
 #[napi(object)]
@@ -45,13 +51,13 @@ pub struct PumpResult {
 #[napi]
 pub struct BlitzApp {
     event_loop: EventLoop,
-    application: BlitzApplication<VelloWindowRenderer>,
+    application: BlitzApplication<CurrentRenderer>,
     /// Window configs that have been requested via `openWindow` but not yet
     /// handed to the underlying `BlitzApplication`. We hold them ourselves so
     /// `closeWindow` can synchronously cancel a window that has not been
     /// initialised yet (winit's `can_create_surfaces` only runs during
     /// `pumpAppEvents`). Each entry is `(doc_id, config)`.
-    pending: Vec<(usize, WindowConfig<VelloWindowRenderer>)>,
+    pending: Vec<(usize, WindowConfig<CurrentRenderer>)>,
     /// Doc ids requested to close from JS. We intentionally defer live
     /// `View` removal until after the current `pump_app_events` call has
     /// returned from winit/blitz event dispatch. This makes `window.close()`
@@ -140,8 +146,7 @@ impl BlitzApp {
         let doc_id = doc.doc_id();
         let window_doc = make_window_document(doc);
         let attributes = build_window_attributes(options)?;
-        let config =
-            WindowConfig::with_attributes(window_doc, VelloWindowRenderer::new(), attributes);
+        let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
         self.pending.push((doc_id, config));
         self.has_opened_window = true;
         self.outstanding_windows += 1;
@@ -267,10 +272,7 @@ impl BlitzApp {
     }
 
     /// Look up the live `View` for a `Window` handle, by doc id.
-    fn window_view(
-        &mut self,
-        window: &Window,
-    ) -> Option<&mut blitz::shell::View<VelloWindowRenderer>> {
+    fn window_view(&mut self, window: &Window) -> Option<&mut blitz::shell::View<CurrentRenderer>> {
         self.application
             .windows
             .values_mut()
@@ -278,7 +280,7 @@ impl BlitzApp {
     }
 
     /// Read-only counterpart to `window_view`.
-    fn window_view_ref(&self, window: &Window) -> Option<&blitz::shell::View<VelloWindowRenderer>> {
+    fn window_view_ref(&self, window: &Window) -> Option<&blitz::shell::View<CurrentRenderer>> {
         self.application
             .windows
             .values()

@@ -46,8 +46,11 @@ package = "stylo"
 [dependencies.selectors]
 version = "0.40.0"
 
-[dependencies.anyrender_vello]
-version = "0.13.0"
+#[dependencies.anyrender_vello]
+#version = "0.13.0"
+
+[dependencies.anyrender_vello_hybrid]
+version = "0.9.0"
 
 [dependencies.parley]
 version = "0.10"
@@ -91,22 +94,22 @@ strip = "symbols"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 #
-[patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-
 #[patch.crates-io]
-#blitz = { path = "external/blitz/packages/blitz" }
-#blitz-dom = { path = "external/blitz/packages/blitz-dom" }
-#blitz-traits = { path = "external/blitz/packages/blitz-traits" }
-#blitz-html = { path = "external/blitz/packages/blitz-html" }
-#blitz-net = { path = "external/blitz/packages/blitz-net" }
-#blitz-paint = { path = "external/blitz/packages/blitz-paint" }
-#blitz-shell = { path = "external/blitz/packages/blitz-shell" }
-#stylo_taffy = { path = "external/blitz/packages/stylo_taffy" }
+#blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+#stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+
+[patch.crates-io]
+blitz = { path = "external/blitz/packages/blitz" }
+blitz-dom = { path = "external/blitz/packages/blitz-dom" }
+blitz-traits = { path = "external/blitz/packages/blitz-traits" }
+blitz-html = { path = "external/blitz/packages/blitz-html" }
+blitz-net = { path = "external/blitz/packages/blitz-net" }
+blitz-paint = { path = "external/blitz/packages/blitz-paint" }
+blitz-shell = { path = "external/blitz/packages/blitz-shell" }
+stylo_taffy = { path = "external/blitz/packages/stylo_taffy" }

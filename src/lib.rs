@@ -18,3 +18,4 @@ mod buffer_surface;
 
 #[cfg(feature = "native-window")]
 mod native_window;
+mod renderer;
