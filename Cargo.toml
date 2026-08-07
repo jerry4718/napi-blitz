@@ -2,7 +2,7 @@
 authors = ["ZhangChao <jerry4718@qq.com>"]
 edition = "2024"
 name = "napi_blitz"
-version = "0.0.209"
+version = "0.0.210"
 
 [lib]
 crate-type = ["cdylib"]
@@ -115,14 +115,14 @@ strip = "symbols"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 [patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "7b64b1e7f502c40d121034eb55780d03af354394" }
 
 #[patch.crates-io]
 #blitz = { path = "external/blitz/packages/blitz" }
