@@ -5,8 +5,8 @@
 // writes flow through the native side per access; the same proxy
 // instance is reused across calls so identity comparisons work.
 
-import { Element } from "./element";
-import { makeStyleProxy, type StyleDeclaration } from "./style";
+import {Element} from "./element";
+import {makeStyleProxy, type StyleDeclaration} from "./style";
 
 export class HTMLElement extends Element {
   private _styleProxy: StyleDeclaration | null = null;

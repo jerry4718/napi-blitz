@@ -2,8 +2,8 @@
 // Element wrappers are produced as `HTMLElement` instances via Rust's
 // NodeCache + wrap_node.
 
-import { Document, type DocumentInit } from "./document";
-import { NativeDocHandleCtor } from "../native";
+import {Document, type DocumentInit} from "./document";
+import {NativeDocHandleCtor} from "../native";
 
 export class HTMLDocument extends Document {
   /**

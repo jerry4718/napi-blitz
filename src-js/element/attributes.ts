@@ -16,7 +16,7 @@
 // `length`, indexed access, and `getNamedItem` will land when we add a
 // proper `Attr` wrapper.
 
-import type { AttrInit, NativeNodeHandle } from "../native";
+import type {AttrInit, NativeNodeHandle} from "../native";
 
 /** The shape user code sees behind `el.attributes`. */
 export type AttributesMap = Record<string, string>;

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { BlitzApp } from '../dist/index.js'
+import { BlitzApp, HTMLDocument, WindowOptions } from '../dist/index.js'
 
 // This test calls pumpAppEvents which triggers vello rendering.
 // CI containers lack GPU support (vello shaders need float16 capabilities),
@@ -8,13 +8,13 @@ const testFn = process.env.CI ? test.skip : test
 
 testFn('JS-created element subtrees can match ancestor descendant selectors without panicking', (t) => {
   const app = BlitzApp.create()
-  const window = app.openWindow({
+  const document = HTMLDocument.create({
     baseHtml:
       '<!doctype html><html><head><title>x</title><style>.page-header h1 { margin: 0 0 8px; }</style></head><body></body></html>',
-    width: 320,
-    height: 240,
   })
-  const { document } = window
+  const options = WindowOptions.builder()
+  options.size(320, 240)
+  const window = app.openWindow(document, options)
 
   const header = document.createElement('header')
   header.setAttribute('class', 'page-header')

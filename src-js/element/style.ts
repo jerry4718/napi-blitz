@@ -30,7 +30,7 @@
 //   - Indexed access via numeric property keys (`el.style[0]`). Use
 //     `item(0)` instead, which is also standard.
 
-import type { NativeNodeHandle } from "../native";
+import type {NativeNodeHandle} from "../native";
 
 /**
  * Public shape behind `el.style`. The string-indexed entries are CSS

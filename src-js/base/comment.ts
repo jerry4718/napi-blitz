@@ -10,7 +10,7 @@
 // the setter here to log a one-shot warning instead of letting users
 // believe the write succeeded.
 
-import { CharacterData } from "./character-data";
+import {CharacterData} from "./character-data";
 
 let warnedCommentDataIgnored = false;
 
@@ -18,6 +18,7 @@ export class Comment extends CharacterData {
   override get data(): string {
     return super.data;
   }
+
   override set data(value: string) {
     if (value !== "" && !warnedCommentDataIgnored) {
       warnedCommentDataIgnored = true;
@@ -26,7 +27,7 @@ export class Comment extends CharacterData {
       // eslint-disable-next-line no-console
       console.warn(
         "[napi-blitz] Comment.data writes are ignored: blitz's NodeData::Comment " +
-          "currently has no string payload. The API is preserved for spec parity.",
+        "currently has no string payload. The API is preserved for spec parity.",
       );
     }
     super.data = value;

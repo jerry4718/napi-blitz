@@ -11,16 +11,13 @@
 //   - JS methods forward to the native handle, which returns already-wrapped
 //     JS Node objects.
 
-import {
-  type NativeDocHandle,
-  type NativeNodeHandle,
-} from "../native";
-import { Node } from "../base/node";
-import { Element } from "../element/element";
-import { Text } from "../base/text";
-import { Comment } from "../base/comment";
-import { FontFaceSet } from "../fonts/font-face-set";
-import type { DocumentInternals } from "../internal/internal";
+import {type NativeDocHandle, type NativeNodeHandle,} from "../native";
+import {Node} from "../base/node";
+import {Element} from "../element/element";
+import {Text} from "../base/text";
+import {Comment} from "../base/comment";
+import {FontFaceSet} from "../fonts/font-face-set";
+import type {DocumentInternals} from "../internal/internal";
 
 export interface DocumentInit {
   uaStylesheets?: string[];
@@ -54,15 +51,27 @@ export abstract class Document extends Node implements DocumentInternals {
   // ----- Standard DOM root accessors --------------------------------------
 
   /** Document is the root - it has no parent. */
-  override get parentNode(): Node | null { return null; }
-  override get parentElement(): Node | null { return null; }
+  override get parentNode(): Node | null {
+    return null;
+  }
+
+  override get parentElement(): Node | null {
+    return null;
+  }
 
   /** Document nodeType is always 9. */
-  override get nodeType(): number { return 9; }
+  override get nodeType(): number {
+    return 9;
+  }
 
   /** The first child of the Document is the <html> element. */
-  override get firstChild(): Node | null { return this.documentElement; }
-  override get lastChild(): Node | null { return this.documentElement; }
+  override get firstChild(): Node | null {
+    return this.documentElement;
+  }
+
+  override get lastChild(): Node | null {
+    return this.documentElement;
+  }
 
   override get childNodes(): Node[] {
     const children: Node[] = [];
@@ -71,7 +80,9 @@ export abstract class Document extends Node implements DocumentInternals {
     return children;
   }
 
-  override get hasChildNodes(): boolean { return true; }
+  override get hasChildNodes(): boolean {
+    return true;
+  }
 
   get documentElement(): Element {
     return this._native.htmlElement() as Element;
@@ -90,6 +101,7 @@ export abstract class Document extends Node implements DocumentInternals {
     if (el === null) return "";
     return (el as Element).textContent ?? "";
   }
+
   set title(value: string) {
     const existing = this._native.findTitleNode();
     if (existing !== null) {

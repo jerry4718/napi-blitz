@@ -1,20 +1,19 @@
-//! `BlitzApp`: the JS-facing wrapper around blitz's winit-based application.
+//! `BlitzApp`: the JS-facing wrapper around a winit event loop.
 //!
-//! `BlitzApp.create()` builds an event loop and a `BlitzApplication`. Calling
-//! `openWindow(docHandle)` produces a `Box<dyn Document>` from the handle and
-//! attaches a fresh window to it. JS drives the loop synchronously via
-//! `pumpAppEvents(millis)` from the main thread; this keeps event callbacks
-//! re-entrant on the napi env so we can call back into JS without a
-//! ThreadsafeFunction.
+//! `BlitzApp.create()` builds an event loop. Calling `openWindow(docHandle)`
+//! produces a `Box<dyn Document>` from the handle and attaches a fresh window
+//! to it. JS drives the loop synchronously via `pumpAppEvents(millis)` from
+//! the main thread; this keeps event callbacks re-entrant on the napi env so
+//! we can call back into JS without a ThreadsafeFunction.
 
+use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use blitz::{
-    shell::{
-        BlitzApplication, BlitzShellProxy, EventLoop, WindowConfig, create_default_event_loop,
-    },
-    traits::shell::DummyShellProvider,
+use blitz::shell::{
+    BlitzShellEvent, BlitzShellProxy, EventLoop, View, WindowConfig, create_default_event_loop,
 };
+use blitz::traits::shell::DummyShellProvider;
 use napi::{
     Env, Error, Result,
     bindgen_prelude::{BigInt, Function, FunctionRef, Uint8Array},
@@ -24,7 +23,6 @@ use std::sync::Arc;
 use winit::{
     dpi::PhysicalSize,
     event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus},
-    monitor::Fullscreen,
     window::{WindowAttributes, WindowButtons},
 };
 
@@ -33,6 +31,7 @@ use crate::{
     native_window::{
         app_bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
         app_handler::JsAppHandler,
+        monitor::MonitorInfo,
         window::{Window, WindowOptions},
     },
     renderer::CurrentRenderer,
@@ -51,48 +50,47 @@ pub struct PumpResult {
 
 #[napi]
 pub struct BlitzApp {
-    event_loop: EventLoop,
-    application: BlitzApplication<CurrentRenderer>,
-    /// Window configs that have been requested via `openWindow` but not yet
-    /// handed to the underlying `BlitzApplication`. We hold them ourselves so
-    /// `closeWindow` can synchronously cancel a window that has not been
-    /// initialised yet (winit's `can_create_surfaces` only runs during
-    /// `pumpAppEvents`). Each entry is `(doc_id, config)`.
-    pending: Vec<(usize, WindowConfig<CurrentRenderer>)>,
+    event_loop: Option<EventLoop>,
+    /// Live windows keyed by winit `WindowId`.
+    pub(crate) windows: HashMap<winit::window::WindowId, View<CurrentRenderer>>,
+    /// Window configs requested via `openWindow` but not yet promoted to live `View`s.
+    pub(crate) pending: Vec<(usize, WindowConfig<CurrentRenderer>)>,
+    /// Proxy for sending events into the event loop (redraw, poll, etc.).
+    pub(crate) proxy: BlitzShellProxy,
+    /// Receiver for `BlitzShellEvent`s from the proxy channel.
+    pub(crate) event_queue: Receiver<BlitzShellEvent>,
     /// Doc ids requested to close from JS. We intentionally defer live
-    /// `View` removal until after the current `pump_app_events` call has
-    /// returned from winit/blitz event dispatch. This makes `window.close()`
-    /// safe to call from within that same window's click handler: blitz's
-    /// `EventDriver` may still need to borrow the document after JS listeners
-    /// return to run default actions.
-    closing_doc_ids: Vec<usize>,
+    /// `View` removal until after the current `pumpAppEvents` call has
+    /// returned from winit event dispatch. This makes `window.close()`
+    /// safe to call from within that same window's click handler.
+    pub(crate) closing_doc_ids: Vec<usize>,
     /// JS-side bridge for app/window events (close / closed). Set
     /// lazily by `setAppEventHandler`; absent until JS opts in.
-    bridge: Option<JsAppBridge>,
+    pub(crate) bridge: Option<JsAppBridge>,
     /// Number of windows currently considered "alive". Incremented
     /// on `openWindow`, decremented in the `close_window` path when we
-    /// successfully remove a window from `application.windows` and in
-    /// the native `CloseRequested` path via
-    /// `JsAppHandler::outstanding`.
-    outstanding_windows: usize,
+    /// successfully remove a window from `windows` and in the native
+    /// `CloseRequested` path via `JsAppHandler::outstanding`.
+    pub(crate) outstanding_windows: usize,
     /// True once at least one window has ever been opened. Without
     /// this, calling `pump_app_events` before any `open_window` would
     /// wrongly synthesise an exit on the very first pump.
-    has_opened_window: bool,
+    pub(crate) has_opened_window: bool,
 }
 
 #[napi]
 impl BlitzApp {
-    /// Build the winit event loop and underlying blitz application.
+    /// Build the winit event loop.
     #[napi(factory)]
     pub fn create() -> Self {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
-        let application = BlitzApplication::new(proxy, receiver);
         Self {
-            event_loop,
-            application,
+            event_loop: Some(event_loop),
+            windows: HashMap::new(),
             pending: Vec::new(),
+            proxy,
+            event_queue: receiver,
             closing_doc_ids: Vec::new(),
             bridge: None,
             outstanding_windows: 0,
@@ -137,7 +135,7 @@ impl BlitzApp {
     pub fn open_window(
         &mut self,
         doc: &mut DocHandle,
-        options: Option<WindowOptions>,
+        options: Option<&WindowOptions>,
     ) -> Result<Window> {
         if !doc.mark_attached() {
             return Err(Error::from_reason(
@@ -151,8 +149,20 @@ impl BlitzApp {
         self.pending.push((doc_id, config));
         self.has_opened_window = true;
         self.outstanding_windows += 1;
+
+        // winit only assigns a WindowId while dispatching through an active
+        // event loop. Run one non-blocking pump so the window is created, then
+        // grab the Arc<dyn Window> straight from the view.
+        self.pump_app_events(0.0);
+        let native_window = self
+            .windows
+            .iter()
+            .find_map(|(_, view)| (view.doc.id() == doc_id).then_some(view.window.clone()))
+            .ok_or_else(|| Error::from_reason("failed to create native window"))?;
+
         Ok(Window {
             doc_id,
+            window: Some(native_window),
             closed: false,
         })
     }
@@ -193,6 +203,7 @@ impl BlitzApp {
         let removed = was_pending || was_initialised;
 
         window.closed = true;
+        window.window = None;
         if removed {
             self.outstanding_windows = self.outstanding_windows.saturating_sub(1);
         }
@@ -220,83 +231,41 @@ impl BlitzApp {
     // setters/getters live on `BlitzApp` and look the view up by doc_id.
     // The JS-side `Window` class delegates through these.
 
-    /// winit `Window::request_surface_size`. The actual size that the
-    /// platform settles on can differ from the request; callers should
-    /// rely on the `surface-resize` events (driven by winit) to reflect
-    /// the truth.
-    ///
-    /// The JS-facing boundary intentionally accepts `f64`, matching JS
-    /// `number`, instead of `u32`: napi's unsigned integer conversion would
-    /// silently apply ToUint32 semantics to negatives/fractions. We validate
-    /// the double ourselves and only then pass a `PhysicalSize<u32>` to winit.
+    /// List all available monitors with full metadata. Returns `[]` if
+    /// no windows have been created yet.
     #[napi]
-    pub fn set_window_inner_size(
-        &mut self,
-        window: &Window,
-        width: f64,
-        height: f64,
-    ) -> Result<()> {
-        let width = parse_surface_dimension("width", width)?;
-        let height = parse_surface_dimension("height", height)?;
-
-        if let Some(view) = self.window_view(window) {
-            let _ = view
-                .window
-                .request_surface_size(PhysicalSize::new(width, height).into());
-        }
-        Ok(())
+    pub fn available_monitors(&self) -> Vec<MonitorInfo> {
+        let Some(view) = self.windows.values().next() else {
+            return Vec::new();
+        };
+        view.window
+            .available_monitors()
+            .map(monitor_to_info)
+            .collect()
     }
 
-    /// winit `Window::surface_size`. Returns `[width, height]` in
-    /// physical pixels, or `None` if the window has not been created
-    /// yet or has been closed.
+    /// The primary monitor. Returns `None` if no windows have been
+    /// created yet.
     #[napi]
-    pub fn get_window_inner_size(&self, window: &Window) -> Option<Vec<u32>> {
-        let view = self.window_view_ref(window)?;
-        let size = view.window.surface_size();
-        Some(vec![size.width, size.height])
+    pub fn primary_monitor(&self) -> Option<MonitorInfo> {
+        let view = self.windows.values().next()?;
+        view.window.primary_monitor().map(monitor_to_info)
     }
 
-    /// winit `Window::set_resizable`.
+    /// Pump pending winit events for at most `millis` milliseconds.
     #[napi]
-    pub fn set_window_resizable(&mut self, window: &Window, resizable: bool) {
-        if let Some(view) = self.window_view(window) {
-            view.window.set_resizable(resizable);
-        }
+    pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
+        self.pump_app_events_inner(millis)
     }
+}
 
-    /// winit `Window::is_resizable`. Returns `None` if the window has
-    /// not been created yet or has been closed.
-    #[napi]
-    pub fn get_window_resizable(&self, window: &Window) -> Option<bool> {
-        Some(self.window_view_ref(window)?.window.is_resizable())
-    }
-
-    /// Look up the live `View` for a `Window` handle, by doc id.
-    fn window_view(&mut self, window: &Window) -> Option<&mut blitz::shell::View<CurrentRenderer>> {
-        self.application
-            .windows
-            .values_mut()
-            .find(|v| v.doc.id() == window.doc_id)
-    }
-
-    /// Read-only counterpart to `window_view`.
-    fn window_view_ref(&self, window: &Window) -> Option<&blitz::shell::View<CurrentRenderer>> {
-        self.application
-            .windows
-            .values()
-            .find(|v| v.doc.id() == window.doc_id)
-    }
-
+impl BlitzApp {
     fn has_initialised_window(&self, doc_id: usize) -> bool {
-        self.application
-            .windows
-            .values()
-            .any(|view| view.doc.id() == doc_id)
+        self.windows.values().any(|view| view.doc.id() == doc_id)
     }
 
     fn poll_live_views(&mut self) {
-        for view in self.application.windows.values_mut() {
+        for view in self.windows.values_mut() {
             view.poll();
         }
     }
@@ -309,7 +278,6 @@ impl BlitzApp {
         let closing_doc_ids = std::mem::take(&mut self.closing_doc_ids);
         for doc_id in closing_doc_ids {
             let Some(window_id) = self
-                .application
                 .windows
                 .iter()
                 .find_map(|(window_id, view)| (view.doc.id() == doc_id).then_some(*window_id))
@@ -317,7 +285,7 @@ impl BlitzApp {
                 continue;
             };
 
-            if let Some(mut view) = self.application.windows.remove(&window_id) {
+            if let Some(mut view) = self.windows.remove(&window_id) {
                 // `View::init` stores a `BlitzShellProvider` in the document.
                 // That provider owns an `Arc<dyn winit::Window>`, so simply
                 // dropping `View` is not enough to make the OS window go away.
@@ -342,26 +310,14 @@ impl BlitzApp {
     /// Pump pending winit events for at most `millis` milliseconds. JS should
     /// call this in a loop (typically once per animation frame) to drive the
     /// renderer and event handling.
-    #[napi]
-    pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
+    fn pump_app_events_inner(&mut self, millis: f64) -> PumpResult {
         // Give host-driven DOM mutations from the previous JS turn a chance to
         // flow through Blitz's normal `View::poll -> Document::poll ->
         // request_redraw` path before winit waits for more events.
         self.poll_live_views();
 
-        // Hand any windows that survived `closeWindow` over to the
-        // BlitzApplication. After this they live in
-        // `application.pending_windows` until the next handler hook
-        // promotes them. blitz's own `can_create_surfaces` only fires
-        // on initial resume, so the JS-runtime case is handled by
-        // `JsAppHandler::drain_pending_windows`, which calls
-        // `View::init` from `about_to_wait` / `proxy_wake_up`. By the
-        // time `pump_app_events` returns, every entry pushed here has
-        // either become a `View` in `application.windows` or been
-        // explicitly cancelled via `close_window`.
-        for (_doc_id, config) in self.pending.drain(..) {
-            self.application.add_window(config);
-        }
+        // Pending windows are promoted to live Views by `JsAppHandler::drain_pending_windows`
+        // during the pump. No need to hand them to an intermediate application layer.
 
         // A caller may invoke `window.close()` between pump ticks. In that
         // case no winit/blitz document dispatch is active, so it is safe and
@@ -385,14 +341,12 @@ impl BlitzApp {
         }
 
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
-        // Build a fresh per-pump handler that wraps the inner blitz
-        // application and lets JS observe close/closed events.
-        let mut handler = JsAppHandler {
-            inner: &mut self.application,
-            bridge: self.bridge.as_ref(),
-            outstanding: &mut self.outstanding_windows,
-        };
-        let status = self.event_loop.pump_app_events(timeout, &mut handler);
+
+        // Take event_loop out so the handler can borrow the rest of `self`.
+        let mut event_loop = self.event_loop.take().expect("event_loop taken");
+        let mut handler = JsAppHandler { app: self };
+        let status = event_loop.pump_app_events(timeout, &mut handler);
+        self.event_loop = Some(event_loop);
         self.flush_closing_windows();
         // Also catch synchronous mutations that happened inside native event
         // callbacks before returning to JS.
@@ -415,56 +369,32 @@ impl BlitzApp {
 
 /// Translate `WindowOptions` into a winit `WindowAttributes`. Skipped
 /// fields fall back to winit's platform default.
-fn build_window_attributes(options: Option<WindowOptions>) -> Result<WindowAttributes> {
+fn build_window_attributes(options: Option<&WindowOptions>) -> Result<WindowAttributes> {
     let mut attrs = WindowAttributes::default();
     let Some(options) = options else {
         return Ok(attrs);
     };
 
-    if let Some(title) = options.title {
-        attrs = attrs.with_title(title);
+    if let Some(title) = options.title.as_ref() {
+        attrs = attrs.with_title(title.clone());
     }
-    match (options.width, options.height) {
-        (Some(w), Some(h)) => {
-            let w = parse_surface_dimension("width", w)?;
-            let h = parse_surface_dimension("height", h)?;
-            attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
-        }
-        (None, None) => {}
-        _ => {
-            return Err(Error::from_reason(
-                "width and height must be provided together".to_string(),
-            ));
-        }
+    if let Some((w, h)) = options.size {
+        let w = parse_surface_dimension("width", w)?;
+        let h = parse_surface_dimension("height", h)?;
+        attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
     }
     if let Some(resizable) = options.resizable {
         attrs = attrs.with_resizable(resizable);
     }
-    match (options.min_width, options.min_height) {
-        (Some(w), Some(h)) => {
-            let w = parse_surface_dimension("minWidth", w)?;
-            let h = parse_surface_dimension("minHeight", h)?;
-            attrs = attrs.with_min_surface_size(PhysicalSize::new(w, h));
-        }
-        (None, None) => {}
-        _ => {
-            return Err(Error::from_reason(
-                "minWidth and minHeight must be provided together".to_string(),
-            ));
-        }
+    if let Some((w, h)) = options.min_size {
+        let w = parse_surface_dimension("minWidth", w)?;
+        let h = parse_surface_dimension("minHeight", h)?;
+        attrs = attrs.with_min_surface_size(PhysicalSize::new(w, h));
     }
-    match (options.max_width, options.max_height) {
-        (Some(w), Some(h)) => {
-            let w = parse_surface_dimension("maxWidth", w)?;
-            let h = parse_surface_dimension("maxHeight", h)?;
-            attrs = attrs.with_max_surface_size(PhysicalSize::new(w, h));
-        }
-        (None, None) => {}
-        _ => {
-            return Err(Error::from_reason(
-                "maxWidth and maxHeight must be provided together".to_string(),
-            ));
-        }
+    if let Some((w, h)) = options.max_size {
+        let w = parse_surface_dimension("maxWidth", w)?;
+        let h = parse_surface_dimension("maxHeight", h)?;
+        attrs = attrs.with_max_surface_size(PhysicalSize::new(w, h));
     }
     if let Some(maximized) = options.maximized {
         attrs = attrs.with_maximized(maximized);
@@ -481,14 +411,14 @@ fn build_window_attributes(options: Option<WindowOptions>) -> Result<WindowAttri
     if let Some(decorations) = options.decorations {
         attrs = attrs.with_decorations(decorations);
     }
-    if let Some(true) = options.fullscreen {
-        attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    if let Some(fullscreen) = options.fullscreen.as_ref() {
+        attrs = attrs.with_fullscreen(Some(fullscreen.clone()));
     }
-    if let Some(buttons) = options.enabled_buttons {
+    if let Some(buttons) = options.enabled_buttons.as_ref() {
         attrs = attrs.with_enabled_buttons(parse_window_buttons(buttons)?);
     }
-    if let Some(icon_data) = options.window_icon {
-        attrs = attrs.with_window_icon(Some(parse_window_icon(&icon_data)?));
+    if let Some(icon_data) = options.window_icon.as_ref() {
+        attrs = attrs.with_window_icon(Some(parse_window_icon(icon_data)?));
     }
     Ok(attrs)
 }
@@ -509,9 +439,14 @@ fn parse_surface_dimension(name: &str, value: f64) -> Result<u32> {
     Ok(value as u32)
 }
 
+/// Convert a winit `MonitorHandle` to a napi `MonitorInfo`.
+fn monitor_to_info(m: winit::monitor::MonitorHandle) -> MonitorInfo {
+    MonitorInfo { inner: m }
+}
+
 /// Parse JS string array into winit `WindowButtons` bitflags.
 /// Accepted values: `"close"`, `"minimize"`, `"maximize"`.
-fn parse_window_buttons(buttons: Vec<String>) -> Result<WindowButtons> {
+fn parse_window_buttons(buttons: &[String]) -> Result<WindowButtons> {
     let mut flags = WindowButtons::empty();
     for btn in buttons {
         match btn.as_str() {
@@ -554,7 +489,5 @@ fn parse_window_icon(data: &Uint8Array) -> Result<winit::icon::Icon> {
     }
     winit::icon::RgbaIcon::new(pixels[..expected].to_vec(), width, height)
         .map(winit::icon::Icon::from)
-        .map_err(|e| {
-            Error::from_reason(format!("windowIcon: failed to create icon: {e}"))
-        })
+        .map_err(|e| Error::from_reason(format!("windowIcon: failed to create icon: {e}")))
 }

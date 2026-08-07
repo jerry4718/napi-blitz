@@ -2,25 +2,42 @@
 
 import test from "ava";
 
-import { BlitzApp } from "../dist/index.js";
+import { BlitzApp, HTMLDocument, WindowOptions } from "../dist/index.js";
+
+// winit only allows one event loop per process, so share a single
+// BlitzApp across all tests in this file.
+const app = BlitzApp.create();
+const newDoc = () => HTMLDocument.create();
 
 test("window surface dimensions are validated before reaching winit", (t) => {
-  const app = BlitzApp.create();
-
-  t.throws(() => app.openWindow({ width: -1, height: 100 }), {
+  const negative = WindowOptions.builder();
+  negative.size(-1, 100);
+  t.throws(() => app.openWindow(newDoc(), negative), {
     message: /width must be >= 1/,
   });
-  t.throws(() => app.openWindow({ width: 100.5, height: 100 }), {
+
+  const fractional = WindowOptions.builder();
+  fractional.size(100.5, 100);
+  t.throws(() => app.openWindow(newDoc(), fractional), {
     message: /width must be an integer/,
   });
-  t.throws(() => app.openWindow({ width: Number.POSITIVE_INFINITY, height: 100 }), {
+
+  const infinite = WindowOptions.builder();
+  infinite.size(Number.POSITIVE_INFINITY, 100);
+  t.throws(() => app.openWindow(newDoc(), infinite), {
     message: /width must be finite/,
   });
-  t.throws(() => app.openWindow({ width: 100 }), {
-    message: /width and height must be provided together/,
-  });
+});
 
-  const window = app.openWindow({ width: 100, height: 100 });
+// openWindow with valid dimensions triggers pump_app_events -> vello
+// rendering. CI containers lack GPU support (same as
+// dom-mutation-style.spec.ts), so skip in CI.
+const testFn = process.env.CI ? test.skip : test;
+
+testFn("window resize dimensions are validated at the napi boundary", (t) => {
+  const valid = WindowOptions.builder();
+  valid.size(100, 100);
+  const window = app.openWindow(newDoc(), valid);
 
   t.throws(() => window.resize(-1, 100), {
     message: /width must be >= 1/,

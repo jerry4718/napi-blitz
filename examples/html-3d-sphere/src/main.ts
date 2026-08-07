@@ -3,7 +3,7 @@ import {
   HTMLElement as BlitzHTMLElement,
   HTMLDocument,
   Node as BlitzNode,
-  type OpenWindowInit,
+  WindowOptions,
 } from '@ylcc/napi-blitz'
 import process from 'node:process'
 import { generateIcosaSphere, type TriangleFace, type Vec3 } from './sphere.ts'
@@ -60,12 +60,10 @@ const BASE_HTML = `<!DOCTYPE html>
 
 export async function bootstrap() {
   const app = BlitzApp.create()
-  const windowInit: OpenWindowInit = {
-    baseHtml: BASE_HTML,
-    title: '3D Sphere (HTML)',
-  }
-  const window = app.openWindow(windowInit)
-  const document = window.document
+  const document = HTMLDocument.create({ baseHtml: BASE_HTML })
+  const options = WindowOptions.builder()
+  options.title('3D Sphere (HTML)')
+  app.openWindow(document, options)
   globalDoc = document
 
   installStyles(document)

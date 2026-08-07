@@ -9,7 +9,7 @@
 // list and the spawn button.
 
 import { computed, defineComponent, inject, ref } from 'vue'
-import type { Window as BlitzWindow } from '@ylcc/napi-blitz'
+import { HTMLDocument, WindowOptions, type Window as BlitzWindow } from '@ylcc/napi-blitz'
 import { BlitzAppKey, ChildWindowsKey } from '../keys.ts'
 import { childBaseHtml, mountChild } from '../child.tsx'
 
@@ -24,12 +24,10 @@ export const MainApp = defineComponent({
             closeBlocked.value = false
 
             const id = nextChildId++
-            const child = app.openWindow({
-                title: `Child #${id}`,
-                width: 480,
-                height: 320,
-                baseHtml: childBaseHtml(),
-            })
+            const document = HTMLDocument.create({ baseHtml: childBaseHtml() })
+            const options = WindowOptions.builder()
+            options.title(`Child #${id}`).size(480, 320)
+            const child = app.openWindow(document, options)
             mountChild(app, child, id)
             children.value = [...children.value, child]
 

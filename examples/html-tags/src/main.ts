@@ -3,7 +3,7 @@ import {
   HTMLElement as BlitzHTMLElement,
   HTMLDocument,
   Node as BlitzNode,
-  type OpenWindowInit,
+  WindowOptions,
 } from '@ylcc/napi-blitz'
 import process from 'node:process'
 
@@ -223,14 +223,10 @@ const SECTIONS: readonly TagSection[] = [
 
 export async function bootstrap(): Promise<void> {
   const app = BlitzApp.create()
-  const windowInit: OpenWindowInit = {
-    baseHtml: BASE_HTML,
-    title: 'Blitz HTML Tag Matrix',
-    width: 1200,
-    height: 900,
-  }
-  const window = app.openWindow(windowInit)
-  const document = window.document
+  const document = HTMLDocument.create({ baseHtml: BASE_HTML })
+  const options = WindowOptions.builder()
+  options.title('Blitz HTML Tag Matrix').size(1200, 900)
+  app.openWindow(document, options)
 
   installStyles(document)
   renderTagMatrix(document)

@@ -4,9 +4,8 @@
 // Lifecycle:
 //   1. `BlitzApp.create()` builds the loop and installs the
 //      app-event bridge with the native side.
-//   2. `app.openWindow({ html, ... })` creates a fresh HTMLDocument and
-//      attaches it to a brand-new window. Returns a `Window`. Also
-//      dispatches a `windowopen` event on the app.
+//   2. `app.openWindow(document, options?)` attaches an existing
+//      `HTMLDocument` to a new native window. Returns a `Window`.
 //   3. `app.pumpAppEvents(ms)` drives the loop. Call once per frame.
 //   4. `app.closeWindow(window)` (or `window.close()`) closes the
 //      window synchronously. Both paths dispatch a cancelable `close`
@@ -27,63 +26,16 @@
 // windows, call `openWindow` multiple times.
 
 import {
-  NativeBlitzAppCtor,
-  NativeDocHandleCtor,
   type AppDispatchResult,
   type AppEventPayload,
   type NativeBlitzApp,
+  NativeBlitzAppCtor,
   type PumpResult,
   type Window as NativeWindow,
   type WindowOptions,
 } from "../native";
-import { HTMLDocument } from "../document/html-document";
-import { Window, pluckWindow } from "./window";
-import type { DocumentInit } from "../document/document";
-
-/**
- * Options when opening a new window. Combines document-init fields
- * (e.g. `baseHtml`, `uaStylesheets`) with winit-style window attributes.
- *
- * Title behaviour: if the document carries a `<title>` element, blitz
- * will overwrite the window title shortly after open via its mutator-
- * flush plumbing. The `title` option here only takes effect while the
- * document has no `<title>`. To control the title programmatically over
- * time, set `document.title` (which manipulates the `<title>` element).
- */
-export interface OpenWindowInit extends DocumentInit {
-  /** Initial window title. May be overwritten by the document's `<title>`. */
-  title?: string;
-  /** Initial surface width, physical pixels. Pair with `height`. */
-  width?: number;
-  /** Initial surface height, physical pixels. Pair with `width`. */
-  height?: number;
-  /** Whether the window is initially resizable by the user. */
-  resizable?: boolean;
-  /** Minimum surface width, physical pixels. Pair with `minHeight`. */
-  minWidth?: number;
-  /** Minimum surface height, physical pixels. Pair with `minWidth`. */
-  minHeight?: number;
-  /** Maximum surface width, physical pixels. Pair with `maxHeight`. */
-  maxWidth?: number;
-  /** Maximum surface height, physical pixels. Pair with `maxWidth`. */
-  maxHeight?: number;
-  /** Whether the window is initially maximized. */
-  maximized?: boolean;
-  /** Whether the window is initially visible. Defaults to `true`. */
-  visible?: boolean;
-  /** Whether the window background is initially transparent. */
-  transparent?: boolean;
-  /** Whether the window has a blur effect behind it. */
-  blur?: boolean;
-  /** Whether the window has decorations (title bar, borders). Defaults to `true`. */
-  decorations?: boolean;
-  /** Whether the window starts in fullscreen (borderless). */
-  fullscreen?: boolean;
-  /** Window buttons to enable. Array of `"close"`, `"minimize"`, `"maximize"`. */
-  enabledButtons?: string[];
-  /** Window icon as raw bytes: 8-byte header (u32 LE width + u32 LE height) + RGBA8 pixel data. */
-  windowIcon?: Uint8Array;
-}
+import {HTMLDocument} from "../document/html-document";
+import {pluckWindow, Window} from "./window";
 
 /** `Document`'s package-private fields, viewed by `BlitzApp`. */
 interface DocumentInternalsForApp {
@@ -118,20 +70,10 @@ export class BlitzApp extends EventTarget {
   }
 
   /**
-   * Open a new window driven by a fresh `HTMLDocument`. Use the returned
-   * `Window`'s `document` to mutate the DOM and `window.close()` to tear
-   * the window down.
-   *
-   * After the native side is set up, we dispatch a `windowopen` event
-   * on this app with `event.detail = { window }`.
+   * Open a new window for an existing `HTMLDocument`.
+   * Construct window attributes with `WindowOptions.builder()`.
    */
-  openWindow(init: OpenWindowInit = {}): Window {
-    const nativeHandle = NativeDocHandleCtor.create({
-      uaStylesheets: init.uaStylesheets,
-      baseHtml: init.baseHtml,
-    });
-    const document = new HTMLDocument(nativeHandle);
-    const options = buildWindowOptions(init);
+  openWindow(document: HTMLDocument, options?: WindowOptions): Window {
     const nativeWindow: NativeWindow = this._native.openWindow(
       pluckDoc(document)._native,
       options,
@@ -140,7 +82,7 @@ export class BlitzApp extends EventTarget {
     this._windows.set(nativeWindow.docId, window);
 
     this.dispatchEvent(
-      new CustomEvent("windowopen", { detail: { window } }),
+      new CustomEvent("windowopen", {detail: {window}}),
     );
     return window;
   }
@@ -178,10 +120,10 @@ export class BlitzApp extends EventTarget {
 
     window._dispatchClosed();
     this.dispatchEvent(
-      new CustomEvent("windowclose", { detail: { window } }),
+      new CustomEvent("windowclose", {detail: {window}}),
     );
     this.dispatchEvent(
-      new CustomEvent("windowclosed", { detail: { window } }),
+      new CustomEvent("windowclosed", {detail: {window}}),
     );
   }
 
@@ -204,12 +146,12 @@ export class BlitzApp extends EventTarget {
     const window = this._windows.get(payload.windowDocId);
     if (window === undefined) {
       // Window already gone from our map — nothing to dispatch.
-      return { defaultPrevented: false };
+      return {defaultPrevented: false};
     }
 
     if (payload.eventType === "close") {
       const proceed = window._dispatchClose();
-      return { defaultPrevented: !proceed };
+      return {defaultPrevented: !proceed};
     }
     if (payload.eventType === "closed") {
       // The window is gone on the native side. Mirror that on the JS
@@ -217,54 +159,14 @@ export class BlitzApp extends EventTarget {
       this._windows.delete(payload.windowDocId);
       window._dispatchClosed();
       this.dispatchEvent(
-        new CustomEvent("windowclose", { detail: { window } }),
+        new CustomEvent("windowclose", {detail: {window}}),
       );
       this.dispatchEvent(
-        new CustomEvent("windowclosed", { detail: { window } }),
+        new CustomEvent("windowclosed", {detail: {window}}),
       );
-      return { defaultPrevented: false };
+      return {defaultPrevented: false};
     }
-    return { defaultPrevented: false };
+    return {defaultPrevented: false};
   }
 }
 
-/**
- * Pick the window-attribute fields out of an `OpenWindowInit` and shape
- * them as the `WindowOptions` napi object. Returns `undefined` if no
- * window-level options were specified, so the native side can fall back
- * to winit's defaults without us having to construct a placeholder.
- */
-function buildWindowOptions(init: OpenWindowInit): WindowOptions | undefined {
-  const {
-    title, width, height, resizable,
-    minWidth, minHeight, maxWidth, maxHeight,
-    maximized, visible, transparent, blur, decorations,
-    fullscreen, enabledButtons, windowIcon,
-  } = init;
-  if (
-    title === undefined &&
-    width === undefined &&
-    height === undefined &&
-    resizable === undefined &&
-    minWidth === undefined &&
-    minHeight === undefined &&
-    maxWidth === undefined &&
-    maxHeight === undefined &&
-    maximized === undefined &&
-    visible === undefined &&
-    transparent === undefined &&
-    blur === undefined &&
-    decorations === undefined &&
-    fullscreen === undefined &&
-    enabledButtons === undefined &&
-    windowIcon === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    title, width, height, resizable,
-    minWidth, minHeight, maxWidth, maxHeight,
-    maximized, visible, transparent, blur, decorations,
-    fullscreen, enabledButtons, windowIcon,
-  };
-}

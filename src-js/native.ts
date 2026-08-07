@@ -8,7 +8,7 @@
 // path from this module to the native bundle differs in the two cases,
 // so we anchor the lookup on `__dirname` and walk up to the package root.
 
-import { createRequire } from "node:module";
+import {createRequire} from "node:module";
 import * as path from "node:path";
 
 import type {
@@ -25,24 +25,24 @@ import type {
   ImeData,
   InputData,
   KeyData,
+  MonitorInfo,
+  NodeHandle as NativeNodeHandle,
   PointerData,
   PumpResult,
+  registerEventFactory as _registerEventFactory,
   RegisterFontOptions,
-  NodeHandle as NativeNodeHandle,
+  registerNodeConstructor as _registerNodeConstructor,
+  VideoModeInfo,
   WheelData,
   Window as NativeWindow,
   WindowOptions as NativeWindowOptions,
-} from "../native";
-
-import type {
-  registerNodeConstructor as _registerNodeConstructor,
-  registerEventFactory as _registerEventFactory,
 } from "../native";
 
 interface NativeModuleShape {
   BlitzApp: typeof NativeBlitzApp;
   DocHandle: typeof NativeDocHandle;
   NodeHandle: typeof NativeNodeHandle;
+  WindowOptions: typeof NativeWindowOptions;
   registerNodeConstructor: typeof _registerNodeConstructor;
   registerEventFactory: typeof _registerEventFactory;
   pickFile: (options?: DialogOptions | null) => Promise<string | null>;
@@ -62,6 +62,7 @@ const mod: NativeModuleShape = requireFromRoot("./native/index.js");
 export const NativeBlitzAppCtor: typeof NativeBlitzApp = mod.BlitzApp;
 export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
 export const NativeNodeHandleCtor: typeof NativeNodeHandle = mod.NodeHandle;
+export const NativeWindowOptionsCtor: typeof NativeWindowOptions = mod.WindowOptions;
 export const registerNodeConstructor = mod.registerNodeConstructor;
 export const registerEventFactory = mod.registerEventFactory;
 
@@ -83,9 +84,11 @@ export type {
   ImeData,
   InputData,
   KeyData,
+  MonitorInfo,
   PointerData,
   PumpResult,
   RegisterFontOptions,
+  VideoModeInfo,
   NativeNodeHandle,
   WheelData,
   NativeBlitzApp,

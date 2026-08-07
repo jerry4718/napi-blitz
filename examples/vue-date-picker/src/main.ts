@@ -15,7 +15,7 @@ import {
   HTMLElement,
   HTMLDocument,
   Node,
-  type OpenWindowInit,
+  WindowOptions,
 } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
 import { DOCUMENT_KEY } from './utils/useDocument.ts'
@@ -153,12 +153,10 @@ const { createApp } = createRenderer<Node, Node>({
 export async function bootstrap() {
   const app = BlitzApp.create()
 
-  const windowInit: OpenWindowInit = {
-    baseHtml: BASE_HTML,
-    title: 'Blitz Date Picker Demo',
-  }
-  const window = app.openWindow(windowInit)
-  const document = window.document
+  const document = HTMLDocument.create({ baseHtml: BASE_HTML })
+  const options = WindowOptions.builder()
+  options.title('Blitz Date Picker Demo')
+  const window = app.openWindow(document, options)
   nodeGlobalDoc = document
 
   const body = document.body!
