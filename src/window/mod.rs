@@ -17,18 +17,21 @@
 
 pub mod monitor;
 
-use std::sync::Arc;
-
 use monitor::{MonitorInfo, VideoModeInfo};
 use napi::{
     Error, Result,
     bindgen_prelude::{BigInt, Uint8Array},
 };
+use std::{
+    cell::{Ref, RefCell},
+    rc::Rc,
+    sync::Arc,
+};
 use winit::{
     dpi::PhysicalSize,
     icon::{Icon, RgbaIcon},
     monitor::Fullscreen,
-    window::{Window as WinitWindow, WindowAttributes, WindowButtons},
+    window::{Window as WinitWindow, WindowAttributes, WindowButtons, WindowId},
 };
 
 /// Options accepted by `BlitzApp.openWindow`. Construct via
@@ -166,30 +169,44 @@ impl WindowOptions {
     }
 }
 
+/// Shared inner state between the JS-side `Window` handle and the
+/// Rust-side `WindowEntry`. Both hold the same `Rc<RefCell<WindowInner>>`,
+/// so `close()` on either side drops the `Arc<dyn Window>` for both.
+pub(crate) struct WindowInner {
+    pub(crate) window: Option<Arc<dyn WinitWindow>>,
+    pub(crate) closed: bool,
+}
+
 /// Handle to an open window. Construct via `BlitzApp.openWindow`.
+///
+/// Shares a `Rc<RefCell<WindowInner>>` with the `WindowEntry` stored in
+/// `BlitzApp`. `close_window` takes the `Arc<dyn Window>` out of the inner
+/// cell, which releases the OS window even if this JS handle is still alive.
 #[napi]
 pub struct Window {
     /// winit `WindowId`; uniquely identifies the window for as long as
     /// it is open. Internal-only - the JS layer does not need to see this.
-    pub(crate) window_id: winit::window::WindowId,
-    /// Shared handle to the same native window held by `View`.
-    pub(crate) window: Option<Arc<dyn WinitWindow>>,
-    /// Set to true once `BlitzApp.close_window` has run for this window.
-    pub(crate) closed: bool,
+    pub(crate) window_id: WindowId,
+    pub(crate) inner: Rc<RefCell<WindowInner>>,
+}
+
+impl Window {
+    #[inline]
+    fn native_window(&self) -> Result<Ref<'_, dyn WinitWindow>> {
+        let inner = self.inner.borrow();
+        if inner.closed || inner.window.is_none() {
+            return Err(Error::from_reason("window is closed"));
+        }
+        Ok(Ref::map(inner, |i| i.window.as_deref().unwrap()))
+    }
 }
 
 #[napi]
 impl Window {
-    fn native_window(&self) -> Result<&dyn WinitWindow> {
-        self.window
-            .as_deref()
-            .ok_or_else(|| Error::from_reason("window is closed"))
-    }
-
     /// Whether `closeWindow` has run for this handle.
     #[napi(getter)]
     pub fn closed(&self) -> bool {
-        self.closed
+        self.inner.borrow().closed
     }
 
     /// Opaque window identifier. JS uses this to map app-event payloads

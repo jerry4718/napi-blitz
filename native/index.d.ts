@@ -417,7 +417,13 @@ export declare class WheelData {
   get modsBits(): number
 }
 
-/** Handle to an open window. Construct via `BlitzApp.openWindow`. */
+/**
+ * Handle to an open window. Construct via `BlitzApp.openWindow`.
+ *
+ * Shares a `Rc<RefCell<WindowInner>>` with the `WindowEntry` stored in
+ * `BlitzApp`. `close_window` takes the `Arc<dyn Window>` out of the inner
+ * cell, which releases the OS window even if this JS handle is still alive.
+ */
 export declare class Window {
   /** Whether `closeWindow` has run for this handle. */
   get closed(): boolean

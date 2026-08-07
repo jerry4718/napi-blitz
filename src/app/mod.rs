@@ -9,8 +9,11 @@
 mod bridge;
 mod handler;
 
-use std::{collections::HashMap, sync::Arc, sync::mpsc::Receiver, time::Duration};
+use std::{
+    cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, sync::mpsc::Receiver, time::Duration,
+};
 
+use crate::window::WindowInner;
 use crate::{
     app::{
         bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
@@ -51,9 +54,35 @@ pub struct PumpResult {
 
 #[napi]
 pub struct BlitzApp {
-    event_loop: Option<EventLoop>,
+    event_loop: EventLoop,
+    pub(crate) inner: AppInner,
+}
+
+/// A live window: the blitz `View` plus the JS-side `Window` handle
+/// that holds an `Arc<dyn Window>`. Dropping the view alone does not
+/// release the winit window if the JS `Window` still holds a clone,
+/// so `WindowEntry::close` takes the Arc out before dropping the view.
+pub(crate) struct WindowEntry {
+    pub(crate) view: View<CurrentRenderer>,
+    pub(crate) inner: Rc<RefCell<WindowInner>>,
+}
+
+impl WindowEntry {
+    fn close(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.window = None;
+        inner.closed = true;
+        drop(inner);
+        self.view
+            .doc
+            .inner_mut()
+            .set_shell_provider(Arc::new(DummyShellProvider));
+    }
+}
+
+pub(crate) struct AppInner {
     /// Live windows keyed by winit `WindowId`.
-    pub(crate) windows: HashMap<WindowId, View<CurrentRenderer>>,
+    pub(crate) windows: HashMap<WindowId, WindowEntry>,
     /// Window configs requested via `openWindow` but not yet promoted to live `View`s.
     pub(crate) pending: Vec<WindowConfig<CurrentRenderer>>,
     /// Proxy for sending events into the event loop (redraw, poll, etc.).
@@ -87,15 +116,17 @@ impl BlitzApp {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         Self {
-            event_loop: Some(event_loop),
-            windows: HashMap::new(),
-            pending: Vec::new(),
-            proxy,
-            event_queue: receiver,
-            closing_window_ids: Vec::new(),
-            bridge: None,
-            outstanding_windows: 0,
-            has_opened_window: false,
+            event_loop,
+            inner: AppInner {
+                windows: HashMap::new(),
+                pending: Vec::new(),
+                proxy,
+                event_queue: receiver,
+                closing_window_ids: Vec::new(),
+                bridge: None,
+                outstanding_windows: 0,
+                has_opened_window: false,
+            },
         }
     }
 
@@ -114,7 +145,7 @@ impl BlitzApp {
     ) -> Result<()> {
         let callback_ref: FunctionRef<AppEventPayload, AppDispatchResult> =
             callback.create_ref()?;
-        self.bridge = Some(JsAppBridge::new(env, callback_ref));
+        self.inner.bridge = Some(JsAppBridge::new(env, callback_ref));
         Ok(())
     }
 
@@ -144,25 +175,25 @@ impl BlitzApp {
         let window_doc = make_window_document(doc);
         let attributes = build_window_attributes(options)?;
         let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
-        self.pending.push(config);
-        self.has_opened_window = true;
-        self.outstanding_windows += 1;
+        self.inner.pending.push(config);
+        self.inner.has_opened_window = true;
+        self.inner.outstanding_windows += 1;
 
         // winit only assigns a WindowId while dispatching through an active
         // event loop. Run one non-blocking pump so the window is created, then
         // grab the Arc<dyn Window> and WindowId straight from the view.
         self.pump_app_events(0.0);
-        let (window_id, native_window) = self
+        let entry = self
+            .inner
             .windows
             .iter()
             .next()
-            .map(|(id, view)| (*id, view.window.clone()))
+            .map(|(_, entry)| entry as &WindowEntry)
             .ok_or_else(|| Error::from_reason("failed to create native window"))?;
 
         Ok(Window {
-            window_id,
-            window: Some(native_window),
-            closed: false,
+            window_id: entry.view.window.id(),
+            inner: Rc::clone(&entry.inner),
         })
     }
 
@@ -176,24 +207,27 @@ impl BlitzApp {
     #[napi]
     pub fn close_window(&mut self, window: &mut Window) {
         let window_id = window.window_id;
+        let mut inner = window.inner.borrow_mut();
 
         // Public JS API guarantee: close() is idempotent. Multiple calls are
         // common when listeners race with UI state updates, so only the first
         // one has side effects.
-        if window.closed || self.closing_window_ids.contains(&window_id) {
-            window.closed = true;
+        if inner.closed || self.inner.closing_window_ids.contains(&window_id) {
+            inner.closed = true;
             return;
         }
 
-        let was_initialised = self.windows.contains_key(&window_id);
+        let was_initialised = self.inner.windows.contains_key(&window_id);
         if was_initialised {
-            self.closing_window_ids.push(window_id);
+            self.inner.closing_window_ids.push(window_id);
         }
 
-        window.closed = true;
-        window.window = None;
+        inner.closed = true;
+        inner.window = None;
+        drop(inner);
+
         if was_initialised {
-            self.outstanding_windows = self.outstanding_windows.saturating_sub(1);
+            self.inner.outstanding_windows = self.inner.outstanding_windows.saturating_sub(1);
         }
 
         // Live windows are notified from `flush_closing_windows`,
@@ -212,10 +246,12 @@ impl BlitzApp {
     /// no windows have been created yet.
     #[napi]
     pub fn available_monitors(&self) -> Vec<MonitorInfo> {
-        let Some(view) = self.windows.values().next() else {
+        let Some(entry) = self.inner.windows.values().next() else {
             return Vec::new();
         };
-        view.window
+        entry
+            .view
+            .window
             .available_monitors()
             .map(monitor_to_info)
             .collect()
@@ -225,8 +261,8 @@ impl BlitzApp {
     /// created yet.
     #[napi]
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
-        let view = self.windows.values().next()?;
-        view.window.primary_monitor().map(monitor_to_info)
+        let entry = self.inner.windows.values().next()?;
+        entry.view.window.primary_monitor().map(monitor_to_info)
     }
 
     /// Pump pending winit events for at most `millis` milliseconds.
@@ -238,31 +274,24 @@ impl BlitzApp {
 
 impl BlitzApp {
     fn poll_live_views(&mut self) {
-        for view in self.windows.values_mut() {
-            view.poll();
+        for entry in self.inner.windows.values_mut() {
+            entry.view.poll();
         }
     }
 
     fn flush_closing_windows(&mut self) {
-        if self.closing_window_ids.is_empty() {
+        if self.inner.closing_window_ids.is_empty() {
             return;
         }
 
-        let closing_window_ids = std::mem::take(&mut self.closing_window_ids);
+        let closing_window_ids = std::mem::take(&mut self.inner.closing_window_ids);
         for window_id in closing_window_ids {
-            if let Some(mut view) = self.windows.remove(&window_id) {
-                // `View::init` stores a `BlitzShellProvider` in the document.
-                // That provider owns an `Arc<dyn winit::Window>`, so simply
-                // dropping `View` is not enough to make the OS window go away.
-                // Swap the provider back to the dummy implementation first so
-                // the winit window Arc can actually reach zero.
-                view.doc
-                    .inner_mut()
-                    .set_shell_provider(Arc::new(DummyShellProvider));
-                drop(view);
+            if let Some(mut entry) = self.inner.windows.remove(&window_id) {
+                entry.close();
+                drop(entry);
             }
 
-            if let Some(bridge) = self.bridge.as_ref() {
+            if let Some(bridge) = self.inner.bridge.as_ref() {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
                     window_id: BigInt::from(window_id.into_raw() as u64),
@@ -297,7 +326,7 @@ impl BlitzApp {
         // triggers `event_loop.exit()` from inside
         // `BlitzApplication::window_event`, but JS-initiated
         // `BlitzApp::close_window` bypasses winit's pipeline entirely.
-        if self.has_opened_window && self.outstanding_windows == 0 {
+        if self.inner.has_opened_window && self.inner.outstanding_windows == 0 {
             return PumpResult {
                 r#continue: false,
                 exit: true,
@@ -307,14 +336,11 @@ impl BlitzApp {
 
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
 
-        // Take event_loop out so the handler can borrow the rest of `self`.
-        let mut event_loop = self.event_loop.take().expect("event_loop taken");
-        let mut handler = AppHandler { app: self };
-        let status = event_loop.pump_app_events(timeout, &mut handler);
-        self.event_loop = Some(event_loop);
+        let mut handler = AppHandler {
+            inner: &mut self.inner,
+        };
+        let status = self.event_loop.pump_app_events(timeout, &mut handler);
         self.flush_closing_windows();
-        // Also catch synchronous mutations that happened inside native event
-        // callbacks before returning to JS.
         self.poll_live_views();
 
         match status {

@@ -336,6 +336,7 @@ pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_
 /// Like `Node::print_tree` but returns a `String`. Needed because the
 /// finalizer holds a mutable borrow on the document and cannot call
 /// `print_tree` (which would re-borrow the tree immutably).
+#[cfg(debug_assertions)]
 fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> String {
     if level > max_level {
         return format!("{} ... (max_level)\n", "  ".repeat(level));
