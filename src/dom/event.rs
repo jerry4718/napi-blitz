@@ -25,8 +25,8 @@ use crate::dom::{
 use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
     traits::events::{
-        BlitzImeEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, DomEvent, DomEventData,
-        DomEventKind, EventState, KeyState,
+        BlitzImeEvent, BlitzPointerId, BlitzWheelDelta, DomEvent, DomEventData, EventState,
+        KeyState,
     },
 };
 use napi::{
@@ -399,7 +399,7 @@ fn serialize_event(event: &DomEvent) -> EventPayload {
 }
 
 fn pointer_from(data: &DomEventData) -> Option<PointerData> {
-    match data {
+    let p = match data {
         DomEventData::PointerMove(p)
         | DomEventData::PointerDown(p)
         | DomEventData::PointerUp(p)
@@ -416,78 +416,49 @@ fn pointer_from(data: &DomEventData) -> Option<PointerData> {
         | DomEventData::MouseOut(p)
         | DomEventData::Click(p)
         | DomEventData::ContextMenu(p)
-        | DomEventData::DoubleClick(p) => Some(serialize_pointer(p)),
-        _ => None,
-    }
-}
-
-fn serialize_pointer(p: &BlitzPointerEvent) -> PointerData {
+        | DomEventData::DoubleClick(p) => p,
+        _ => return None,
+    };
     let (kind, pointer_id) = match p.id {
         BlitzPointerId::Mouse => ("mouse", 1.0),
         BlitzPointerId::Pen => ("pen", 1.0),
         BlitzPointerId::Finger(id) => ("finger", id as f64),
     };
-    PointerData {
+    Some(PointerData {
+        inner: std::sync::Arc::new(p.clone()),
         kind: kind.to_string(),
         pointer_id,
-        is_primary: p.is_primary,
-        page_x: p.coords.page_x as f64,
-        page_y: p.coords.page_y as f64,
-        client_x: p.coords.client_x as f64,
-        client_y: p.coords.client_y as f64,
-        screen_x: p.coords.screen_x as f64,
-        screen_y: p.coords.screen_y as f64,
-        button: p.button as i32,
-        buttons: p.buttons.bits() as u32,
-        pressure: p.details.pressure,
-        tilt_x: p.details.tilt_x as i32,
-        tilt_y: p.details.tilt_y as i32,
-        twist: p.details.twist as u32,
-        mods_bits: p.mods.bits(),
-    }
+    })
 }
 
 fn wheel_from(data: &DomEventData) -> Option<WheelData> {
     let DomEventData::Wheel(w) = data else {
         return None;
     };
-    let (mode, dx, dy) = match w.delta {
+    let (mode, delta_x, delta_y) = match w.delta {
         BlitzWheelDelta::Lines(x, y) => ("lines", x, y),
         BlitzWheelDelta::Pixels(x, y) => ("pixels", x, y),
     };
     Some(WheelData {
+        inner: std::sync::Arc::new(w.clone()),
         mode: mode.to_string(),
-        delta_x: dx,
-        delta_y: dy,
-        page_x: w.coords.page_x as f64,
-        page_y: w.coords.page_y as f64,
-        client_x: w.coords.client_x as f64,
-        client_y: w.coords.client_y as f64,
-        buttons: w.buttons.bits() as u32,
-        mods_bits: w.mods.bits(),
+        delta_x,
+        delta_y,
     })
 }
 
 fn key_from(data: &DomEventData) -> Option<KeyData> {
-    let (k, kind) = match data {
-        DomEventData::KeyDown(k) => (k, DomEventKind::KeyDown),
-        DomEventData::KeyUp(k) => (k, DomEventKind::KeyUp),
-        DomEventData::KeyPress(k) => (k, DomEventKind::KeyPress),
+    let k = match data {
+        DomEventData::KeyDown(k) | DomEventData::KeyUp(k) | DomEventData::KeyPress(k) => k,
         _ => return None,
     };
-    let _ = kind;
+    let state = match k.state {
+        KeyState::Pressed => "pressed",
+        KeyState::Released => "released",
+    };
     Some(KeyData {
-        key: k.key.to_string(),
-        code: k.code.to_string(),
-        location: k.location as u32,
-        mods_bits: k.modifiers.bits(),
-        repeat: k.is_auto_repeating,
-        is_composing: k.is_composing,
-        state: match k.state {
-            KeyState::Pressed => "pressed".to_string(),
-            KeyState::Released => "released".to_string(),
-        },
-        text: k.text.as_ref().map(|s| s.to_string()),
+        inner: std::sync::Arc::new(k.clone()),
+        state: state.to_string(),
     })
 }
 

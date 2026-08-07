@@ -149,11 +149,11 @@ export class BlitzApp extends EventTarget {
       return {defaultPrevented: false};
     }
 
-    if (payload.eventType === "close") {
+    if (payload.type === "close") {
       const proceed = window._dispatchClose();
       return {defaultPrevented: !proceed};
     }
-    if (payload.eventType === "closed") {
+    if (payload.type === "closed") {
       // The window is gone on the native side. Mirror that on the JS
       // side and dispatch the matching events.
       this._windows.delete(payload.windowId);

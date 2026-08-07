@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, ptr, rc::Weak};
 
-use blitz::dom::{BaseDocument, NodeId};
+use blitz::dom::{BaseDocument, Node, NodeId};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 use crate::dom::doc::SharedDoc;
@@ -274,10 +274,7 @@ unsafe extern "C" fn node_finalizer(
     let is_detached = hint_node.parent.is_none();
 
     #[cfg(debug_assertions)]
-    println!(
-        "node_finalizer: {}, is_detached: {}",
-        hint.node_id, is_detached
-    );
+    let node_tree = node_tree_string(Some(hint_node), 1, 4);
 
     if is_detached {
         // Check if any descendant still has a live JS wrapper.
@@ -285,6 +282,14 @@ unsafe extern "C" fn node_finalizer(
         let cache = doc.node_cache.borrow();
         if !has_live_descendant(&doc_mut, &cache, hint.node_id) {
             drop(cache);
+            #[cfg(debug_assertions)]
+            {
+                println!(
+                    "node_finalizer: {} is_detached: {}",
+                    hint.node_id, is_detached
+                );
+                print!("{}", node_tree);
+            }
             doc_mut.mutate().remove_and_drop_node(hint.node_id);
             return;
         }
@@ -326,6 +331,34 @@ pub fn cleanup_detached_subtree(doc: &mut BaseDocument, cache: &NodeCache, node_
         node_id, top
     );
     doc.mutate().remove_and_drop_node(top);
+}
+
+/// Like `Node::print_tree` but returns a `String`. Needed because the
+/// finalizer holds a mutable borrow on the document and cannot call
+/// `print_tree` (which would re-borrow the tree immutably).
+fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> String {
+    if level > max_level {
+        return format!("{} ... (max_level)\n", "  ".repeat(level));
+    }
+    let Some(node) = node else {
+        return format!("{} (missing)\n", "  ".repeat(level));
+    };
+    let mut out = format!(
+        "{} {} {:?} {} {:?}\n",
+        "  ".repeat(level),
+        node.id,
+        node.parent,
+        node.node_debug_str().replace('\n', ""),
+        node.children
+    );
+    for &child_id in &*node.children {
+        out.push_str(&node_tree_string(
+            node.try_with(child_id),
+            level + 1,
+            max_level,
+        ));
+    }
+    out
 }
 
 /// Recursively check if any descendant of `node_id` has an entry in

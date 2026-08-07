@@ -270,6 +270,59 @@ export declare class DocHandle {
   bodyElement(): object | null
 }
 
+/**
+ * One DomEvent serialized for JS consumption.
+ *
+ * Built once per event and passed to the registered JS event factory.
+ * Rust drives the capture/target/bubble walk separately.
+ */
+export declare class EventPayload {
+  /** Event name in DOM-spec lowercased form, e.g. "click", "pointerdown". */
+  get type(): string
+  /** `event.bubbles` */
+  get bubbles(): boolean
+  /** `event.cancelable` */
+  get cancelable(): boolean
+  /** Pointer/mouse details, when applicable. */
+  get pointer(): PointerData | null
+  /** Wheel delta, when applicable. */
+  get wheel(): WheelData | null
+  /** Keyboard details, when applicable. */
+  get key(): KeyData | null
+  /** `<input>` value carried by `Input` events. */
+  get input(): InputData | null
+  /** IME details, when applicable. */
+  get ime(): ImeData | null
+}
+
+export declare class ImeData {
+  /** "enabled" | "disabled" | "preedit" | "commit" | "deleteSurrounding" */
+  get kind(): string
+  get text(): string | null
+  get cursorStart(): number | null
+  get cursorEnd(): number | null
+  get beforeBytes(): number | null
+  get afterBytes(): number | null
+}
+
+export declare class InputData {
+  get value(): string
+}
+
+export declare class KeyData {
+  /** e.g. "a", "ArrowLeft", "Enter" */
+  get key(): string
+  /** e.g. "KeyA", "ArrowLeft", "Enter" */
+  get code(): string
+  get location(): number
+  get modsBits(): number
+  get repeat(): boolean
+  get isComposing(): boolean
+  /** "pressed" | "released" */
+  get state(): string
+  get text(): string | null
+}
+
 /** Information about a monitor. Wraps winit's `MonitorHandle`. */
 export declare class MonitorInfo {
   get id(): string
@@ -322,12 +375,46 @@ export declare class NodeHandle {
   get clientWidth(): number
 }
 
+export declare class PointerData {
+  /** "mouse" | "pen" | "finger" */
+  get kind(): string
+  /** Pointer id; for mouse / pen this is 1, for finger it's the finger id. */
+  get pointerId(): number
+  get isPrimary(): boolean
+  get pageX(): number
+  get pageY(): number
+  get clientX(): number
+  get clientY(): number
+  get screenX(): number
+  get screenY(): number
+  get button(): number
+  get buttons(): number
+  get pressure(): number
+  get tiltX(): number
+  get tiltY(): number
+  get twist(): number
+  get modsBits(): number
+}
+
 /** A fullscreen video mode of a monitor. Wraps winit's `VideoMode`. */
 export declare class VideoModeInfo {
   get width(): number
   get height(): number
   get bitDepth(): number | null
   get refreshRateMillihertz(): number | null
+}
+
+export declare class WheelData {
+  /** "lines" | "pixels" */
+  get mode(): string
+  get deltaX(): number
+  get deltaY(): number
+  get pageX(): number
+  get pageY(): number
+  get clientX(): number
+  get clientY(): number
+  get buttons(): number
+  get modsBits(): number
 }
 
 /** Handle to an open window. Construct via `BlitzApp.openWindow`. */
@@ -396,7 +483,7 @@ export interface AppDispatchResult {
 /** Payload handed to the JS-side app-event handler. */
 export interface AppEventPayload {
   /** `"close" | "closed"` for now. */
-  eventType: string
+  type: string
   /**
    * Opaque window identifier. JS uses this to look up the
    * matching `Window` wrapper.
@@ -445,65 +532,12 @@ export interface DomRect {
   right: number
 }
 
-/**
- * One DomEvent serialized for JS consumption.
- *
- * Built once per event and passed to the registered JS event factory.
- * Rust drives the capture/target/bubble walk separately.
- */
-export interface EventPayload {
-  /** Event name in DOM-spec lowercased form, e.g. "click", "pointerdown". */
-  eventType: string
-  /** `event.bubbles` */
-  bubbles: boolean
-  /** `event.cancelable` */
-  cancelable: boolean
-  /** Pointer/mouse details, when applicable. */
-  pointer?: PointerData
-  /** Wheel delta, when applicable. */
-  wheel?: WheelData
-  /** Keyboard details, when applicable. */
-  key?: KeyData
-  /** `<input>` value carried by `Input` events. */
-  input?: InputData
-  /** IME details, when applicable. */
-  ime?: ImeData
-}
-
 /** Extension filter entry, e.g. `{ name: "Images", extensions: ["png", "jpg"] }`. */
 export interface FileFilter {
   /** Display name shown in the filter dropdown. */
   name: string
   /** File extensions without leading dot, e.g. `["png", "jpg"]`. */
   extensions: Array<string>
-}
-
-export interface ImeData {
-  /** "enabled" | "disabled" | "preedit" | "commit" | "deleteSurrounding" */
-  kind: string
-  text?: string
-  cursorStart?: number
-  cursorEnd?: number
-  beforeBytes?: number
-  afterBytes?: number
-}
-
-export interface InputData {
-  value: string
-}
-
-export interface KeyData {
-  /** e.g. "a", "ArrowLeft", "Enter" */
-  key: string
-  /** e.g. "KeyA", "ArrowLeft", "Enter" */
-  code: string
-  location: number
-  modsBits: number
-  repeat: boolean
-  isComposing: boolean
-  /** "pressed" | "released" */
-  state: string
-  text?: string
 }
 
 /** Open a single-file picker. Returns the chosen path or `null`. */
@@ -517,27 +551,6 @@ export declare function pickFolder(options?: DialogOptions | undefined | null): 
 
 /** Open a multi-folder picker. Returns an array of paths (may be empty). */
 export declare function pickFolders(options?: DialogOptions | undefined | null): Promise<Array<string>>
-
-export interface PointerData {
-  /** "mouse" | "pen" | "finger" */
-  kind: string
-  /** Pointer id; for mouse / pen this is 1, for finger it's the finger id. */
-  pointerId: number
-  isPrimary: boolean
-  pageX: number
-  pageY: number
-  clientX: number
-  clientY: number
-  screenX: number
-  screenY: number
-  button: number
-  buttons: number
-  pressure: number
-  tiltX: number
-  tiltY: number
-  twist: number
-  modsBits: number
-}
 
 /** Result of one `pumpAppEvents` call. */
 export interface PumpResult {
@@ -563,16 +576,3 @@ export declare function registerNodeConstructor(nodeType: number, constructor: (
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null): Promise<string | null>
-
-export interface WheelData {
-  /** "lines" | "pixels" */
-  mode: string
-  deltaX: number
-  deltaY: number
-  pageX: number
-  pageY: number
-  clientX: number
-  clientY: number
-  buttons: number
-  modsBits: number
-}

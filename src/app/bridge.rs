@@ -15,6 +15,7 @@ pub const APP_EVENT_CLOSED: &str = "closed";
 #[napi(object)]
 pub struct AppEventPayload {
     /// `"close" | "closed"` for now.
+    #[napi(js_name = "type")]
     pub event_type: String,
     /// Opaque window identifier. JS uses this to look up the
     /// matching `Window` wrapper.

@@ -33,12 +33,14 @@ export {FontFaceSet} from "./fonts/font-face-set";
 export type {FontFaceSetLoadStatus} from "./fonts/font-face-set";
 
 export {
-  BlitzDomEvent,
-  BlitzPointerEvent,
-  BlitzWheelEvent,
-  BlitzKeyboardEvent,
-  BlitzInputEvent,
-  BlitzImeEvent,
+  UIEvent,
+  MouseEvent,
+  PointerEvent,
+  WheelEvent,
+  KeyboardEvent,
+  InputEvent,
+  CompositionEvent,
+  FocusEvent,
 } from "./events/events";
 
 export type {

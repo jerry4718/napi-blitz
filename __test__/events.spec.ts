@@ -11,7 +11,7 @@
 
 import test from "ava";
 
-import { BlitzDomEvent, BlitzPointerEvent, HTMLDocument } from "../dist/index.js";
+import { UIEvent, PointerEvent, HTMLDocument } from "../dist/index.js";
 import type { Node } from "../dist/index.js";
 
 /**
@@ -29,7 +29,7 @@ function bubbleDispatch(target: Node, event: Event): void {
 }
 
 test("event subclasses are exported", (t) => {
-  t.true(typeof BlitzPointerEvent === "function");
+  t.true(typeof PointerEvent === "function");
 });
 
 test("event chain: bubble + stopPropagation", (t) => {
@@ -48,8 +48,8 @@ test("event chain: bubble + stopPropagation", (t) => {
     e.stopPropagation();
   });
 
-  const event = new BlitzDomEvent(
-    { eventType: "click", bubbles: true, cancelable: true },
+  const event = new UIEvent(
+    { type: "click", bubbles: true, cancelable: true },
   );
   bubbleDispatch(inner, event);
 
@@ -70,8 +70,8 @@ test("event chain: full bubble when no stop", (t) => {
   outer.addEventListener("click", () => calls.push("outer"));
   inner.addEventListener("click", () => calls.push("inner"));
 
-  const event = new BlitzDomEvent(
-    { eventType: "click", bubbles: true, cancelable: true },
+  const event = new UIEvent(
+    { type: "click", bubbles: true, cancelable: true },
   );
   bubbleDispatch(inner, event);
 
@@ -86,8 +86,8 @@ test("event chain: preventDefault is reported", (t) => {
 
   el.addEventListener("click", (e) => e.preventDefault());
 
-  const event = new BlitzDomEvent(
-    { eventType: "click", bubbles: true, cancelable: true },
+  const event = new UIEvent(
+    { type: "click", bubbles: true, cancelable: true },
   );
   el.dispatchEvent(event);
   t.true(event.defaultPrevented);
@@ -104,8 +104,8 @@ test("event.target stays pinned to the originating node", (t) => {
     observed = e.target;
   });
 
-  const event = new BlitzDomEvent(
-    { eventType: "click", bubbles: true, cancelable: true },
+  const event = new UIEvent(
+    { type: "click", bubbles: true, cancelable: true },
   );
   // Set target before dispatching, mirroring what Rust does via
   // __setLazyTarget / Object.defineProperty.

@@ -12,25 +12,5 @@
 
 import {CharacterData} from "./character-data";
 
-let warnedCommentDataIgnored = false;
-
 export class Comment extends CharacterData {
-  override get data(): string {
-    return super.data;
-  }
-
-  override set data(value: string) {
-    if (value !== "" && !warnedCommentDataIgnored) {
-      warnedCommentDataIgnored = true;
-      // Match the standard `console.warn` shape consumers expect from
-      // user-agent diagnostics. Fired once per process.
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[napi-blitz] Comment.data writes are ignored: blitz's NodeData::Comment " +
-        "currently has no string payload. The API is preserved for spec parity.",
-      );
-    }
-    super.data = value;
-  }
 }
-
