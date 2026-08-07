@@ -114,7 +114,6 @@ strip = "symbols"
 # Release builds use the git source instead of the local path.
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
-#
 [patch.crates-io]
 blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }
 blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "a46e9b5402d1047e2636e07eef22ffad46ceb822" }

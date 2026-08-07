@@ -151,20 +151,14 @@ impl BlitzApp {
         self.outstanding_windows += 1;
 
         // winit only assigns a WindowId while dispatching through an active
-        // event loop. Run one non-blocking pump so the returned handle can
-        // store the real Copy + Clone WindowId directly.
+        // event loop. Run one non-blocking pump so the window is created, then
+        // grab the Arc<dyn Window> straight from the view.
         self.pump_app_events(0.0);
-        let window_id = self
-            .windows
-            .iter()
-            .find_map(|(id, view)| (view.doc.id() == doc_id).then_some(*id))
-            .ok_or_else(|| Error::from_reason("failed to create native window"))?;
         let native_window = self
             .windows
-            .get(&window_id)
-            .expect("window exists after lookup")
-            .window
-            .clone();
+            .iter()
+            .find_map(|(_, view)| (view.doc.id() == doc_id).then_some(view.window.clone()))
+            .ok_or_else(|| Error::from_reason("failed to create native window"))?;
 
         Ok(Window {
             doc_id,

@@ -20,7 +20,7 @@ use std::sync::Arc;
 use napi::{Error, Result, bindgen_prelude::Uint8Array};
 use napi_derive::napi;
 use winit::monitor::Fullscreen;
-use winit::window::{WindowButtons, WindowId};
+use winit::window::WindowButtons;
 
 use crate::native_window::monitor::{MonitorInfo, VideoModeInfo};
 
