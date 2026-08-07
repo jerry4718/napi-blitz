@@ -1,4 +1,4 @@
-//! `JsAppHandler`: our own `winit::ApplicationHandler` that manages
+//! `AppHandler`: our own `winit::ApplicationHandler` that manages
 //! `View` lifecycle and event dispatch directly, without going through
 //! blitz-shell's `BlitzApplication`.
 //!
@@ -6,29 +6,26 @@
 
 use std::sync::Arc;
 
-use blitz::shell::{BlitzShellEvent, View};
-use blitz::traits::shell::DummyShellProvider;
+use blitz::{
+    shell::{BlitzShellEvent, View},
+    traits::shell::DummyShellProvider,
+};
 use napi::bindgen_prelude::BigInt;
 use winit::{
     application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop,
-    window::WindowId,
+    window::WindowId as WinitWindowId,
 };
 
-use crate::native_window::app::BlitzApp;
-use crate::native_window::app_bridge::{
-    APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload, JsAppBridge,
+use crate::app::{
+    BlitzApp,
+    bridge::{APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload},
 };
 
-pub struct JsAppHandler<'a> {
+pub struct AppHandler<'a> {
     pub app: &'a mut BlitzApp,
 }
 
-impl<'a> JsAppHandler<'a> {
-    /// Look up the doc id for a given winit `WindowId`.
-    fn doc_id_for(&self, window_id: WindowId) -> Option<usize> {
-        self.app.windows.get(&window_id).map(|view| view.doc.id())
-    }
-
+impl<'a> AppHandler<'a> {
     /// Promote pending `WindowConfig`s into live `View`s. winit only
     /// fires `can_create_surfaces` on initial resume, so we must run
     /// this from every hook that has an `ActiveEventLoop`.
@@ -38,7 +35,7 @@ impl<'a> JsAppHandler<'a> {
         }
         let proxy = self.app.proxy.clone();
         let configs = std::mem::take(&mut self.app.pending);
-        for (_doc_id, config) in configs {
+        for config in configs {
             let mut view = View::init(config, event_loop, &proxy);
             view.resume();
             self.app.windows.insert(view.window_id(), view);
@@ -86,7 +83,7 @@ impl<'a> JsAppHandler<'a> {
     }
 }
 
-impl<'a> ApplicationHandler for JsAppHandler<'a> {
+impl<'a> ApplicationHandler for AppHandler<'a> {
     fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -104,20 +101,21 @@ impl<'a> ApplicationHandler for JsAppHandler<'a> {
     fn window_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
-        window_id: WindowId,
+        window_id: WinitWindowId,
         event: WindowEvent,
     ) {
         if matches!(event, WindowEvent::CloseRequested) {
-            let doc_id = match self.doc_id_for(window_id) {
-                Some(id) => id,
-                None => return,
-            };
+            if !self.app.windows.contains_key(&window_id) {
+                return;
+            }
+
+            let wid = BigInt::from(window_id.into_raw() as u64);
 
             // Phase 1: dispatch a cancelable `close` event to JS.
             if let Some(bridge) = self.app.bridge.as_ref() {
                 let result = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSE.to_string(),
-                    window_doc_id: BigInt::from(doc_id as u64),
+                    window_id: wid.clone(),
                     cancelable: true,
                 });
                 if result.default_prevented {
@@ -142,7 +140,7 @@ impl<'a> ApplicationHandler for JsAppHandler<'a> {
             if let Some(bridge) = self.app.bridge.as_ref() {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
-                    window_doc_id: BigInt::from(doc_id as u64),
+                    window_id: wid,
                     cancelable: false,
                 });
             }

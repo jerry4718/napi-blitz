@@ -1,6 +1,6 @@
 //! Headless RGBA buffer rendering for Blitz documents.
 //!
-//! This module is intentionally separate from [`crate::native_window::app::BlitzApp`]. The
+//! This module is intentionally separate from [`crate::app::BlitzApp`]. The
 //! native app path owns a winit event loop and paints into OS windows. The
 //! buffer path owns no window and no event loop: callers mutate a `DocHandle`,
 //! then ask this renderer to resolve layout/paint into an RGBA frame that the
@@ -10,11 +10,10 @@ use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz::{
     dom::util::Color,
+    paint::paint_scene,
     traits::shell::{ColorScheme, Viewport},
 };
-use blitz_paint::paint_scene;
 use napi::{Error, Result, bindgen_prelude::Uint8Array};
-use napi_derive::napi;
 use peniko::{Fill, kurbo::Rect};
 
 use crate::doc::DocHandle;

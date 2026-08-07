@@ -13,7 +13,6 @@ use napi::{
     Env, Error, Result,
     bindgen_prelude::{BigInt, Object},
 };
-use napi_derive::napi;
 use style::{Atom, invalidation::element::restyle_hints::RestyleHint, properties::PropertyId};
 
 use crate::dom::{

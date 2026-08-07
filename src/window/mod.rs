@@ -15,14 +15,21 @@
 //! reference back to the live winit `Arc<dyn Window>` - the application
 //! does. The JS layer's `Window` class delegates these calls to the app.
 
+pub mod monitor;
+
 use std::sync::Arc;
 
-use napi::{Error, Result, bindgen_prelude::Uint8Array};
-use napi_derive::napi;
-use winit::monitor::Fullscreen;
-use winit::window::WindowButtons;
-
-use crate::native_window::monitor::{MonitorInfo, VideoModeInfo};
+use monitor::{MonitorInfo, VideoModeInfo};
+use napi::{
+    Error, Result,
+    bindgen_prelude::{BigInt, Uint8Array},
+};
+use winit::{
+    dpi::PhysicalSize,
+    icon::{Icon, RgbaIcon},
+    monitor::Fullscreen,
+    window::{Window as WinitWindow, WindowAttributes, WindowButtons},
+};
 
 /// Options accepted by `BlitzApp.openWindow`. Construct via
 /// `WindowOptions.builder()`.
@@ -162,18 +169,18 @@ impl WindowOptions {
 /// Handle to an open window. Construct via `BlitzApp.openWindow`.
 #[napi]
 pub struct Window {
-    /// blitz `BaseDocument` id; uniquely identifies the window for as long as
+    /// winit `WindowId`; uniquely identifies the window for as long as
     /// it is open. Internal-only - the JS layer does not need to see this.
-    pub(crate) doc_id: usize,
+    pub(crate) window_id: winit::window::WindowId,
     /// Shared handle to the same native window held by `View`.
-    pub(crate) window: Option<Arc<dyn winit::window::Window>>,
+    pub(crate) window: Option<Arc<dyn WinitWindow>>,
     /// Set to true once `BlitzApp.close_window` has run for this window.
     pub(crate) closed: bool,
 }
 
 #[napi]
 impl Window {
-    fn native_window(&self) -> Result<&dyn winit::window::Window> {
+    fn native_window(&self) -> Result<&dyn WinitWindow> {
         self.window
             .as_deref()
             .ok_or_else(|| Error::from_reason("window is closed"))
@@ -185,12 +192,11 @@ impl Window {
         self.closed
     }
 
-    /// Internal blitz `BaseDocument` id of the attached document. JS
-    /// uses this to map app-event payloads back to the right `Window`
-    /// wrapper. Stable for the lifetime of the window.
+    /// Opaque window identifier. JS uses this to map app-event payloads
+    /// back to the right `Window` wrapper.
     #[napi(getter)]
-    pub fn doc_id(&self) -> u64 {
-        self.doc_id as u64
+    pub fn window_id(&self) -> BigInt {
+        BigInt::from(self.window_id.into_raw() as u64)
     }
 
     #[napi]
@@ -205,7 +211,7 @@ impl Window {
         let height = parse_dimension("height", height)?;
         let _ = self
             .native_window()?
-            .request_surface_size(winit::dpi::PhysicalSize::new(width, height).into());
+            .request_surface_size(PhysicalSize::new(width, height).into());
         Ok(())
     }
 
@@ -233,7 +239,7 @@ impl Window {
         let width = parse_dimension("minWidth", width)?;
         let height = parse_dimension("minHeight", height)?;
         self.native_window()?
-            .set_min_surface_size(Some(winit::dpi::PhysicalSize::new(width, height).into()));
+            .set_min_surface_size(Some(PhysicalSize::new(width, height).into()));
         Ok(())
     }
 
@@ -242,7 +248,7 @@ impl Window {
         let width = parse_dimension("maxWidth", width)?;
         let height = parse_dimension("maxHeight", height)?;
         self.native_window()?
-            .set_max_surface_size(Some(winit::dpi::PhysicalSize::new(width, height).into()));
+            .set_max_surface_size(Some(PhysicalSize::new(width, height).into()));
         Ok(())
     }
 
@@ -311,19 +317,7 @@ impl Window {
 
     #[napi]
     pub fn set_enabled_buttons(&self, buttons: Vec<String>) -> Result<()> {
-        let mut flags = WindowButtons::empty();
-        for button in buttons {
-            match button.as_str() {
-                "close" => flags |= WindowButtons::CLOSE,
-                "minimize" => flags |= WindowButtons::MINIMIZE,
-                "maximize" => flags |= WindowButtons::MAXIMIZE,
-                other => {
-                    return Err(Error::from_reason(format!(
-                        "enabledButtons: unknown button \"{other}\", expected close/minimize/maximize"
-                    )));
-                }
-            }
-        }
+        let flags = parse_window_buttons(&buttons)?;
         self.native_window()?.set_enabled_buttons(flags);
         Ok(())
     }
@@ -349,15 +343,15 @@ impl Window {
                 pixels.len()
             )));
         }
-        let icon = winit::icon::RgbaIcon::new(pixels.to_vec(), width, height)
-            .map(winit::icon::Icon::from)
+        let icon = RgbaIcon::new(pixels.to_vec(), width, height)
+            .map(Icon::from)
             .map_err(|e| Error::from_reason(format!("windowIcon: {e}")))?;
         self.native_window()?.set_window_icon(Some(icon));
         Ok(())
     }
 }
 
-fn parse_dimension(name: &str, value: f64) -> Result<u32> {
+pub(crate) fn parse_dimension(name: &str, value: f64) -> Result<u32> {
     if !value.is_finite() {
         return Err(Error::from_reason(format!("{name} must be finite")));
     }
@@ -371,4 +365,108 @@ fn parse_dimension(name: &str, value: f64) -> Result<u32> {
         return Err(Error::from_reason(format!("{name} exceeds u32::MAX")));
     }
     Ok(value as u32)
+}
+
+/// Translate `WindowOptions` into a winit `WindowAttributes`. Skipped
+/// fields fall back to winit's platform default.
+pub(crate) fn build_window_attributes(options: Option<&WindowOptions>) -> Result<WindowAttributes> {
+    let mut attrs = WindowAttributes::default();
+    let Some(options) = options else {
+        return Ok(attrs);
+    };
+
+    if let Some(title) = options.title.as_ref() {
+        attrs = attrs.with_title(title.clone());
+    }
+    if let Some((w, h)) = options.size {
+        let w = parse_dimension("width", w)?;
+        let h = parse_dimension("height", h)?;
+        attrs = attrs.with_surface_size(PhysicalSize::new(w, h));
+    }
+    if let Some(resizable) = options.resizable {
+        attrs = attrs.with_resizable(resizable);
+    }
+    if let Some((w, h)) = options.min_size {
+        let w = parse_dimension("minWidth", w)?;
+        let h = parse_dimension("minHeight", h)?;
+        attrs = attrs.with_min_surface_size(PhysicalSize::new(w, h));
+    }
+    if let Some((w, h)) = options.max_size {
+        let w = parse_dimension("maxWidth", w)?;
+        let h = parse_dimension("maxHeight", h)?;
+        attrs = attrs.with_max_surface_size(PhysicalSize::new(w, h));
+    }
+    if let Some(maximized) = options.maximized {
+        attrs = attrs.with_maximized(maximized);
+    }
+    if let Some(visible) = options.visible {
+        attrs = attrs.with_visible(visible);
+    }
+    if let Some(transparent) = options.transparent {
+        attrs = attrs.with_transparent(transparent);
+    }
+    if let Some(blur) = options.blur {
+        attrs = attrs.with_blur(blur);
+    }
+    if let Some(decorations) = options.decorations {
+        attrs = attrs.with_decorations(decorations);
+    }
+    if let Some(fullscreen) = options.fullscreen.as_ref() {
+        attrs = attrs.with_fullscreen(Some(fullscreen.clone()));
+    }
+    if let Some(buttons) = options.enabled_buttons.as_ref() {
+        attrs = attrs.with_enabled_buttons(parse_window_buttons(buttons)?);
+    }
+    if let Some(icon_data) = options.window_icon.as_ref() {
+        attrs = attrs.with_window_icon(Some(parse_window_icon(icon_data)?));
+    }
+    Ok(attrs)
+}
+
+/// Parse JS string array into winit `WindowButtons` bitflags.
+/// Accepted values: `"close"`, `"minimize"`, `"maximize"`.
+pub(crate) fn parse_window_buttons(buttons: &[String]) -> Result<WindowButtons> {
+    let mut flags = WindowButtons::empty();
+    for btn in buttons {
+        match btn.as_str() {
+            "close" => flags |= WindowButtons::CLOSE,
+            "minimize" => flags |= WindowButtons::MINIMIZE,
+            "maximize" => flags |= WindowButtons::MAXIMIZE,
+            other => {
+                return Err(Error::from_reason(format!(
+                    "enabledButtons: unknown button \"{other}\", expected close/minimize/maximize"
+                )));
+            }
+        }
+    }
+    Ok(flags)
+}
+
+/// Parse window icon from raw bytes. Expected layout:
+/// `[width_u32_le, height_u32_le, ...rgba8_pixels]` (8 byte header + w*h*4 bytes).
+pub(crate) fn parse_window_icon(data: &Uint8Array) -> Result<Icon> {
+    let bytes = data.as_ref();
+    if bytes.len() < 8 {
+        return Err(Error::from_reason(
+            "windowIcon: data too short, expected 8-byte header (width, height) + RGBA pixels",
+        ));
+    }
+    let width = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let height = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    let pixels = &bytes[8..];
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| Error::from_reason("windowIcon: width*height*4 overflows usize"))?;
+    if pixels.len() < expected {
+        return Err(Error::from_reason(format!(
+            "windowIcon: pixel data is {} bytes, expected {expected} ({}x{}x4)",
+            pixels.len(),
+            width,
+            height
+        )));
+    }
+    RgbaIcon::new(pixels[..expected].to_vec(), width, height)
+        .map(Icon::from)
+        .map_err(|e| Error::from_reason(format!("windowIcon: failed to create icon: {e}")))
 }

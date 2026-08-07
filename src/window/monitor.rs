@@ -1,6 +1,5 @@
 //! Monitor and video mode types for napi.
 
-use napi_derive::napi;
 use winit::monitor::{MonitorHandle, VideoMode};
 
 /// A fullscreen video mode of a monitor. Wraps winit's `VideoMode`.
@@ -81,4 +80,9 @@ impl MonitorInfo {
             .map(|inner| VideoModeInfo { inner })
             .collect()
     }
+}
+
+/// Convert a winit `MonitorHandle` to a napi `MonitorInfo`.
+pub(crate) fn monitor_to_info(m: MonitorHandle) -> MonitorInfo {
+    MonitorInfo { inner: m }
 }

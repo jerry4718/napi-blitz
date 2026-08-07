@@ -29,7 +29,6 @@ use napi::{
     bindgen_prelude::{Function, Object, Uint8Array},
     sys,
 };
-use napi_derive::napi;
 use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth};
 
 use crate::dom::event::JsEventHandler;
@@ -342,11 +341,6 @@ impl DocHandle {
             self.moved_into_window = true;
             true
         }
-    }
-
-    #[cfg(feature = "native-window")]
-    pub(crate) fn doc_id(&self) -> usize {
-        self.doc.base.borrow().id()
     }
 
     #[napi]

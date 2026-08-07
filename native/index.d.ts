@@ -24,10 +24,8 @@ export declare class BlitzApp {
    * title shortly after open; this is expected, with the document treated
    * as the source of truth for window-title content.
    *
-   * The returned `Window` carries the `doc_id` of the attached document,
-   * which we use as the napi-side window identifier. Note that winit's
-   * real `WindowId` is only minted on the next `pump_app_events` call,
-   * so the doc_id is what we key on for synchronous open/close.
+   * The returned `Window` carries the winit `WindowId` of the created
+   * window, which we use as the napi-side window identifier.
    */
   openWindow(doc: DocHandle, options?: WindowOptions | undefined | null): Window
   /**
@@ -337,11 +335,10 @@ export declare class Window {
   /** Whether `closeWindow` has run for this handle. */
   get closed(): boolean
   /**
-   * Internal blitz `BaseDocument` id of the attached document. JS
-   * uses this to map app-event payloads back to the right `Window`
-   * wrapper. Stable for the lifetime of the window.
+   * Opaque window identifier. JS uses this to map app-event payloads
+   * back to the right `Window` wrapper.
    */
-  get docId(): bigint
+  get windowId(): bigint
   setTitle(title: string): void
   setSize(width: number, height: number): void
   getSize(): Array<number>
@@ -396,19 +393,15 @@ export interface AppDispatchResult {
   defaultPrevented: boolean
 }
 
-/**
- * Payload handed to the JS-side app-event handler. One shape for all
- * of our app/window events; fields not relevant to a given event are
- * left at their defaults.
- */
+/** Payload handed to the JS-side app-event handler. */
 export interface AppEventPayload {
   /** `"close" | "closed"` for now. */
   eventType: string
   /**
-   * `BaseDocument::id` of the window the event refers to. JS uses
-   * this to map back to the right `Window` wrapper.
+   * Opaque window identifier. JS uses this to look up the
+   * matching `Window` wrapper.
    */
-  windowDocId: bigint
+  windowId: bigint
   /**
    * Whether the JS `Event` constructed from this payload should be
    * cancelable. Only `close` is cancelable; `closed` is not.

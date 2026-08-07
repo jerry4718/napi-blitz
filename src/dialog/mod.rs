@@ -3,8 +3,6 @@
 //! All methods are async napi functions so the JS event loop is not
 //! blocked while the native dialog is open.
 
-use napi_derive::napi;
-
 /// Extension filter entry, e.g. `{ name: "Images", extensions: ["png", "jpg"] }`.
 #[napi(object)]
 pub struct FileFilter {

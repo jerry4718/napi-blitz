@@ -7,8 +7,6 @@
 //! directly and reads `event.defaultPrevented` / `event.cancelBubble`
 //! from the JS Event object after each `dispatchEvent` call.
 
-use napi_derive::napi;
-
 /// One DomEvent serialized for JS consumption.
 ///
 /// Built once per event and passed to the registered JS event factory.

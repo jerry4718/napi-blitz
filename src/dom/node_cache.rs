@@ -23,11 +23,10 @@
 
 use std::{collections::HashMap, ptr, rc::Weak};
 
+use blitz::dom::{BaseDocument, NodeId};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 use crate::dom::doc::SharedDoc;
-use blitz::dom::BaseDocument;
-use blitz::dom::NodeId;
 
 /// Data passed to the finalizer as `finalize_data`.
 /// Boxed and leaked; the finalizer reclaims it via `Box::from_raw`.
@@ -56,6 +55,7 @@ impl NodeCache {
     /// Returns `None` if the cache has no entry for `node_id` **or** if the
     /// weak reference is dead (the JS object has been garbage-collected).
     /// Stale entries are NOT removed here (use `sweep` for that).
+    #[allow(unused)]
     pub fn get(&self, node_id: NodeId, env: &Env) -> Option<Object<'_>> {
         let napi_ref = *self.entries.get(&node_id)?;
         let mut value = ptr::null_mut();
@@ -142,6 +142,7 @@ impl NodeCache {
     }
 
     /// Explicitly remove a cache entry and delete the underlying `napi_ref`.
+    #[allow(unused)]
     pub fn remove(&mut self, node_id: NodeId, env: &Env) {
         self.remove_internal(node_id, env);
     }
@@ -172,11 +173,13 @@ impl NodeCache {
     }
 
     /// Number of entries currently in the cache (including potentially stale ones).
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the cache is empty.
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

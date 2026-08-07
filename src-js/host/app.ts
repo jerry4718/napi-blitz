@@ -50,7 +50,7 @@ export class BlitzApp extends EventTarget {
   /** @internal Used by `Window.close()` to delegate back to us. */
   readonly _native: NativeBlitzApp;
 
-  /** Live windows, keyed by their attached document's `docId`. */
+  /** Live windows, keyed by their `windowId`. */
   private readonly _windows: Map<bigint, Window> = new Map();
 
   private constructor(native: NativeBlitzApp) {
@@ -79,7 +79,7 @@ export class BlitzApp extends EventTarget {
       options,
     );
     const window = new Window(this, nativeWindow, document);
-    this._windows.set(nativeWindow.docId, window);
+    this._windows.set(nativeWindow.windowId, window);
 
     this.dispatchEvent(
       new CustomEvent("windowopen", {detail: {window}}),
@@ -98,9 +98,9 @@ export class BlitzApp extends EventTarget {
    * `windowclose` and `windowclosed` on this app.
    */
   closeWindow(window: Window): void {
-    if (!this._windows.has(pluckWindow(window)._nativeWindow.docId)) return;
+    if (!this._windows.has(pluckWindow(window)._nativeWindow.windowId)) return;
     if (window.closed) {
-      this._windows.delete(pluckWindow(window)._nativeWindow.docId);
+      this._windows.delete(pluckWindow(window)._nativeWindow.windowId);
       return;
     }
     if (!window._dispatchClose()) {
@@ -113,8 +113,8 @@ export class BlitzApp extends EventTarget {
     // To avoid a duplicate `closed` from the bridge, drop the window
     // from our map *before* calling native: when the bridge fires we
     // will not find a wrapper and skip the JS dispatch.
-    const docId = pluckWindow(window)._nativeWindow.docId;
-    this._windows.delete(docId);
+    const windowId = pluckWindow(window)._nativeWindow.windowId;
+    this._windows.delete(windowId);
 
     this._native.closeWindow(pluckWindow(window)._nativeWindow);
 
@@ -143,7 +143,7 @@ export class BlitzApp extends EventTarget {
    * decide whether to respect `preventDefault()`.
    */
   private _dispatchFromNative(payload: AppEventPayload): AppDispatchResult {
-    const window = this._windows.get(payload.windowDocId);
+    const window = this._windows.get(payload.windowId);
     if (window === undefined) {
       // Window already gone from our map — nothing to dispatch.
       return {defaultPrevented: false};
@@ -156,7 +156,7 @@ export class BlitzApp extends EventTarget {
     if (payload.eventType === "closed") {
       // The window is gone on the native side. Mirror that on the JS
       // side and dispatch the matching events.
-      this._windows.delete(payload.windowDocId);
+      this._windows.delete(payload.windowId);
       window._dispatchClosed();
       this.dispatchEvent(
         new CustomEvent("windowclose", {detail: {window}}),

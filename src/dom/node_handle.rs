@@ -1,6 +1,5 @@
 use blitz::dom::{LocalName, NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_derive::napi;
 use style::properties::PropertyId;
 
 use crate::dom::{

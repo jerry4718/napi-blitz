@@ -57,12 +57,12 @@ export class Window extends EventTarget {
   }
 
   /**
-   * Stable numeric id of the document attached to this window. Mirrors
-   * the native `doc_id` and is used by `BlitzApp` to look up windows
-   * routed from the OS event handler.
+   * Opaque window identifier. Mirrors the native `window_id`
+   * and is used by `BlitzApp` to look up windows routed from the
+   * OS event handler.
    */
-  get docId(): bigint {
-    return this._nativeWindow.docId;
+  get windowId(): bigint {
+    return this._nativeWindow.windowId;
   }
 
   /** Whether the window has been closed. */
