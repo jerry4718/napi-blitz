@@ -204,6 +204,19 @@ export class Window extends EventTarget {
   setWindowIcon(data: Uint8Array): void {
     this._nativeWindow.setWindowIcon(data);
   }
+
+  /**
+   * Set the document zoom level. `1.0` is unzoomed. The total viewport
+   * scale is `hidpi_scale * zoom`, which scales layout and CSS transforms.
+   */
+  setZoom(zoom: number): void {
+    this._app.setZoom(this, zoom);
+  }
+
+  /** Get the current document zoom level. */
+  getZoom(): number {
+    return this._app.getZoom(this);
+  }
 }
 
 /** Internals viewed by the package's friend modules. */

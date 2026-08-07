@@ -50,6 +50,14 @@ export declare class BlitzApp {
   primaryMonitor(): MonitorInfo | null
   /** Pump pending winit events for at most `millis` milliseconds. */
   pumpAppEvents(millis: number): PumpResult
+  /**
+   * Set the document zoom level. `1.0` is unzoomed. Combined with the
+   * system scale factor to produce the total viewport scale
+   * (`hidpi_scale * zoom`) that scales layout and CSS transforms.
+   */
+  setZoom(window: Window, zoom: number): void
+  /** Get the current document zoom level. */
+  getZoom(window: Window): number
 }
 
 export declare class DocHandle {

@@ -137,6 +137,16 @@ export class BlitzApp extends EventTarget {
     return this._native.pumpAppEvents(millis);
   }
 
+  /** Set the document zoom level for a window. `1.0` is unzoomed. */
+  setZoom(window: Window, zoom: number): void {
+    this._native.setZoom(pluckWindow(window)._nativeWindow, zoom);
+  }
+
+  /** Get the current document zoom level for a window. */
+  getZoom(window: Window): number {
+    return this._native.getZoom(pluckWindow(window)._nativeWindow);
+  }
+
   /**
    * @internal Receive an app event the native side serialized while
    * inside `pumpAppEvents`. Returns the dispatch result so native can

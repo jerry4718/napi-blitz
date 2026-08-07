@@ -270,6 +270,31 @@ impl BlitzApp {
     pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
         self.pump_app_events_inner(millis)
     }
+
+    /// Set the document zoom level. `1.0` is unzoomed. Combined with the
+    /// system scale factor to produce the total viewport scale
+    /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
+    #[napi]
+    pub fn set_zoom(&mut self, window: &Window, zoom: f64) -> Result<()> {
+        let entry = self
+            .inner
+            .windows
+            .get_mut(&window.window_id)
+            .ok_or_else(|| Error::from_reason("window not found"))?;
+        entry.view.with_viewport(|v| v.set_zoom(zoom as f32));
+        Ok(())
+    }
+
+    /// Get the current document zoom level.
+    #[napi]
+    pub fn get_zoom(&self, window: &Window) -> Result<f32> {
+        let entry = self
+            .inner
+            .windows
+            .get(&window.window_id)
+            .ok_or_else(|| Error::from_reason("window not found"))?;
+        Ok(entry.view.doc.inner().viewport().zoom())
+    }
 }
 
 impl BlitzApp {
