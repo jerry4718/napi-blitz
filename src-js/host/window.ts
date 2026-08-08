@@ -29,7 +29,7 @@
 
 import type {BlitzApp} from "./app";
 import type {HTMLDocument} from "../document/html-document";
-import type {MonitorInfo, VideoModeInfo} from "../native";
+import type {MonitorInfo, VideoModeInfo, WindowHandle} from "../native";
 import {NativeWindow} from "../native";
 
 export class Window extends EventTarget {
@@ -204,6 +204,11 @@ export class Window extends EventTarget {
 
   setWindowIcon(data: Uint8Array): void {
     this._nativeWindow.setWindowIcon(data);
+  }
+
+  /** Get the raw window handle for use as a parent window or dialog parent. */
+  windowHandle(): WindowHandle {
+    return this._nativeWindow.windowHandle();
   }
 
   /**

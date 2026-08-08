@@ -9,15 +9,17 @@
 // list and the spawn button.
 
 import { computed, defineComponent, inject, ref } from 'vue'
-import { HTMLDocument, WindowOptions, type Window as BlitzWindow } from '@ylcc/napi-blitz'
-import { BlitzAppKey, ChildWindowsKey } from '../keys.ts'
+import { HTMLDocument, pickFile, WindowOptions, type Window as BlitzWindow } from '@ylcc/napi-blitz'
+import { BlitzAppKey, BlitzWindowKey, ChildWindowsKey } from '../keys.ts'
 import { childBaseHtml, mountChild } from '../child.tsx'
 
 export const MainApp = defineComponent({
     setup() {
         const app = inject(BlitzAppKey)!
+        const mainWindow = inject(BlitzWindowKey)!
         const children = inject(ChildWindowsKey)!
         const closeBlocked = ref(false)
+        const pickedFile = ref<string | null>(null)
         let nextChildId = 1
 
         function spawn() {
@@ -36,6 +38,29 @@ export const MainApp = defineComponent({
             child.addEventListener('closed', () => {
                 children.value = children.value.filter((w) => w !== child)
             })
+        }
+
+        function spawnChild() {
+            closeBlocked.value = false
+
+            const id = nextChildId++
+            const document = HTMLDocument.create({ baseHtml: childBaseHtml() })
+            const handle = mainWindow.windowHandle()
+            const options = WindowOptions.builder()
+            options.title(`Child #${id}`).size(480, 320).parentWindow(handle)
+            const child = app.openWindow(document, options)
+            mountChild(app, child, id)
+            children.value = [...children.value, child]
+
+            child.addEventListener('closed', () => {
+                children.value = children.value.filter((w) => w !== child)
+            })
+        }
+
+        async function pickFileWithParent() {
+            const handle = mainWindow.windowHandle()
+            const result = await pickFile(null, handle)
+            pickedFile.value = result
         }
 
         function closeChild(child: BlitzWindow) {
@@ -101,7 +126,35 @@ export const MainApp = defineComponent({
                         onClick={spawn}>
                         Spawn child window
                     </button>
+                    <button
+                        style={{
+                            padding: '10px 18px',
+                            fontSize: '16px',
+                            background: '#27ae60',
+                            color: '#fff',
+                            border: '0',
+                            borderRadius: '6px',
+                        }}
+                        onClick={spawnChild}>
+                        Spawn child window (parented)
+                    </button>
+                    <button
+                        style={{
+                            padding: '10px 18px',
+                            fontSize: '16px',
+                            background: '#e67e22',
+                            color: '#fff',
+                            border: '0',
+                            borderRadius: '6px',
+                        }}
+                        onClick={pickFileWithParent}>
+                        Pick file (parented)
+                    </button>
                 </div>
+
+                {pickedFile.value
+                    ? <p style={{ marginTop: '12px', color: '#555', fontSize: '14px' }}>Picked: {pickedFile.value}</p>
+                    : null}
 
                 <h2 style={{ fontSize: '18px', marginTop: '24px', marginBottom: '8px' }}>
                     Open child windows

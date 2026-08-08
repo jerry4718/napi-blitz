@@ -3,6 +3,8 @@
 //! All methods are async napi functions so the JS event loop is not
 //! blocked while the native dialog is open.
 
+use crate::window::window_handle::WindowHandle;
+
 /// Extension filter entry, e.g. `{ name: "Images", extensions: ["png", "jpg"] }`.
 #[napi(object)]
 pub struct FileFilter {
@@ -25,8 +27,14 @@ pub struct DialogOptions {
     pub filters: Option<Vec<FileFilter>>,
 }
 
-fn build_dialog(opts: Option<&DialogOptions>) -> rfd::AsyncFileDialog {
+fn build_dialog(
+    opts: Option<&DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> rfd::AsyncFileDialog {
     let mut d = rfd::AsyncFileDialog::new();
+    if let Some(p) = parent {
+        d = d.set_parent(p);
+    }
     if let Some(o) = opts {
         if let Some(t) = &o.title {
             d = d.set_title(t);
@@ -49,8 +57,11 @@ fn build_dialog(opts: Option<&DialogOptions>) -> rfd::AsyncFileDialog {
 
 /// Open a single-file picker. Returns the chosen path or `null`.
 #[napi]
-pub async fn pick_file(options: Option<DialogOptions>) -> Option<String> {
-    let d = build_dialog(options.as_ref());
+pub async fn pick_file(
+    options: Option<DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> Option<String> {
+    let d = build_dialog(options.as_ref(), parent);
     d.pick_file()
         .await
         .map(|h| h.path().to_string_lossy().into_owned())
@@ -58,8 +69,11 @@ pub async fn pick_file(options: Option<DialogOptions>) -> Option<String> {
 
 /// Open a multi-file picker. Returns an array of paths (may be empty).
 #[napi]
-pub async fn pick_files(options: Option<DialogOptions>) -> Vec<String> {
-    let d = build_dialog(options.as_ref());
+pub async fn pick_files(
+    options: Option<DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> Vec<String> {
+    let d = build_dialog(options.as_ref(), parent);
     let handles = d.pick_files().await;
     handles
         .into_iter()
@@ -70,8 +84,11 @@ pub async fn pick_files(options: Option<DialogOptions>) -> Vec<String> {
 
 /// Open a single-folder picker. Returns the chosen path or `null`.
 #[napi]
-pub async fn pick_folder(options: Option<DialogOptions>) -> Option<String> {
-    let d = build_dialog(options.as_ref());
+pub async fn pick_folder(
+    options: Option<DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> Option<String> {
+    let d = build_dialog(options.as_ref(), parent);
     d.pick_folder()
         .await
         .map(|h| h.path().to_string_lossy().into_owned())
@@ -79,8 +96,11 @@ pub async fn pick_folder(options: Option<DialogOptions>) -> Option<String> {
 
 /// Open a multi-folder picker. Returns an array of paths (may be empty).
 #[napi]
-pub async fn pick_folders(options: Option<DialogOptions>) -> Vec<String> {
-    let d = build_dialog(options.as_ref());
+pub async fn pick_folders(
+    options: Option<DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> Vec<String> {
+    let d = build_dialog(options.as_ref(), parent);
     let handles = d.pick_folders().await;
     handles
         .into_iter()
@@ -91,8 +111,11 @@ pub async fn pick_folders(options: Option<DialogOptions>) -> Vec<String> {
 
 /// Open a save-file dialog. Returns the chosen path or `null`.
 #[napi]
-pub async fn save_file(options: Option<DialogOptions>) -> Option<String> {
-    let d = build_dialog(options.as_ref());
+pub async fn save_file(
+    options: Option<DialogOptions>,
+    parent: Option<&WindowHandle>,
+) -> Option<String> {
+    let d = build_dialog(options.as_ref(), parent);
     d.save_file()
         .await
         .map(|h| h.path().to_string_lossy().into_owned())
