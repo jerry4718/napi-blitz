@@ -16,6 +16,7 @@
 //! does. The JS layer's `Window` class delegates these calls to the app.
 
 pub mod monitor;
+pub mod window_handle;
 
 use monitor::{MonitorInfo, VideoModeInfo};
 use napi::{
@@ -27,10 +28,12 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+use window_handle::WindowHandle;
 use winit::{
     dpi::PhysicalSize,
     icon::{Icon, RgbaIcon},
     monitor::Fullscreen,
+    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     window::{Window as WinitWindow, WindowAttributes, WindowButtons, WindowId},
 };
 
@@ -51,6 +54,7 @@ pub struct WindowOptions {
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) enabled_buttons: Option<Vec<String>>,
     pub(crate) window_icon: Option<Uint8Array>,
+    pub(crate) parent_window: Option<WindowHandle>,
 }
 
 #[napi]
@@ -72,6 +76,7 @@ impl WindowOptions {
             fullscreen: None,
             enabled_buttons: None,
             window_icon: None,
+            parent_window: None,
         }
     }
 
@@ -167,6 +172,18 @@ impl WindowOptions {
         self.window_icon = Some(value);
         self
     }
+
+    /// Set the parent window for this window.
+    ///
+    /// Pass a `RawWindowHandle` obtained from `NativeWindow.windowHandle()`.
+    #[napi]
+    pub fn parent_window(&mut self, handle: &WindowHandle) -> &Self {
+        self.parent_window = Some(WindowHandle {
+            window: handle.window,
+            display: handle.display,
+        });
+        self
+    }
 }
 
 /// Shared inner state between the JS-side `Window` handle and the
@@ -214,6 +231,25 @@ impl NativeWindow {
     #[napi(getter)]
     pub fn window_id(&self) -> BigInt {
         BigInt::from(self.window_id.into_raw() as u64)
+    }
+
+    /// Get the raw window handle for this window.
+    ///
+    /// The returned `RawWindowHandle` can be passed to `WindowOptions.parentWindow()`
+    /// to create child windows, or to `rfd` dialogs that need a parent window.
+    #[napi]
+    pub fn window_handle(&self) -> Result<WindowHandle> {
+        let window = self.native_window()?;
+        let wh = window
+            .window_handle()
+            .map_err(|e| Error::from_reason(format!("failed to get raw window handle: {e}")))?;
+        let dh = window
+            .display_handle()
+            .map_err(|e| Error::from_reason(format!("failed to get raw display handle: {e}")))?;
+        Ok(WindowHandle {
+            window: wh.as_raw(),
+            display: dh.as_raw(),
+        })
     }
 
     #[napi]
@@ -436,6 +472,9 @@ pub(crate) fn build_window_attributes(options: Option<&WindowOptions>) -> Result
     }
     if let Some(icon_data) = options.window_icon.as_ref() {
         attrs = attrs.with_window_icon(Some(parse_window_icon(icon_data)?));
+    }
+    if let Some(parent) = options.parent_window.as_ref() {
+        attrs = unsafe { attrs.with_parent_window(Some(parent.window)) };
     }
     Ok(attrs)
 }

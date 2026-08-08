@@ -426,6 +426,13 @@ export declare class NativeWindow {
    * back to the right `Window` wrapper.
    */
   get windowId(): bigint
+  /**
+   * Get the raw window handle for this window.
+   *
+   * The returned `RawWindowHandle` can be passed to `WindowOptions.parentWindow()`
+   * to create child windows, or to `rfd` dialogs that need a parent window.
+   */
+  windowHandle(): WindowHandle
   setTitle(title: string): void
   setSize(width: number, height: number): void
   getSize(): Array<number>
@@ -489,6 +496,17 @@ export declare class WheelData {
 }
 
 /**
+ * Opaque wrapper around a platform-specific raw window handle.
+ *
+ * Obtained from native objects (e.g. `NativeWindow.windowHandle()`).
+ * Pass it to APIs that need a parent window, such as `WindowOptions.parentWindow()`,
+ * or to `rfd` dialog calls.
+ */
+export declare class WindowHandle {
+
+}
+
+/**
  * Options accepted by `BlitzApp.openWindow`. Construct via
  * `WindowOptions.builder()`.
  */
@@ -511,6 +529,12 @@ export declare class WindowOptions {
   fullscreenExclusive(monitor: MonitorInfo, videoMode: VideoModeInfo): this
   enabledButtons(value: Array<string>): this
   windowIcon(value: Uint8Array): this
+  /**
+   * Set the parent window for this window.
+   *
+   * Pass a `RawWindowHandle` obtained from `NativeWindow.windowHandle()`.
+   */
+  parentWindow(handle: WindowHandle): this
 }
 
 /**
@@ -583,16 +607,16 @@ export interface FileFilter {
 }
 
 /** Open a single-file picker. Returns the chosen path or `null`. */
-export declare function pickFile(options?: DialogOptions | undefined | null): Promise<string | null>
+export declare function pickFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
 
 /** Open a multi-file picker. Returns an array of paths (may be empty). */
-export declare function pickFiles(options?: DialogOptions | undefined | null): Promise<Array<string>>
+export declare function pickFiles(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<Array<string>>
 
 /** Open a single-folder picker. Returns the chosen path or `null`. */
-export declare function pickFolder(options?: DialogOptions | undefined | null): Promise<string | null>
+export declare function pickFolder(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
 
 /** Open a multi-folder picker. Returns an array of paths (may be empty). */
-export declare function pickFolders(options?: DialogOptions | undefined | null): Promise<Array<string>>
+export declare function pickFolders(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<Array<string>>
 
 /** Result of one `pumpAppEvents` call. */
 export interface PumpResult {
@@ -619,4 +643,4 @@ export interface RegisterFontOptions {
 export declare function registerNodeConstructor(nodeType: number, constructor: (arg: unknown) => unknown): void
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
-export declare function saveFile(options?: DialogOptions | undefined | null): Promise<string | null>
+export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>

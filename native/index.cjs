@@ -713,6 +713,7 @@ module.exports.NativeWindow = nativeBinding.NativeWindow
 module.exports.PointerData = nativeBinding.PointerData
 module.exports.VideoModeInfo = nativeBinding.VideoModeInfo
 module.exports.WheelData = nativeBinding.WheelData
+module.exports.WindowHandle = nativeBinding.WindowHandle
 module.exports.WindowOptions = nativeBinding.WindowOptions
 module.exports.pickFile = nativeBinding.pickFile
 module.exports.pickFiles = nativeBinding.pickFiles
