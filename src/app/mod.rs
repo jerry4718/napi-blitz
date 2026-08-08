@@ -182,12 +182,13 @@ impl NativeApp {
         // winit only assigns a WindowId while dispatching through an active
         // event loop. Run one non-blocking pump so the window is created, then
         // grab the Arc<dyn Window> and WindowId straight from the view.
+        let before: Vec<WindowId> = self.inner.windows.keys().copied().collect();
         self.pump_app_events(0.0);
         let entry = self
             .inner
             .windows
             .iter()
-            .next()
+            .find(|(id, _)| !before.contains(id))
             .map(|(_, entry)| entry as &WindowEntry)
             .ok_or_else(|| Error::from_reason("failed to create native window"))?;
 
