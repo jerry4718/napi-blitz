@@ -6,12 +6,12 @@ packages:
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@ylcc/napi-blitz-darwin-arm64@0.1.212'
-  - '@ylcc/napi-blitz-darwin-x64@0.1.212'
-  - '@ylcc/napi-blitz-freebsd-x64@0.1.212'
-  - '@ylcc/napi-blitz-linux-arm64-gnu@0.1.212'
-  - '@ylcc/napi-blitz-linux-arm64-musl@0.1.212'
-  - '@ylcc/napi-blitz-linux-x64-gnu@0.1.212'
-  - '@ylcc/napi-blitz-linux-x64-musl@0.1.212'
-  - '@ylcc/napi-blitz-win32-arm64-msvc@0.1.212'
-  - '@ylcc/napi-blitz-win32-x64-msvc@0.1.212'
+  - '@ylcc/napi-blitz-darwin-arm64@0.1.213'
+  - '@ylcc/napi-blitz-darwin-x64@0.1.213'
+  - '@ylcc/napi-blitz-freebsd-x64@0.1.213'
+  - '@ylcc/napi-blitz-linux-arm64-gnu@0.1.213'
+  - '@ylcc/napi-blitz-linux-arm64-musl@0.1.213'
+  - '@ylcc/napi-blitz-linux-x64-gnu@0.1.213'
+  - '@ylcc/napi-blitz-linux-x64-musl@0.1.213'
+  - '@ylcc/napi-blitz-win32-arm64-msvc@0.1.213'
+  - '@ylcc/napi-blitz-win32-x64-msvc@0.1.213'
