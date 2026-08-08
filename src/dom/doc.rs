@@ -142,18 +142,20 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
     }
 
     // 2. For Document nodes (nodeType 9), return the cached doc_js ref.
-    let node_type = doc
+    //    For Element nodes, extract the QualName (ns + local) for
+    //    tag-specific constructor lookup.
+    let (node_type, qual_name) = doc
         .base
         .borrow()
         .get_node(node_id)
         .map(|n| match &n.data {
-            NodeData::Document(_) => 9u32,
-            NodeData::Element(_) => 1u32,
-            NodeData::Text(_) => 3u32,
-            NodeData::Comment { .. } => 8u32,
-            _ => 0u32,
+            NodeData::Document(_) => (9u32, None),
+            NodeData::Element(el) => (1u32, Some(el.name.clone())),
+            NodeData::Text(_) => (3u32, None),
+            NodeData::Comment { .. } => (8u32, None),
+            _ => (0u32, None),
         })
-        .unwrap_or(0);
+        .unwrap_or((0u32, None));
 
     if node_type == 9 {
         let doc_ref = doc
@@ -174,19 +176,40 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
     // 3. Create NodeHandle.
     let handle = NodeHandle::new(node_id, doc.clone());
 
-    // 4. Get the constructor napi_ref and the doc_js napi_ref.
-    let ctor_napi_ref = gc::get_node_constructor(node_type).ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("No JS constructor registered for nodeType {node_type} (node_id={node_id})"),
-        )
-    })?;
+    // 4. Get the constructor napi_ref: prefer a tag-specific element
+    //    constructor (matched by ns + local), fall back to the generic
+    //    node_type constructor.
+    let element_ctor = qual_name
+        .as_ref()
+        .and_then(|qn| gc::get_element_constructor(&qn.ns, &qn.local));
+    let ctor_napi_ref = element_ctor
+        .or_else(|| gc::get_node_constructor(node_type))
+        .ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("No JS constructor registered for nodeType {node_type} (node_id={node_id})"),
+            )
+        })?;
     let doc_js_napi_ref = doc
         .doc_js_ref
         .borrow()
         .ok_or_else(|| Error::new(Status::GenericFailure, "doc_js not set"))?;
 
-    // 5. Call new Constructor(handle, doc).
+    // 5. If this element has a tag-specific constructor and the tag is
+    //    a known input type, create an InputDataHandle to pass as a
+    //    third constructor argument.
+    let needs_input_handle = element_ctor.is_some()
+        && matches!(qual_name.as_ref().map(|qn| qn.local.as_ref()), Some("input") | Some("textarea"));
+    let input_handle_val = if needs_input_handle {
+        let h = crate::dom::input_data_handle::InputDataHandle::new(node_id, doc.clone());
+        Some(unsafe {
+            <crate::dom::input_data_handle::InputDataHandle as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), h)?
+        })
+    } else {
+        None
+    };
+
+    // 6. Call new Constructor(handle, doc[, inputDataHandle]).
     let js_node = unsafe {
         let mut ctor_val = std::ptr::null_mut();
         napi::check_status!(sys::napi_get_reference_value(
@@ -205,7 +228,10 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
         let handle_val =
             <NodeHandle as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), handle)?;
 
-        let args = [handle_val, doc_val];
+        let mut args = vec![handle_val, doc_val];
+        if let Some(ih) = input_handle_val {
+            args.push(ih);
+        }
         let mut result = std::ptr::null_mut();
         napi::check_status!(sys::napi_new_instance(
             env.raw(),
@@ -457,6 +483,29 @@ pub fn register_node_constructor(
         )
     })?;
     gc::insert_node_constructor(node_type, napi_ref);
+    Ok(())
+}
+
+#[napi]
+pub fn register_element_constructor(
+    env: Env,
+    namespace: String,
+    tag_name: String,
+    constructor: Function<napi::bindgen_prelude::Unknown, napi::bindgen_prelude::Unknown>,
+) -> Result<()> {
+    gc::set_env(env.raw());
+    let mut napi_ref = std::ptr::null_mut();
+    napi::check_status!(unsafe {
+        sys::napi_create_reference(
+            env.raw(),
+            napi::JsValue::raw(&constructor),
+            1,
+            &mut napi_ref,
+        )
+    })?;
+    let ns = blitz::dom::Namespace::from(namespace.as_str());
+    let local = blitz::dom::LocalName::from(tag_name.to_lowercase().as_str());
+    gc::insert_element_constructor(ns, local, napi_ref);
     Ok(())
 }
 

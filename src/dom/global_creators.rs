@@ -12,11 +12,14 @@ use std::{
     collections::HashMap,
 };
 
+use blitz::dom::{LocalName, Namespace};
 use napi::{Env, Error, Result, Status, sys};
 
 struct GlobalCreators {
     /// nodeType -> raw napi_ref of JS constructor function
     node_constructors: RefCell<HashMap<u32, sys::napi_ref>>,
+    /// (namespace, local name) -> raw napi_ref of JS constructor function
+    element_constructors: RefCell<HashMap<(Namespace, LocalName), sys::napi_ref>>,
     /// Raw napi_ref of JS event factory function
     event_factory_ref: RefCell<Option<sys::napi_ref>>,
     /// napi env (stable for addon lifetime in Node.js)
@@ -26,6 +29,7 @@ struct GlobalCreators {
 thread_local! {
     static GLOBAL_CREATORS: GlobalCreators = GlobalCreators {
         node_constructors: RefCell::new(HashMap::new()),
+        element_constructors: RefCell::new(HashMap::new()),
         event_factory_ref: RefCell::new(None),
         env_raw: Cell::new(None),
     };
@@ -50,6 +54,14 @@ pub fn insert_node_constructor(node_type: u32, napi_ref: sys::napi_ref) {
 
 pub fn get_node_constructor(node_type: u32) -> Option<sys::napi_ref> {
     GLOBAL_CREATORS.with(|g| Some(*g.node_constructors.borrow().get(&node_type)?))
+}
+
+pub fn insert_element_constructor(ns: Namespace, local: LocalName, napi_ref: sys::napi_ref) {
+    GLOBAL_CREATORS.with(|g| g.element_constructors.borrow_mut().insert((ns, local), napi_ref));
+}
+
+pub fn get_element_constructor(ns: &Namespace, local: &LocalName) -> Option<sys::napi_ref> {
+    GLOBAL_CREATORS.with(|g| Some(*g.element_constructors.borrow().get(&(ns.clone(), local.clone()))?))
 }
 
 pub fn set_event_factory(napi_ref: sys::napi_ref) {

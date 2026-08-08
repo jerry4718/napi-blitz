@@ -32,4 +32,14 @@ export class HTMLElement extends Element {
     }
     return this._styleProxy;
   }
+
+  /** Move focus to this element. Mirrors `HTMLElement.focus()`. */
+  focus(): void {
+    this._handle.focus();
+  }
+
+  /** Remove focus from this element. Mirrors `HTMLElement.blur()`. */
+  blur(): void {
+    this._handle.blur();
+  }
 }

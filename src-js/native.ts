@@ -24,6 +24,7 @@ import type {
   FileFilter,
   ImeData,
   InputData,
+  InputDataHandle,
   KeyData,
   MonitorInfo,
   NodeHandle as NativeNodeHandle,
@@ -32,6 +33,7 @@ import type {
   registerEventFactory as _registerEventFactory,
   RegisterFontOptions,
   registerNodeConstructor as _registerNodeConstructor,
+  registerElementConstructor as _registerElementConstructor,
   VideoModeInfo,
   WheelData,
   Window as NativeWindow,
@@ -44,6 +46,7 @@ interface NativeModuleShape {
   NodeHandle: typeof NativeNodeHandle;
   WindowOptions: typeof NativeWindowOptions;
   registerNodeConstructor: typeof _registerNodeConstructor;
+  registerElementConstructor: typeof _registerElementConstructor;
   registerEventFactory: typeof _registerEventFactory;
   pickFile: (options?: DialogOptions | null) => Promise<string | null>;
   pickFiles: (options?: DialogOptions | null) => Promise<string[]>;
@@ -64,6 +67,7 @@ export const NativeDocHandleCtor: typeof NativeDocHandle = mod.DocHandle;
 export const NativeNodeHandleCtor: typeof NativeNodeHandle = mod.NodeHandle;
 export const NativeWindowOptionsCtor: typeof NativeWindowOptions = mod.WindowOptions;
 export const registerNodeConstructor = mod.registerNodeConstructor;
+export const registerElementConstructor = mod.registerElementConstructor;
 export const registerEventFactory = mod.registerEventFactory;
 
 export const pickFile = mod.pickFile;
@@ -83,6 +87,7 @@ export type {
   FileFilter,
   ImeData,
   InputData,
+  InputDataHandle,
   KeyData,
   MonitorInfo,
   PointerData,

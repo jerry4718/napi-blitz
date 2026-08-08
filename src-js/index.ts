@@ -19,6 +19,8 @@ export {Text} from "./base/text";
 export {Comment} from "./base/comment";
 export {Element} from "./element/element";
 export {HTMLElement} from "./element/html-element";
+export {HTMLInputElement} from "./element/html-input-element";
+export {HTMLTextAreaElement} from "./element/html-textarea-element";
 
 export type {AttributesMap} from "./element/attributes";
 export type {StyleDeclaration} from "./element/style";

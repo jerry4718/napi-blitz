@@ -317,6 +317,27 @@ export declare class InputData {
   get value(): string
 }
 
+export declare class InputDataHandle {
+  /**
+   * Current text value of the input/textarea.
+   *
+   * If a live `TextInputData` exists (created during layout), returns
+   * the editor's text. Otherwise falls back to the `value` attribute.
+   */
+  get value(): string
+  set value(value: string)
+  /**
+   * Checked state for checkbox/radio inputs.
+   *
+   * Reads from `CheckboxInput` special data if present, otherwise
+   * falls back to the `checked` attribute.
+   */
+  get checked(): boolean
+  set checked(checked: boolean)
+  /** Whether this input currently has focus. */
+  get focused(): boolean
+}
+
 export declare class KeyData {
   /** e.g. "a", "ArrowLeft", "Enter" */
   get key(): string
@@ -381,6 +402,13 @@ export declare class NodeHandle {
   get scrollWidth(): number
   get clientHeight(): number
   get clientWidth(): number
+  /**
+   * Move focus to this node. Mirrors `HTMLElement.focus()`.
+   * Returns true if focus actually changed.
+   */
+  focus(): boolean
+  /** Remove focus from this node (if focused). Mirrors `HTMLElement.blur()`. */
+  blur(): void
 }
 
 export declare class PointerData {
@@ -575,6 +603,8 @@ export interface PumpResult {
   /** Exit code, if `exit`. */
   code?: number
 }
+
+export declare function registerElementConstructor(namespace: string, tagName: string, constructor: (arg: unknown) => unknown): void
 
 export declare function registerEventFactory(factory: (arg: EventPayload) => unknown): void
 

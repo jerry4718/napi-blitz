@@ -543,6 +543,25 @@ impl NodeHandle {
             .map(|n| n.final_layout().content_box_width() as f64)
             .unwrap_or(0.0)
     }
+
+    // ---- Focus / blur ----------------------------------------------------
+
+    /// Move focus to this node. Mirrors `HTMLElement.focus()`.
+    /// Returns true if focus actually changed.
+    #[napi]
+    pub fn focus(&mut self) -> bool {
+        let mut base = self.doc.base.borrow_mut();
+        base.set_focus_to(self.node_id)
+    }
+
+    /// Remove focus from this node (if focused). Mirrors `HTMLElement.blur()`.
+    #[napi]
+    pub fn blur(&mut self) {
+        let mut base = self.doc.base.borrow_mut();
+        base.clear_focus();
+        drop(base);
+        self.doc.mark_host_dirty();
+    }
 }
 
 #[napi(object)]
