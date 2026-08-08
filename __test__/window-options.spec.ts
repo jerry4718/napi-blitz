@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import { BlitzApp, HTMLDocument, WindowOptions } from "../dist/index.js";
+import { BlitzApp, HTMLDocument, WindowOptions } from './shim';
 
 // winit only allows one event loop per process, so share a single
 // BlitzApp across all tests in this file.

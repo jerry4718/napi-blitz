@@ -4,16 +4,16 @@
     "lib": ["ES2021", "DOM"],
     "strict": true,
     "moduleResolution": "node",
-    "module": "CommonJS",
+    "module": "ESNext",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true,
     "declaration": true,
     "sourceMap": false,
-    "outDir": "dist",
     "baseUrl": "."
   },
   "include": ["src-js/**/*.ts", "native/**/*.ts"],
-  "exclude": ["node_modules", "benchmark", "__test__", "external", "examples", "dist"]
+  "exclude": ["node_modules", "benchmark", "__test__", "external", "examples", "dist", "esm", "cjs"]
 }

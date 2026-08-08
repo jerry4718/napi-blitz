@@ -9,7 +9,7 @@ import {
   HTMLTextAreaElement,
   HTMLElement,
   Element,
-} from "../dist/index.js";
+} from './shim.ts';
 
 // ---- Construction & inheritance --------------------------------------------
 

@@ -2,9 +2,27 @@
   "name": "@ylcc/napi-blitz",
   "version": "0.0.211",
   "description": "blitz napi bindings",
-  "type": "commonjs",
-  "main": "dist/index.js",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./native": {
+      "types": "./native/index.d.ts",
+      "require": "./native/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
   "repository": {
     "url": "git+ssh://git@github.com/jerry4718/napi-blitz.git",
     "type": "git"
@@ -46,15 +64,14 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "build": "node scripts/build.cjs",
-    "build:debug": "node scripts/build.cjs --debug",
-    "build:ts": "tsc -p tsconfig.json && pnpm run build:ts:fixup",
-    "build:ts:fixup": "node scripts/fixup-native-dts.cjs",
-    "build:native": "napi build --platform --release --strip --output-dir native --js index.js --dts index.d.ts --esm",
-    "build:native:debug": "napi build --platform --strip --output-dir native --js index.js --dts index.d.ts --esm",
+    "build": "pnpm run build:native && tsup",
+    "build:debug": "pnpm run build:native:debug && tsup",
+    "build:native": "napi build --platform --release --strip --output-dir native --js index.cjs --dts index.d.ts",
+    "build:native:debug": "napi build --platform --strip --output-dir native --js index.cjs --dts index.d.ts",
+    "build:ts": "tsup",
     "prepublishOnly": "napi prepublish -t npm",
     "createNpmDirs": "napi create-npm-dirs",
-    "generate:split": "node scripts/generate-split-packages.cjs",
+    "createSplitDirs": "node scripts/create-split-dirs.cjs",
     "test": "ava",
     "fmt": "cargo fmt",
     "fmt:check": "cargo fmt -- --check",
@@ -63,17 +80,18 @@
     "version": "napi version"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.7.2",
+    "@napi-rs/cli": "^3.8.2",
     "@oxc-node/core": "^0.1.0",
     "@types/node": "^25.9.3",
-    "ava": "^6.4.1",
+    "ava": "^8.0.0",
     "cross-env": "^10.1.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   },
   "ava": {
-    "extensions": {
-      "ts": "module"
-    },
+    "extensions": [
+      "ts"
+    ],
     "files": [
       "__test__/**/*.spec.ts"
     ],

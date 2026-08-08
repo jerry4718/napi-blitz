@@ -9,7 +9,7 @@ import {
   HTMLElement,
   Node,
   Text,
-} from "../dist/index.js";
+} from './shim';
 
 test("HTMLDocument has documentElement / head / body", (t) => {
   const doc = HTMLDocument.create();

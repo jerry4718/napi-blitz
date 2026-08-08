@@ -57,11 +57,21 @@ pub fn get_node_constructor(node_type: u32) -> Option<sys::napi_ref> {
 }
 
 pub fn insert_element_constructor(ns: Namespace, local: LocalName, napi_ref: sys::napi_ref) {
-    GLOBAL_CREATORS.with(|g| g.element_constructors.borrow_mut().insert((ns, local), napi_ref));
+    GLOBAL_CREATORS.with(|g| {
+        g.element_constructors
+            .borrow_mut()
+            .insert((ns, local), napi_ref)
+    });
 }
 
 pub fn get_element_constructor(ns: &Namespace, local: &LocalName) -> Option<sys::napi_ref> {
-    GLOBAL_CREATORS.with(|g| Some(*g.element_constructors.borrow().get(&(ns.clone(), local.clone()))?))
+    GLOBAL_CREATORS.with(|g| {
+        Some(
+            *g.element_constructors
+                .borrow()
+                .get(&(ns.clone(), local.clone()))?,
+        )
+    })
 }
 
 pub fn set_event_factory(napi_ref: sys::napi_ref) {

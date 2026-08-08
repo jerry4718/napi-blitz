@@ -11,8 +11,8 @@
 
 import test from "ava";
 
-import { UIEvent, PointerEvent, HTMLDocument } from "../dist/index.js";
-import type { Node } from "../dist/index.js";
+import { UIEvent, PointerEvent, HTMLDocument } from './shim';
+import type { Node } from './shim';
 
 /**
  * Simulate the Rust-side bubble walk: dispatch `event` on `target`,

@@ -29,7 +29,8 @@
 
 import type {BlitzApp} from "./app";
 import type {HTMLDocument} from "../document/html-document";
-import type {MonitorInfo, VideoModeInfo, Window as NativeWindow,} from "../native";
+import type {MonitorInfo, VideoModeInfo} from "../native";
+import {NativeWindow} from "../native";
 
 export class Window extends EventTarget {
   /**
@@ -38,7 +39,7 @@ export class Window extends EventTarget {
    */
   constructor(
     private readonly _app: BlitzApp,
-    private readonly _nativeWindow: NativeWindow,
+    private readonly _nativeWindow: InstanceType<typeof NativeWindow>,
     private readonly _document: HTMLDocument,
   ) {
     super();
@@ -221,7 +222,7 @@ export class Window extends EventTarget {
 
 /** Internals viewed by the package's friend modules. */
 export interface WindowInternals {
-  readonly _nativeWindow: NativeWindow;
+  readonly _nativeWindow: InstanceType<typeof NativeWindow>;
   readonly _document: HTMLDocument;
 }
 

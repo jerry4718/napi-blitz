@@ -16,7 +16,7 @@
 - `单文件启动`：安装好依赖以后，只需要写一个 `JS/TS 文件`，就能打开原生窗口、构建 DOM、跑事件循环，适合一些 `轻量`、`不那么敏感` 的小工具和原型场景。
 - 不是 `Electron IPC` 方案，也不是 `Tauri WebView` 方案：JS 直接调用原生 DOM 绑定。
 - 类浏览器 DOM 封装：`document.createElement`、`appendChild`、`textContent`、`setAttribute`、`querySelector`、事件监听、内联样式等。
-- 一个 `BlitzApp` 可管理 `多个窗口`。
+- 一个 `NativeApp` 可管理 `多个窗口`。
 - 发布平台对应的 N-API 预编译包。
 - 内置 TypeScript 类型声明。
 

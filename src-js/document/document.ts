@@ -11,7 +11,7 @@
 //   - JS methods forward to the native handle, which returns already-wrapped
 //     JS Node objects.
 
-import {type NativeDocHandle, type NativeNodeHandle,} from "../native";
+import {NativeDoc, NativeNode} from "../native";
 import {Node} from "../base/node";
 import {Element} from "../element/element";
 import {Text} from "../base/text";
@@ -30,7 +30,7 @@ export interface DocumentInit {
  * `instanceof` checks and shared code.
  */
 export abstract class Document extends Node implements DocumentInternals {
-  readonly _native: NativeDocHandle;
+  readonly _native: InstanceType<typeof NativeDoc>;
 
   /** Lazily-built `FontFaceSet` exposed via `document.fonts`. */
   private _fontsSet: FontFaceSet | null = null;
@@ -40,8 +40,8 @@ export abstract class Document extends Node implements DocumentInternals {
    * `handle` is a `DocHandle` (which is also a `NodeHandle` superset).
    * JS never calls `new Document(...)` directly.
    */
-  constructor(handle: NativeDocHandle) {
-    super(handle as unknown as NativeNodeHandle, handle as unknown as Document);
+  constructor(handle: InstanceType<typeof NativeDoc>) {
+    super(handle as unknown as InstanceType<typeof NativeNode>, handle as unknown as Document);
     this._native = handle;
     // Set the JS Document object reference so Rust can pass `doc` to
     // each JS Node constructor.

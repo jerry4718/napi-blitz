@@ -11,7 +11,7 @@
 //     (Rust does the wrapping via NodeCache).
 //   - EventTarget is fully inherited from Node.js built-in — no override.
 
-import type {NativeNodeHandle} from "../native";
+import {NativeNode} from "../native";
 import type {DocumentInternals, NodeInternals} from "../internal/internal";
 
 /** DOM nodeType constants. Mirrors the web spec. */
@@ -23,14 +23,14 @@ export const NodeTypes = {
 } as const;
 
 export abstract class Node extends EventTarget {
-  protected readonly _handle: NativeNodeHandle;
+  protected readonly _handle: InstanceType<typeof NativeNode>;
   protected readonly _doc: DocumentInternals;
 
   /**
    * @internal Constructed by Rust via `registerNodeConstructor`. JS
    * never calls `new Node(...)` directly.
    */
-  constructor(handle: NativeNodeHandle, doc: DocumentInternals) {
+  constructor(handle: InstanceType<typeof NativeNode>, doc: DocumentInternals) {
     super();
     this._handle = handle;
     this._doc = doc;

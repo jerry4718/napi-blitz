@@ -19,10 +19,10 @@ use crate::{
         bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
         handler::AppHandler,
     },
-    dom::doc::{DocHandle, make_window_document},
+    dom::doc::{NativeDoc, make_window_document},
     renderer::CurrentRenderer,
     window::{
-        Window, WindowOptions, build_window_attributes,
+        NativeWindow, WindowOptions, build_window_attributes,
         monitor::{MonitorInfo, monitor_to_info},
     },
 };
@@ -53,7 +53,7 @@ pub struct PumpResult {
 }
 
 #[napi]
-pub struct BlitzApp {
+pub struct NativeApp {
     event_loop: EventLoop,
     pub(crate) inner: AppInner,
 }
@@ -109,7 +109,7 @@ pub(crate) struct AppInner {
 }
 
 #[napi]
-impl BlitzApp {
+impl NativeApp {
     /// Build the winit event loop.
     #[napi(factory)]
     pub fn create() -> Self {
@@ -164,9 +164,9 @@ impl BlitzApp {
     #[napi]
     pub fn open_window(
         &mut self,
-        doc: &mut DocHandle,
+        doc: &mut NativeDoc,
         options: Option<&WindowOptions>,
-    ) -> Result<Window> {
+    ) -> Result<NativeWindow> {
         if !doc.mark_attached() {
             return Err(Error::from_reason(
                 "DocHandle has already been attached to a window".to_string(),
@@ -191,7 +191,7 @@ impl BlitzApp {
             .map(|(_, entry)| entry as &WindowEntry)
             .ok_or_else(|| Error::from_reason("failed to create native window"))?;
 
-        Ok(Window {
+        Ok(NativeWindow {
             window_id: entry.view.window.id(),
             inner: Rc::clone(&entry.inner),
         })
@@ -205,7 +205,7 @@ impl BlitzApp {
     /// This is intentionally not GC-driven: dropping the JS `Window` object
     /// does not close the OS window. Callers must invoke this explicitly.
     #[napi]
-    pub fn close_window(&mut self, window: &mut Window) {
+    pub fn close_window(&mut self, window: &mut NativeWindow) {
         let window_id = window.window_id;
         let mut inner = window.inner.borrow_mut();
 
@@ -275,7 +275,7 @@ impl BlitzApp {
     /// system scale factor to produce the total viewport scale
     /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
     #[napi]
-    pub fn set_zoom(&mut self, window: &Window, zoom: f64) -> Result<()> {
+    pub fn set_zoom(&mut self, window: &NativeWindow, zoom: f64) -> Result<()> {
         let entry = self
             .inner
             .windows
@@ -287,7 +287,7 @@ impl BlitzApp {
 
     /// Get the current document zoom level.
     #[napi]
-    pub fn get_zoom(&self, window: &Window) -> Result<f32> {
+    pub fn get_zoom(&self, window: &NativeWindow) -> Result<f32> {
         let entry = self
             .inner
             .windows
@@ -297,7 +297,7 @@ impl BlitzApp {
     }
 }
 
-impl BlitzApp {
+impl NativeApp {
     fn poll_live_views(&mut self) {
         for entry in self.inner.windows.values_mut() {
             entry.view.poll();

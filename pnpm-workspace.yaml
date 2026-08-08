@@ -3,6 +3,8 @@ packages:
   - examples/*
   - benchmark
   - __test__
+allowBuilds:
+  esbuild: true
 minimumReleaseAgeExclude:
   - '@ylcc/napi-blitz-darwin-arm64@0.0.211'
   - '@ylcc/napi-blitz-darwin-x64@0.0.211'

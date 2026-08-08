@@ -28,18 +28,18 @@
 import {
   type AppDispatchResult,
   type AppEventPayload,
-  type NativeBlitzApp,
-  NativeBlitzAppCtor,
+  NativeApp,
+  NativeDoc,
+  NativeWindow,
   type PumpResult,
-  type Window as NativeWindow,
-  type WindowOptions,
+  WindowOptions,
 } from "../native";
 import {HTMLDocument} from "../document/html-document";
 import {pluckWindow, Window} from "./window";
 
 /** `Document`'s package-private fields, viewed by `BlitzApp`. */
 interface DocumentInternalsForApp {
-  readonly _native: import("../native").NativeDocHandle;
+  readonly _native: InstanceType<typeof NativeDoc>;
 }
 
 function pluckDoc(doc: HTMLDocument): DocumentInternalsForApp {
@@ -48,12 +48,12 @@ function pluckDoc(doc: HTMLDocument): DocumentInternalsForApp {
 
 export class BlitzApp extends EventTarget {
   /** @internal Used by `Window.close()` to delegate back to us. */
-  readonly _native: NativeBlitzApp;
+  readonly _native: InstanceType<typeof NativeApp>;
 
   /** Live windows, keyed by their `windowId`. */
   private readonly _windows: Map<bigint, Window> = new Map();
 
-  private constructor(native: NativeBlitzApp) {
+  private constructor(native: InstanceType<typeof NativeApp>) {
     super();
     this._native = native;
     // Wire the native -> JS bridge so winit `CloseRequested` reaches
@@ -66,15 +66,15 @@ export class BlitzApp extends EventTarget {
 
   /** Build the underlying winit event loop and blitz application. */
   static create(): BlitzApp {
-    return new BlitzApp(NativeBlitzAppCtor.create());
+    return new BlitzApp(NativeApp.create());
   }
 
   /**
    * Open a new window for an existing `HTMLDocument`.
    * Construct window attributes with `WindowOptions.builder()`.
    */
-  openWindow(document: HTMLDocument, options?: WindowOptions): Window {
-    const nativeWindow: NativeWindow = this._native.openWindow(
+  openWindow(document: HTMLDocument, options?: InstanceType<typeof WindowOptions>): Window {
+    const nativeWindow: InstanceType<typeof NativeWindow> = this._native.openWindow(
       pluckDoc(document)._native,
       options,
     );
@@ -179,4 +179,3 @@ export class BlitzApp extends EventTarget {
     return {defaultPrevented: false};
   }
 }
-

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { BlitzApp, HTMLDocument, WindowOptions } from '../dist/index.js'
+import { BlitzApp, HTMLDocument, WindowOptions } from './shim'
 
 // This test calls pumpAppEvents which triggers vello rendering.
 // CI containers lack GPU support (vello shaders need float16 capabilities),

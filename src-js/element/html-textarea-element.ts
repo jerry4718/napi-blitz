@@ -7,13 +7,17 @@
 // use the inherited getAttribute/setAttribute from Element.
 
 import {HTMLElement} from "./html-element";
-import type {InputDataHandle} from "../native";
+import {InputDataHandle, NativeNode} from "../native";
 
 export class HTMLTextAreaElement extends HTMLElement {
-  private readonly _inputData: InputDataHandle | null;
+  private readonly _inputData: InstanceType<typeof InputDataHandle> | null;
 
   /** @internal */
-  constructor(handle: import("../native").NodeHandle, doc: import("../internal/internal").DocumentInternals, inputData?: InputDataHandle) {
+  constructor(
+    handle: InstanceType<typeof NativeNode>,
+    doc: import("../internal/internal").DocumentInternals,
+    inputData?: InstanceType<typeof InputDataHandle>,
+  ) {
     super(handle, doc);
     this._inputData = inputData ?? null;
   }

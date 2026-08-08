@@ -16,7 +16,7 @@ Highlights:
 - `Single-file startup`: after installing the dependency, a single `JS/TS file` is enough to open a native window, build DOM nodes, and run the event loop. Handy for `lightweight`, `low-stakes` tools and prototypes.
 - No `Electron-style IPC` layer and no `Tauri-style WebView`: your JS calls native DOM bindings directly.
 - Standard-ish DOM wrappers: `document.createElement`, `appendChild`, `textContent`, `setAttribute`, `querySelector`, event listeners, inline styles, etc.
-- `Multiple windows` from one `BlitzApp`.
+- `Multiple windows` from one `NativeApp`.
 - Prebuilt N-API packages for supported platforms.
 - TypeScript declarations included.
 

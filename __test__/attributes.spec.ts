@@ -3,7 +3,7 @@
 
 import test from "ava";
 
-import { HTMLDocument } from "../dist/index.js";
+import { HTMLDocument } from './shim';
 
 test("getAttribute / setAttribute / removeAttribute round trip", (t) => {
   const doc = HTMLDocument.create();

@@ -2,10 +2,9 @@
 //
 // This package owns the native-window path: winit event loop, OS windows, and
 // the shared DOM API. Headless buffer rendering lives in `@ylcc/wasm-blitz`.
+export * from "./native";
 export {BlitzApp} from "./host/app";
 export {Window} from "./host/window";
-export {NativeWindowOptionsCtor as WindowOptions} from "./native";
-export type {WindowOptions as WindowOptionsType} from "./native";
 
 export {Document} from "./document/document";
 export type {DocumentInit} from "./document/document";
@@ -44,25 +43,5 @@ export {
   CompositionEvent,
   FocusEvent,
 } from "./events/events";
-
-export type {
-  AttrInit,
-  EventPayload,
-  PointerData,
-  WheelData,
-  KeyData,
-  InputData,
-  ImeData,
-  PumpResult,
-} from "./native";
-
-export {
-  pickFile,
-  pickFiles,
-  pickFolder,
-  pickFolders,
-  saveFile,
-} from "./native";
-export type {DialogOptions, FileFilter} from "./native";
 
 import "./register"; // side effect: registers JS constructors with Rust
