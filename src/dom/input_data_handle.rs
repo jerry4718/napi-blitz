@@ -109,8 +109,7 @@ impl InputDataHandle {
                     blitz::dom::node::SpecialElementData::CheckboxInput(_)
                 )
             {
-                el.special_data =
-                    blitz::dom::node::SpecialElementData::CheckboxInput(checked);
+                el.special_data = blitz::dom::node::SpecialElementData::CheckboxInput(checked);
             }
         }
 

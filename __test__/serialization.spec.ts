@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import { HTMLDocument } from "../dist/index.js";
+import {HTMLDocument} from './shim.ts';
 
 test("innerHTML / outerHTML reflect the tree", (t) => {
   const doc = HTMLDocument.create();

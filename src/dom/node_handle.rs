@@ -18,19 +18,19 @@ const NODE_TYPE_DOCUMENT: u32 = 9;
 const NODE_TYPE_OTHER: u32 = 0;
 
 #[napi]
-pub struct NodeHandle {
+pub struct NativeNode {
     pub(crate) node_id: NodeId,
     pub(crate) doc: Rc<SharedDoc>,
 }
 
-impl NodeHandle {
+impl NativeNode {
     pub(crate) fn new(node_id: NodeId, doc: Rc<SharedDoc>) -> Self {
         Self { node_id, doc }
     }
 }
 
 #[napi]
-impl NodeHandle {
+impl NativeNode {
     #[napi]
     pub fn node_type(&self) -> u32 {
         let base = self.doc.base.borrow();
@@ -288,7 +288,7 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn append_child<'a>(&mut self, child: &NodeHandle, env: &'a Env) -> Result<Object<'a>> {
+    pub fn append_child<'a>(&mut self, child: &NativeNode, env: &'a Env) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.append_children(self.node_id, &[child.node_id]);
@@ -301,8 +301,8 @@ impl NodeHandle {
     #[napi]
     pub fn insert_before<'a>(
         &mut self,
-        node: &NodeHandle,
-        anchor: Option<&NodeHandle>,
+        node: &NativeNode,
+        anchor: Option<&NativeNode>,
         env: &'a Env,
     ) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
@@ -332,7 +332,7 @@ impl NodeHandle {
     }
 
     #[napi]
-    pub fn replace_with<'a>(&mut self, node: &NodeHandle, env: &'a Env) -> Result<Object<'a>> {
+    pub fn replace_with<'a>(&mut self, node: &NativeNode, env: &'a Env) -> Result<Object<'a>> {
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.replace_node_with(self.node_id, &[node.node_id]);

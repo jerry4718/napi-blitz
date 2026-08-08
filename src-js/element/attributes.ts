@@ -16,13 +16,14 @@
 // `length`, indexed access, and `getNamedItem` will land when we add a
 // proper `Attr` wrapper.
 
-import type {AttrInit, NativeNodeHandle} from "../native";
+import type {AttrInit} from "../native";
+import {NativeNode} from "../native";
 
 /** The shape user code sees behind `el.attributes`. */
 export type AttributesMap = Record<string, string>;
 
 export function makeAttributesProxy(
-  handle: NativeNodeHandle,
+  handle: InstanceType<typeof NativeNode>,
 ): AttributesMap {
   // The proxy target is just a placeholder object; we route every
   // operation through `handle` so reads always reflect the latest

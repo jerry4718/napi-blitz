@@ -34,7 +34,7 @@ use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth}
 use crate::dom::event::JsEventHandler;
 use crate::dom::global_creators as gc;
 use crate::dom::node_cache::NodeCache;
-use crate::dom::node_handle::NodeHandle;
+use crate::dom::node_handle::NativeNode;
 use crate::dom::payload::EventPayload;
 
 #[cfg(debug_assertions)]
@@ -174,7 +174,7 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
     }
 
     // 3. Create NodeHandle.
-    let handle = NodeHandle::new(node_id, doc.clone());
+    let handle = NativeNode::new(node_id, doc.clone());
 
     // 4. Get the constructor napi_ref: prefer a tag-specific element
     //    constructor (matched by ns + local), fall back to the generic
@@ -187,7 +187,9 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
         .ok_or_else(|| {
             Error::new(
                 Status::GenericFailure,
-                format!("No JS constructor registered for nodeType {node_type} (node_id={node_id})"),
+                format!(
+                    "No JS constructor registered for nodeType {node_type} (node_id={node_id})"
+                ),
             )
         })?;
     let doc_js_napi_ref = doc
@@ -199,7 +201,10 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
     //    a known input type, create an InputDataHandle to pass as a
     //    third constructor argument.
     let needs_input_handle = element_ctor.is_some()
-        && matches!(qual_name.as_ref().map(|qn| qn.local.as_ref()), Some("input") | Some("textarea"));
+        && matches!(
+            qual_name.as_ref().map(|qn| qn.local.as_ref()),
+            Some("input") | Some("textarea")
+        );
     let input_handle_val = if needs_input_handle {
         let h = crate::dom::input_data_handle::InputDataHandle::new(node_id, doc.clone());
         Some(unsafe {
@@ -226,7 +231,7 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
         ))?;
 
         let handle_val =
-            <NodeHandle as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), handle)?;
+            <NativeNode as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), handle)?;
 
         let mut args = vec![handle_val, doc_val];
         if let Some(ih) = input_handle_val {
@@ -304,7 +309,7 @@ fn should_log_ui_event(event: &UiEvent) -> bool {
 // ── DocHandle: JS-facing handle ───────────────────────────────────────
 
 #[napi]
-pub struct DocHandle {
+pub struct NativeDoc {
     pub(crate) doc: Rc<SharedDoc>,
     pub(crate) font_ctx: FontContext,
     #[cfg(feature = "native-window")]
@@ -312,14 +317,14 @@ pub struct DocHandle {
 }
 
 #[cfg(feature = "native-window")]
-impl DocHandle {
+impl NativeDoc {
     pub(crate) fn share_doc(&self) -> Rc<SharedDoc> {
         self.doc.clone()
     }
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     #[napi(factory)]
     pub fn create(_env: Env, config: DocHandleConfig) -> Result<Self> {
         let mut font_ctx = FontContext::new();
@@ -525,6 +530,6 @@ pub fn register_event_factory(
 
 /// Internal helper: build a WindowDocument from a DocHandle.
 #[cfg(feature = "native-window")]
-pub(crate) fn make_window_document(handle: &DocHandle) -> Box<WindowDocument> {
+pub(crate) fn make_window_document(handle: &NativeDoc) -> Box<WindowDocument> {
     Box::new(WindowDocument::new(handle.share_doc()))
 }

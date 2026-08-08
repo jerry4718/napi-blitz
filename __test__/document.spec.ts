@@ -2,14 +2,7 @@
 
 import test from "ava";
 
-import {
-  Comment,
-  Element,
-  HTMLDocument,
-  HTMLElement,
-  Node,
-  Text,
-} from "../dist/index.js";
+import {Comment, Element, HTMLDocument, HTMLElement, Node, Text,} from './shim.ts';
 
 test("HTMLDocument has documentElement / head / body", (t) => {
   const doc = HTMLDocument.create();
@@ -208,7 +201,8 @@ test("createComment returns a Comment wrapper", (t) => {
   // eslint-disable-next-line no-console
   const origWarn = console.warn;
   // eslint-disable-next-line no-console
-  console.warn = () => {};
+  console.warn = () => {
+  };
   try {
     const c = doc.createComment("note");
     t.true(c instanceof Comment);

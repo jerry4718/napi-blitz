@@ -3,13 +3,7 @@
 
 import test from "ava";
 
-import {
-  HTMLDocument,
-  HTMLInputElement,
-  HTMLTextAreaElement,
-  HTMLElement,
-  Element,
-} from "../dist/index.js";
+import {Element, HTMLDocument, HTMLElement, HTMLInputElement, HTMLTextAreaElement,} from './shim.ts';
 
 // ---- Construction & inheritance --------------------------------------------
 

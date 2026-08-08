@@ -6,7 +6,7 @@
 // side stores in a global, and JS classes don't change).
 
 import type {EventPayload} from "./native";
-import {registerEventFactory, registerNodeConstructor, registerElementConstructor} from "./native";
+import {registerElementConstructor, registerEventFactory, registerNodeConstructor} from "./native";
 import {NodeTypes} from "./base/node";
 import {Text} from "./base/text";
 import {Comment} from "./base/comment";

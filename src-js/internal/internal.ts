@@ -8,17 +8,17 @@
 // Keeping this in one module also makes it easy to grep for who
 // depends on internals when we tighten encapsulation later.
 
-import type {NativeDocHandle, NativeNodeHandle} from "../native";
+import {NativeDoc, NativeNode} from "../native";
 
 /** Shape of a `Node`'s package-private fields. */
 export interface NodeInternals {
-  readonly _handle: NativeNodeHandle;
+  readonly _handle: InstanceType<typeof NativeNode>;
   readonly _doc: DocumentInternals;
 }
 
 /** Shape of a `Document`'s package-private fields, viewed by friends. */
 export interface DocumentInternals {
-  readonly _native: NativeDocHandle;
+  readonly _native: InstanceType<typeof NativeDoc>;
 }
 
 /** Read the package-private fields off a `Node` instance. */

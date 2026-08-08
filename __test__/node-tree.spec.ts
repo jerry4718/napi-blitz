@@ -2,8 +2,8 @@
 
 import test from "ava";
 
-import { HTMLDocument } from "../dist/index.js";
-import { pluckDocument } from "./_helpers.ts";
+import {HTMLDocument} from './shim.ts';
+import {pluckDocument} from "./_helpers.ts";
 
 test("appendChild / parentNode / childNodes are on Node", (t) => {
   const doc = HTMLDocument.create();

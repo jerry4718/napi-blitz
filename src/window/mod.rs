@@ -183,14 +183,14 @@ pub(crate) struct WindowInner {
 /// `BlitzApp`. `close_window` takes the `Arc<dyn Window>` out of the inner
 /// cell, which releases the OS window even if this JS handle is still alive.
 #[napi]
-pub struct Window {
+pub struct NativeWindow {
     /// winit `WindowId`; uniquely identifies the window for as long as
     /// it is open. Internal-only - the JS layer does not need to see this.
     pub(crate) window_id: WindowId,
     pub(crate) inner: Rc<RefCell<WindowInner>>,
 }
 
-impl Window {
+impl NativeWindow {
     #[inline]
     fn native_window(&self) -> Result<Ref<'_, dyn WinitWindow>> {
         let inner = self.inner.borrow();
@@ -202,7 +202,7 @@ impl Window {
 }
 
 #[napi]
-impl Window {
+impl NativeWindow {
     /// Whether `closeWindow` has run for this handle.
     #[napi(getter)]
     pub fn closed(&self) -> bool {

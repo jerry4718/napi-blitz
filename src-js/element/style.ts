@@ -30,7 +30,7 @@
 //   - Indexed access via numeric property keys (`el.style[0]`). Use
 //     `item(0)` instead, which is also standard.
 
-import type {NativeNodeHandle} from "../native";
+import {NativeNode} from "../native";
 
 /**
  * Public shape behind `el.style`. The string-indexed entries are CSS
@@ -116,7 +116,7 @@ const RESERVED = new Set<string | symbol>([
 ]);
 
 export function makeStyleProxy(
-  handle: NativeNodeHandle,
+  handle: InstanceType<typeof NativeNode>,
 ): StyleDeclaration {
   // The target carries the spec methods so calls like
   // `el.style.setProperty("color", "x")` resolve via the normal

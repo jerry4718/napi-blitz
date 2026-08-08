@@ -16,8 +16,8 @@ use napi::{
 use style::{Atom, invalidation::element::restyle_hints::RestyleHint, properties::PropertyId};
 
 use crate::dom::{
-    doc::{DocHandle, wrap_node},
-    node_handle::NodeHandle,
+    doc::{NativeDoc, wrap_node},
+    node_handle::NativeNode,
 };
 
 /// Plain attribute pair used by the create/insert APIs.
@@ -129,7 +129,7 @@ pub(crate) fn remove_detached_attribute(
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// Replace document content from an HTML string. Useful for tests and
     /// initial bootstrapping when `base_html` was not enough.
     #[napi]
@@ -257,15 +257,15 @@ impl DocHandle {
     }
 
     #[napi]
-    pub fn node_handle(&self, id: BigInt) -> Option<NodeHandle> {
+    pub fn node_handle(&self, id: BigInt) -> Option<NativeNode> {
         let node_id = js_to_node_id(&id);
         self.doc.base.borrow().get_node(node_id)?;
-        Some(NodeHandle::new(node_id, self.doc.clone()))
+        Some(NativeNode::new(node_id, self.doc.clone()))
     }
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// Create an element node. Returns a wrapped JS Node. The element is
     /// detached (no parent) until inserted.
     #[napi]
@@ -349,7 +349,7 @@ impl DocHandle {
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// Parent node id, if any.
     #[napi]
     pub fn parent_id(&self, node_id: BigInt) -> Option<u64> {
@@ -425,7 +425,7 @@ const NODE_TYPE_DOCUMENT: u32 = 9;
 const NODE_TYPE_OTHER: u32 = 0;
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// DOM-style `nodeType` (1=Element, 3=Text, 8=Comment, 9=Document).
     #[napi]
     pub fn node_type(&self, node_id: BigInt) -> u32 {
@@ -496,7 +496,7 @@ impl DocHandle {
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// Set an attribute on an element.
     #[napi]
     pub fn set_attribute(
@@ -676,7 +676,7 @@ impl DocHandle {
 }
 
 #[napi]
-impl DocHandle {
+impl NativeDoc {
     /// Append `child` as the last child of `parent`. Mirrors `Node.appendChild`.
     #[napi]
     pub fn append_child(&mut self, parent_id: BigInt, child_id: BigInt) {
@@ -844,7 +844,7 @@ impl DocHandle {
     #[napi]
     pub fn find_all_by_local_name_in<'a>(
         &self,
-        root: &NodeHandle,
+        root: &NativeNode,
         name: String,
         env: &'a Env,
     ) -> Vec<Object<'a>> {
@@ -863,7 +863,7 @@ impl DocHandle {
     /// i.e. every descendant element regardless of tag. Backs
     /// `element.getElementsByTagName("*")`.
     #[napi]
-    pub fn find_all_elements_in<'a>(&self, root: &NodeHandle, env: &'a Env) -> Vec<Object<'a>> {
+    pub fn find_all_elements_in<'a>(&self, root: &NativeNode, env: &'a Env) -> Vec<Object<'a>> {
         let state = self.doc.base.borrow();
         let ids = dfs_collect_children(&state, root.node_id, |n| {
             n.data.downcast_element().is_some()
@@ -892,7 +892,7 @@ impl DocHandle {
     #[napi]
     pub fn find_all_by_class_name_in<'a>(
         &self,
-        root: &NodeHandle,
+        root: &NativeNode,
         class_name: String,
         env: &'a Env,
     ) -> Vec<Object<'a>> {
@@ -927,7 +927,7 @@ impl DocHandle {
     }
 }
 
-impl DocHandle {
+impl NativeDoc {
     /// Shared fast-path for `local_name!`-constructed atoms. Bypasses the
     /// `LocalName::from(&str)` allocation that `find_first_by_local_name`
     /// has to do for the runtime-string case.

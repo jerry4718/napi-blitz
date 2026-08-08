@@ -20,7 +20,8 @@
 //     because every add resolves synchronously. `EventTarget` methods
 //     are still inherited so `addEventListener` is a safe no-op.
 
-import type {NativeDocHandle, RegisterFontOptions} from "../native";
+import type {RegisterFontOptions} from "../native";
+import {NativeDoc} from "../native";
 import {FontFace} from "./font-face";
 
 /** Standard `FontFaceSet.status` values. */
@@ -34,12 +35,12 @@ export type FontFaceSetLoadStatus = "loading" | "loaded";
  * even though we do not currently dispatch them.
  */
 export class FontFaceSet extends EventTarget {
-  private readonly _native: NativeDocHandle;
+  private readonly _native: InstanceType<typeof NativeDoc>;
   private readonly _faces: Set<FontFace> = new Set();
   private readonly _ready: Promise<FontFaceSet>;
 
   /** @internal Constructed by `Document`. */
-  constructor(native: NativeDocHandle) {
+  constructor(native: InstanceType<typeof NativeDoc>) {
     super();
     this._native = native;
     // We register synchronously, so `ready` is always already resolved.

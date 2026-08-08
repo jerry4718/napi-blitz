@@ -3,7 +3,7 @@
 // NodeCache + wrap_node.
 
 import {Document, type DocumentInit} from "./document";
-import {NativeDocHandleCtor} from "../native";
+import {NativeDoc} from "../native";
 
 export class HTMLDocument extends Document {
   /**
@@ -12,14 +12,14 @@ export class HTMLDocument extends Document {
    * (tests, buffer renderer, etc.).
    */
   static create(init?: DocumentInit): HTMLDocument {
-    const handle = NativeDocHandleCtor.create({
+    const handle = NativeDoc.create({
       uaStylesheets: init?.uaStylesheets,
       baseHtml: init?.baseHtml,
     });
     return new HTMLDocument(handle);
   }
 
-  constructor(handle: import("../native").NativeDocHandle) {
+  constructor(handle: InstanceType<typeof NativeDoc>) {
     super(handle);
   }
 }

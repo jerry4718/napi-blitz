@@ -1,7 +1,7 @@
 // Shared helpers for the AVA test files. Not picked up by AVA's default
 // glob because the filename does not end in `.spec.ts`.
 
-import type { Node } from "../dist/index.js";
+import type {Node} from './shim.ts';
 
 /**
  * Shape of a `Node`'s package-private fields, as seen from test code.
@@ -24,7 +24,7 @@ export function pluckNode(n: Node): TestNodeInternals {
  * Shape of a `Document`'s package-private fields used by tests.
  */
 interface TestDocumentInternals {
-  readonly _native: import("../dist/index.js").NativeDocHandle;
+  readonly _native: InstanceType<typeof import('./shim.ts').NativeDoc>;
 }
 
 /** Read package-private fields off a `Document` instance. */

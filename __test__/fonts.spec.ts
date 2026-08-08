@@ -13,15 +13,15 @@
 
 import test from "ava";
 
-import { FontFace, FontFaceSet, HTMLDocument } from "../dist/index.js";
+import {FontFace, FontFaceSet, HTMLDocument} from './shim.ts';
 
 test("FontFace constructor validates family name", (t) => {
   const buf = new Uint8Array([0, 0, 0, 0]);
-  t.throws(() => new FontFace("", buf), { instanceOf: TypeError });
+  t.throws(() => new FontFace("", buf), {instanceOf: TypeError});
   // Non-string also rejected.
   t.throws(
     () => new FontFace(undefined as unknown as string, buf),
-    { instanceOf: TypeError },
+    {instanceOf: TypeError},
   );
 });
 
@@ -61,7 +61,7 @@ test("FontFace.load() resolves synchronously for buffer sources", async (t) => {
 
 test("FontFace.load() rejects URL-string sources", async (t) => {
   const face = new FontFace("X", "url(./missing.ttf)");
-  await t.throwsAsync(() => face.load(), { instanceOf: TypeError });
+  await t.throwsAsync(() => face.load(), {instanceOf: TypeError});
   t.is(face.status, "error");
 });
 
@@ -119,15 +119,15 @@ test("FontFaceSet.add registers, has/size/iterate, delete/clear work", async (t)
 test("FontFaceSet.add rejects non-FontFace arguments", (t) => {
   const doc = HTMLDocument.create();
   t.throws(
-    () => doc.fonts.add({ family: "X" } as unknown as FontFace),
-    { instanceOf: TypeError },
+    () => doc.fonts.add({family: "X"} as unknown as FontFace),
+    {instanceOf: TypeError},
   );
 });
 
 test("FontFaceSet.add rejects URL-source faces with a clear error", (t) => {
   const doc = HTMLDocument.create();
   const face = new FontFace("X", "url(./missing.ttf)");
-  t.throws(() => doc.fonts.add(face), { instanceOf: TypeError });
+  t.throws(() => doc.fonts.add(face), {instanceOf: TypeError});
   t.false(doc.fonts.has(face));
 });
 
