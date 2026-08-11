@@ -7,18 +7,22 @@
 // (rootDir = package src/) or the compiled output (in dist/).
 
 import {createRequire} from "node:module";
-import * as path from "node:path";
 
-// ESM: import.meta.dirname (Node 20.11+).
-// CJS: tsup define replaces import.meta.dirname with __dirname.
-const dirname: string = import.meta.dirname;
+declare const __filename: string;
 
-// This module sits one directory below the package root,
-// so a single `..` step reaches it.
-const packageRoot = path.resolve(dirname, "..");
-const requireFromRoot = createRequire(path.join(packageRoot, "_anchor.js"));
+// ESM and CJS resolve the native module the same way; only the filename
+// source differs. rolldown replaces process.env.FORMAT with a literal via
+// transform.define, then output.minify: 'dce-only' eliminates the
+// unreachable branch.
+const require = createRequire(
+  process.env.FORMAT === "cjs"
+    ? __filename
+    // import.meta.url is only valid in ESM; in the CJS build rolldown
+    // defines it as "__filename", then DCE removes this branch.
+    : import.meta.url,
+);
 
-const mod = requireFromRoot("./native/index.cjs") as typeof import("../native");
+const mod = require("../native/index.cjs") as typeof import("../native");
 
 export type * from "../native";
 

@@ -634,15 +634,15 @@ export interface PumpResult {
   code?: number
 }
 
-export declare function registerCancelBubbleGetter(fnRef: CancelBubbleGetter): void
+export declare function registerCancelBubbleGetter(getter: (event: Event) => boolean): void
 
-export declare function registerDefaultPreventedGetter(fnRef: DefaultPreventedGetter): void
+export declare function registerDefaultPreventedGetter(getter: (event: Event) => boolean): void
 
-export declare function registerDispatchFn(dispatchFn: DispatchFn): void
+export declare function registerDispatchFn(dispatchFn: (target: EventTarget, event: Event) => unknown): void
 
-export declare function registerElementConstructor(namespace: string, tagName: string, constructor: ElementConstructor): void
+export declare function registerElementConstructor(namespace: string, tagName: string, constructor: { new (handle: NativeNode, document: object, extra?: InputDataHandle): object }): void
 
-export declare function registerEventFactory(factory: EventFactory): void
+export declare function registerEventFactory(factory: (payload: EventPayload) => Event): void
 
 /** Options for `DocHandle.registerFont`. */
 export interface RegisterFontOptions {
@@ -652,7 +652,7 @@ export interface RegisterFontOptions {
   stretch?: string
 }
 
-export declare function registerNodeConstructor(nodeType: number, constructor: NodeConstructor): void
+export declare function registerNodeConstructor(nodeType: number, constructor: { new (handle: NativeNode, document: object): object }): void
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>

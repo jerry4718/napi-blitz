@@ -154,13 +154,17 @@ pub fn init_env(env: Env) -> Result<()> {
     Ok(())
 }
 
-#[napi]
+#[napi(
+    ts_args_type = "nodeType: number, constructor: { new (handle: NativeNode, document: object): object }"
+)]
 pub fn register_node_constructor(node_type: u32, constructor: NodeConstructor) -> Result<()> {
     insert_node_constructor(node_type, constructor);
     Ok(())
 }
 
-#[napi]
+#[napi(
+    ts_args_type = "namespace: string, tagName: string, constructor: { new (handle: NativeNode, document: object, extra?: InputDataHandle): object }"
+)]
 pub fn register_element_constructor(
     namespace: String,
     tag_name: String,
@@ -172,26 +176,26 @@ pub fn register_element_constructor(
     Ok(())
 }
 
-#[napi]
+#[napi(ts_args_type = "factory: (payload: EventPayload) => Event")]
 pub fn register_event_factory(factory: EventFactory) -> Result<()> {
     set_event_factory(factory);
     Ok(())
 }
 
-#[napi]
+#[napi(ts_args_type = "dispatchFn: (target: EventTarget, event: Event) => unknown")]
 pub fn register_dispatch_fn(dispatch_fn: DispatchFn) -> Result<()> {
     set_dispatch_fn(dispatch_fn);
     Ok(())
 }
 
-#[napi]
-pub fn register_cancel_bubble_getter(fn_ref: CancelBubbleGetter) -> Result<()> {
-    set_cancel_bubble_getter(fn_ref);
+#[napi(ts_args_type = "getter: (event: Event) => boolean")]
+pub fn register_cancel_bubble_getter(getter: CancelBubbleGetter) -> Result<()> {
+    set_cancel_bubble_getter(getter);
     Ok(())
 }
 
-#[napi]
-pub fn register_default_prevented_getter(fn_ref: DefaultPreventedGetter) -> Result<()> {
-    set_default_prevented_getter(fn_ref);
+#[napi(ts_args_type = "getter: (event: Event) => boolean")]
+pub fn register_default_prevented_getter(getter: DefaultPreventedGetter) -> Result<()> {
+    set_default_prevented_getter(getter);
     Ok(())
 }

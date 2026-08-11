@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "lib": ["ES2021", "DOM"],
+    "lib": ["ES2021"],
     "strict": true,
     "moduleResolution": "node",
     "module": "ESNext",
@@ -12,8 +12,8 @@
     "allowImportingTsExtensions": true,
     "declaration": true,
     "sourceMap": false,
-    "baseUrl": "."
+    "types": ["node"]
   },
-  "include": ["src-js/**/*.ts", "native/**/*.ts"],
-  "exclude": ["node_modules", "benchmark", "__test__", "external", "examples", "dist", "esm", "cjs"]
+  "include": ["native/**/*.ts", "src-js/**/*.ts"],
+  "exclude": ["node_modules", "benchmark", "__test__", "external", "examples", "dist"]
 }
