@@ -9,23 +9,24 @@
 mod bridge;
 mod handler;
 
-use std::{
-    cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, sync::mpsc::Receiver, time::Duration,
-};
-
-use crate::window::WindowInner;
 use crate::{
     app::{
         bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
         handler::AppHandler,
     },
-    dom::doc::{NativeDoc, make_window_document},
+    dom::doc::NativeDoc,
     renderer::CurrentRenderer,
     window::{
-        NativeWindow, WindowOptions, build_window_attributes,
+        NativeWindow, WindowInner, make_window_document,
         monitor::{MonitorInfo, monitor_to_info},
+        options::WindowOptions,
+        util::build_window_attributes,
     },
 };
+use std::{
+    cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, sync::mpsc::Receiver, time::Duration,
+};
+
 use blitz::{
     shell::{
         BlitzShellEvent, BlitzShellProxy, EventLoop, View, WindowConfig, create_default_event_loop,

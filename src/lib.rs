@@ -13,6 +13,10 @@
 #[macro_use]
 extern crate napi_derive;
 
+mod global;
+
+mod helpers;
+
 mod dom;
 
 mod dialog;

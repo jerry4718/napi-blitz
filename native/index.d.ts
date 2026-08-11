@@ -151,13 +151,12 @@ export declare class NativeDoc {
   registerFont(data: Uint8Array, options?: RegisterFontOptions | undefined | null): number
   rootNodeId(): bigint
   rootElementId(): bigint
-  setDocJs(doc: object): void
+  setDocumentRef(document: object): void
   /**
-   * Store a JS function (the Window's `dispatchEvent` bound method)
-   * so Rust can dispatch pointer events to the window-level
-   * EventTarget during `handle_event`.
+   * Store a ref to the JS Window object so Rust can forward
+   * pointer events to it via the registered dispatch function.
    */
-  setWindowDispatch(dispatch: (arg: unknown) => unknown): void
+  setWindowRef(window: object): void
   /**
    * Replace document content from an HTML string. Useful for tests and
    * initial bootstrapping when `base_html` was not enough.
@@ -606,6 +605,13 @@ export interface FileFilter {
   extensions: Array<string>
 }
 
+/**
+ * One-time env injection. JS calls this during addon init (before any
+ * register_* calls) so that `global::env()` works in callbacks that don't
+ * receive an `Env` parameter (e.g. `EventHandler::handle_event`).
+ */
+export declare function initEnv(): void
+
 /** Open a single-file picker. Returns the chosen path or `null`. */
 export declare function pickFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
 
@@ -628,9 +634,15 @@ export interface PumpResult {
   code?: number
 }
 
-export declare function registerElementConstructor(namespace: string, tagName: string, constructor: (arg: unknown) => unknown): void
+export declare function registerCancelBubbleGetter(fnRef: CancelBubbleGetter): void
 
-export declare function registerEventFactory(factory: (arg: EventPayload) => unknown): void
+export declare function registerDefaultPreventedGetter(fnRef: DefaultPreventedGetter): void
+
+export declare function registerDispatchFn(dispatchFn: DispatchFn): void
+
+export declare function registerElementConstructor(namespace: string, tagName: string, constructor: ElementConstructor): void
+
+export declare function registerEventFactory(factory: EventFactory): void
 
 /** Options for `DocHandle.registerFont`. */
 export interface RegisterFontOptions {
@@ -640,7 +652,7 @@ export interface RegisterFontOptions {
   stretch?: string
 }
 
-export declare function registerNodeConstructor(nodeType: number, constructor: (arg: unknown) => unknown): void
+export declare function registerNodeConstructor(nodeType: number, constructor: NodeConstructor): void
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>

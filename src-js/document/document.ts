@@ -45,7 +45,7 @@ export abstract class Document extends Node implements DocumentInternals {
     this._native = handle;
     // Set the JS Document object reference so Rust can pass `doc` to
     // each JS Node constructor.
-    this._native.setDocJs(this);
+    this._native.setDocumentRef(this);
   }
 
   // ----- Standard DOM root accessors --------------------------------------

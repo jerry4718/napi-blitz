@@ -16,6 +16,14 @@ use std::{
     task::Context as TaskContext,
 };
 
+use crate::{
+    dom::{
+        event::JsEventHandler, input_data_handle::InputDataHandle, node_cache::NodeCache,
+        node_handle::NativeNode,
+    },
+    global::{get_element_constructor, get_node_constructor},
+    helpers::JsWeakRef,
+};
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
@@ -26,16 +34,9 @@ use blitz::{
 };
 use napi::{
     Env, Error, Result, Status,
-    bindgen_prelude::{Function, Object, Uint8Array},
-    sys,
+    bindgen_prelude::{FnArgs, FromNapiValue, Object, ObjectRef, ToNapiValue, Uint8Array},
 };
 use parley::fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth};
-
-use crate::dom::event::JsEventHandler;
-use crate::dom::global_creators as gc;
-use crate::dom::node_cache::NodeCache;
-use crate::dom::node_handle::NativeNode;
-use crate::dom::payload::EventPayload;
 
 #[cfg(debug_assertions)]
 fn debug_ui_event_kind(event: &UiEvent) -> &'static str {
@@ -97,12 +98,10 @@ pub struct SharedDoc {
     host_dirty: Cell<bool>,
     /// Weak-reference cache: blitz_node_id -> napi_ref (refcount=0)
     pub node_cache: RefCell<NodeCache>,
-    /// Strong napi_ref to the JS Document object
-    pub doc_js_ref: RefCell<Option<sys::napi_ref>>,
-    /// Strong napi_ref to the JS Window's dispatchEvent function.
-    /// Set by `set_window_dispatch` from the JS Window constructor so
-    /// Rust can dispatch pointer events to the window-level EventTarget.
-    pub window_dispatch_ref: RefCell<Option<sys::napi_ref>>,
+    /// Weak ref to the JS Document object
+    pub js_document_ref: RefCell<Option<JsWeakRef>>,
+    /// Weak ref to the JS Window object, for forwarding pointer events.
+    pub js_window_ref: RefCell<Option<JsWeakRef>>,
 }
 
 impl SharedDoc {
@@ -111,8 +110,8 @@ impl SharedDoc {
             base: RefCell::new(base),
             host_dirty: Cell::new(false),
             node_cache: RefCell::new(NodeCache::new()),
-            doc_js_ref: RefCell::new(None),
-            window_dispatch_ref: RefCell::new(None),
+            js_document_ref: RefCell::new(None),
+            js_window_ref: RefCell::new(None),
         }
     }
 
@@ -129,62 +128,92 @@ impl SharedDoc {
 
 /// Wrap a blitz node_id into a JS Node object.
 ///
-/// Uses `GlobalCreators` for JS constructor lookup and `SharedDoc`
-/// for doc type lookup, node_cache, and doc_js ref.
+/// Uses the global registry for JS constructor lookup and `SharedDoc`
+/// for document lookup, node cache, and the JS Document ref.
 pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Result<Object<'a>> {
-    // 1. Check cache.
+    // 1. Return an existing JS wrapper only after confirming that the
+    //    underlying DOM node still exists.
     let cached = {
         let cache = doc.node_cache.borrow();
-        NodeCache::get_from_map(&cache.entries, node_id, env)
+        cache.get(node_id, env)
     };
     if let Some(cached) = cached {
         return Ok(cached);
     }
 
-    // 2. For Document nodes (nodeType 9), return the cached doc_js ref.
-    //    For Element nodes, extract the QualName (ns + local) for
-    //    tag-specific constructor lookup.
-    let (node_type, qual_name) = doc
-        .base
-        .borrow()
-        .get_node(node_id)
-        .map(|n| match &n.data {
+    // 2. Read the node metadata. Invalid or stale ids must not fall
+    //    through to constructor lookup as a made-up nodeType.
+    let (node_type, qual_name) = {
+        let base = doc.base.borrow();
+        let node = base.get_node(node_id).ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("No DOM node found for node_id={node_id}"),
+            )
+        })?;
+
+        match &node.data {
             NodeData::Document(_) => (9u32, None),
             NodeData::Element(el) => (1u32, Some(el.name.clone())),
             NodeData::Text(_) => (3u32, None),
             NodeData::Comment { .. } => (8u32, None),
-            _ => (0u32, None),
-        })
-        .unwrap_or((0u32, None));
+            _ => {
+                return Err(Error::new(
+                    Status::GenericFailure,
+                    format!("Unsupported DOM node type for node_id={node_id}"),
+                ));
+            }
+        }
+    };
+
+    // 3. Resolve the JS Document once. It is either returned directly
+    //    or passed to the selected node constructor.
+    let js_document = doc
+        .js_document_ref
+        .borrow()
+        .as_ref()
+        .and_then(|weak| weak.get_value(env))
+        .ok_or_else(|| Error::new(Status::GenericFailure, "js_document_ref not set or dead"))?;
 
     if node_type == 9 {
-        let doc_ref = doc
-            .doc_js_ref
-            .borrow()
-            .ok_or_else(|| Error::new(Status::GenericFailure, "doc_js not set"))?;
-        let mut value = std::ptr::null_mut();
-        napi::check_status!(unsafe {
-            sys::napi_get_reference_value(env.raw(), doc_ref, &mut value)
-        })?;
-        let doc_obj = Object::from_raw(env.raw(), value);
         doc.node_cache
             .borrow_mut()
-            .insert(node_id, &doc_obj, env, Rc::downgrade(doc))?;
-        return Ok(doc_obj);
+            .insert(node_id, &js_document, env, Rc::downgrade(doc))?;
+        return Ok(js_document);
     }
 
-    // 3. Create NodeHandle.
+    // 4. Create the native node handle.
     let handle = NativeNode::new(node_id, doc.clone());
 
-    // 4. Get the constructor napi_ref: prefer a tag-specific element
+    // 5. Prefer a tag-specific element constructor over the generic
     //    constructor (matched by ns + local), fall back to the generic
     //    node_type constructor.
     let element_ctor = qual_name
         .as_ref()
-        .and_then(|qn| gc::get_element_constructor(&qn.ns, &qn.local));
-    let ctor_napi_ref = element_ctor
-        .or_else(|| gc::get_node_constructor(node_type))
-        .ok_or_else(|| {
+        .and_then(|qn| get_element_constructor(&qn.ns, &qn.local));
+
+    // 6. Build the optional extra argument for element constructors.
+    let extra: Option<ObjectRef> = if element_ctor.is_some()
+        && matches!(
+            qual_name.as_ref().map(|qn| qn.local.as_ref()),
+            Some("input") | Some("textarea")
+        ) {
+        let h = InputDataHandle::new(node_id, doc.clone());
+        let obj_ref = ObjectRef::from_unknown(h.into_unknown(env)?)?;
+        Some(obj_ref)
+    } else {
+        None
+    };
+
+    // 7. Call new Constructor(handle, document[, extra]).
+    let document_ref = js_document.create_ref::<true>()?;
+
+    let js_node = if let Some(ctor) = element_ctor {
+        let ctor_fn = ctor.borrow_back(env)?;
+        let result = ctor_fn.new_instance(FnArgs::from((handle, document_ref, extra)))?;
+        Object::from_unknown(result)?
+    } else {
+        let ctor = get_node_constructor(node_type).ok_or_else(|| {
             Error::new(
                 Status::GenericFailure,
                 format!(
@@ -192,64 +221,12 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
                 ),
             )
         })?;
-    let doc_js_napi_ref = doc
-        .doc_js_ref
-        .borrow()
-        .ok_or_else(|| Error::new(Status::GenericFailure, "doc_js not set"))?;
-
-    // 5. If this element has a tag-specific constructor and the tag is
-    //    a known input type, create an InputDataHandle to pass as a
-    //    third constructor argument.
-    let needs_input_handle = element_ctor.is_some()
-        && matches!(
-            qual_name.as_ref().map(|qn| qn.local.as_ref()),
-            Some("input") | Some("textarea")
-        );
-    let input_handle_val = if needs_input_handle {
-        let h = crate::dom::input_data_handle::InputDataHandle::new(node_id, doc.clone());
-        Some(unsafe {
-            <crate::dom::input_data_handle::InputDataHandle as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), h)?
-        })
-    } else {
-        None
+        let ctor_fn = ctor.borrow_back(env)?;
+        let result = ctor_fn.new_instance(FnArgs::from((handle, document_ref)))?;
+        Object::from_unknown(result)?
     };
 
-    // 6. Call new Constructor(handle, doc[, inputDataHandle]).
-    let js_node = unsafe {
-        let mut ctor_val = std::ptr::null_mut();
-        napi::check_status!(sys::napi_get_reference_value(
-            env.raw(),
-            ctor_napi_ref,
-            &mut ctor_val
-        ))?;
-
-        let mut doc_val = std::ptr::null_mut();
-        napi::check_status!(sys::napi_get_reference_value(
-            env.raw(),
-            doc_js_napi_ref,
-            &mut doc_val
-        ))?;
-
-        let handle_val =
-            <NativeNode as napi::bindgen_prelude::ToNapiValue>::to_napi_value(env.raw(), handle)?;
-
-        let mut args = vec![handle_val, doc_val];
-        if let Some(ih) = input_handle_val {
-            args.push(ih);
-        }
-        let mut result = std::ptr::null_mut();
-        napi::check_status!(sys::napi_new_instance(
-            env.raw(),
-            ctor_val,
-            args.len(),
-            args.as_ptr(),
-            &mut result
-        ))?;
-
-        Object::from_raw(env.raw(), result)
-    };
-
-    // 6. Cache (weak ref).
+    // 8. Cache the JS wrapper as a weak ref.
     doc.node_cache
         .borrow_mut()
         .insert(node_id, &js_node, env, Rc::downgrade(doc))?;
@@ -440,96 +417,16 @@ impl NativeDoc {
     }
 
     #[napi]
-    pub fn set_doc_js(&self, env: Env, doc: Object) -> Result<()> {
-        gc::set_env(env.raw());
-        let mut napi_ref = std::ptr::null_mut();
-        napi::check_status!(unsafe {
-            sys::napi_create_reference(env.raw(), napi::JsValue::raw(&doc), 1, &mut napi_ref)
-        })?;
-        *self.doc.doc_js_ref.borrow_mut() = Some(napi_ref);
+    pub fn set_document_ref(&self, env: Env, document: Object) -> Result<()> {
+        *self.doc.js_document_ref.borrow_mut() = Some(JsWeakRef::new(&document, &env)?);
         Ok(())
     }
 
-    /// Store a JS function (the Window's `dispatchEvent` bound method)
-    /// so Rust can dispatch pointer events to the window-level
-    /// EventTarget during `handle_event`.
+    /// Store a ref to the JS Window object so Rust can forward
+    /// pointer events to it via the registered dispatch function.
     #[napi]
-    pub fn set_window_dispatch(
-        &self,
-        env: Env,
-        dispatch: Function<napi::bindgen_prelude::Unknown, napi::bindgen_prelude::Unknown>,
-    ) -> Result<()> {
-        gc::set_env(env.raw());
-        let mut napi_ref = std::ptr::null_mut();
-        napi::check_status!(unsafe {
-            sys::napi_create_reference(env.raw(), napi::JsValue::raw(&dispatch), 1, &mut napi_ref)
-        })?;
-        *self.doc.window_dispatch_ref.borrow_mut() = Some(napi_ref);
+    pub fn set_window_ref(&self, env: Env, window: Object) -> Result<()> {
+        *self.doc.js_window_ref.borrow_mut() = Some(JsWeakRef::new(&window, &env)?);
         Ok(())
     }
-}
-
-// ── Global registration functions (no DocHandle instance needed) ──────
-
-#[napi]
-pub fn register_node_constructor(
-    env: Env,
-    node_type: u32,
-    constructor: Function<napi::bindgen_prelude::Unknown, napi::bindgen_prelude::Unknown>,
-) -> Result<()> {
-    gc::set_env(env.raw());
-    let mut napi_ref = std::ptr::null_mut();
-    napi::check_status!(unsafe {
-        sys::napi_create_reference(
-            env.raw(),
-            napi::JsValue::raw(&constructor),
-            1,
-            &mut napi_ref,
-        )
-    })?;
-    gc::insert_node_constructor(node_type, napi_ref);
-    Ok(())
-}
-
-#[napi]
-pub fn register_element_constructor(
-    env: Env,
-    namespace: String,
-    tag_name: String,
-    constructor: Function<napi::bindgen_prelude::Unknown, napi::bindgen_prelude::Unknown>,
-) -> Result<()> {
-    gc::set_env(env.raw());
-    let mut napi_ref = std::ptr::null_mut();
-    napi::check_status!(unsafe {
-        sys::napi_create_reference(
-            env.raw(),
-            napi::JsValue::raw(&constructor),
-            1,
-            &mut napi_ref,
-        )
-    })?;
-    let ns = blitz::dom::Namespace::from(namespace.as_str());
-    let local = blitz::dom::LocalName::from(tag_name.to_lowercase().as_str());
-    gc::insert_element_constructor(ns, local, napi_ref);
-    Ok(())
-}
-
-#[napi]
-pub fn register_event_factory(
-    env: Env,
-    factory: Function<EventPayload, napi::bindgen_prelude::Unknown>,
-) -> Result<()> {
-    gc::set_env(env.raw());
-    let mut napi_ref = std::ptr::null_mut();
-    napi::check_status!(unsafe {
-        sys::napi_create_reference(env.raw(), napi::JsValue::raw(&factory), 1, &mut napi_ref)
-    })?;
-    gc::set_event_factory(napi_ref);
-    Ok(())
-}
-
-/// Internal helper: build a WindowDocument from a DocHandle.
-#[cfg(feature = "native-window")]
-pub(crate) fn make_window_document(handle: &NativeDoc) -> Box<WindowDocument> {
-    Box::new(WindowDocument::new(handle.share_doc()))
 }

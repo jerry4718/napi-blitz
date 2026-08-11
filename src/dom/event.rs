@@ -17,10 +17,12 @@
 //! serializing an `EventPayload` and calling into JS for every receiver,
 //! we build the Event once and call `dispatchEvent` directly.
 
-use crate::dom::{
-    doc::{SharedDoc, wrap_node},
-    global_creators as gc,
-    payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData},
+use crate::{
+    dom::{
+        doc::{SharedDoc, wrap_node},
+        payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData},
+    },
+    global,
 };
 use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
@@ -30,10 +32,8 @@ use blitz::{
     },
 };
 use napi::{
-    Env, JsValue, Result,
-    bindgen_prelude::{
-        FnArgs, FromNapiValue, Function, JsObjectValue, Object, ToNapiValue, Unknown,
-    },
+    Env, Error, JsValue, Result, Status,
+    bindgen_prelude::{FnArgs, FromNapiValue, Function, JsObjectValue, Object, Unknown},
 };
 use std::rc::{Rc, Weak};
 
@@ -84,7 +84,7 @@ impl EventHandler for JsEventHandler {
         doc: &mut dyn BlitzDocument,
         event_state: &mut EventState,
     ) {
-        let env = match gc::env() {
+        let env = match global::env() {
             Ok(e) => e,
             Err(_) => return,
         };
@@ -95,13 +95,17 @@ impl EventHandler for JsEventHandler {
         };
 
         // 1. Build the JS Event object via the registered factory.
-        let event_factory_ref = match gc::get_event_factory() {
-            Some(r) => r,
-            None => return, // No factory registered yet.
-        };
-
         let payload = serialize_event(event);
-        let mut event_obj = match call_event_factory(event_factory_ref, payload, &env) {
+        let Some(factory_ref) = global::get_event_factory() else {
+            return;
+        };
+        let mut event_obj = match (|| -> Result<Object> {
+            let factory_fn = factory_ref.borrow_back(&env)?;
+            let result_ref = factory_fn.call(FnArgs::from((payload,)))?;
+            let result = result_ref.get_value(&env)?;
+            result_ref.unref(&env)?;
+            Ok(result)
+        })() {
             Ok(obj) => obj,
             Err(e) => {
                 eprintln!("napi-blitz: event factory call failed: {e}");
@@ -165,8 +169,12 @@ impl EventHandler for JsEventHandler {
         }
 
         // 10. Read back flags and write to blitz EventState.
-        let default_prevented: bool = event_obj
-            .get_named_property("defaultPrevented")
+        let default_prevented: bool = global::get_default_prevented_getter()
+            .and_then(|dp_ref| dp_ref.borrow_back(&env).ok())
+            .and_then(|dp_fn| {
+                let event_ref = event_obj.create_ref::<true>().ok()?;
+                dp_fn.call(FnArgs::from((event_ref,))).ok()
+            })
             .unwrap_or(false);
         if default_prevented {
             event_state.prevent_default();
@@ -233,95 +241,47 @@ fn is_pointer_event(event: &DomEvent) -> bool {
     )
 }
 
-/// Dispatch the event to the JS Window's `dispatchEvent` function.
-/// This lets `window.addEventListener('pointermove', ...)` work.
+/// Dispatch the event to the JS Window object via the registered
+/// dispatch function. This lets `window.addEventListener('pointermove', ...)`
+/// work for pointer events that reach the DOM root.
 fn dispatch_to_window(event: &Object, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
-    let dispatch_ref = doc.window_dispatch_ref.borrow();
-    let Some(napi_ref) = *dispatch_ref else {
+    let Some(window) = doc
+        .js_window_ref
+        .borrow()
+        .as_ref()
+        .and_then(|weak| weak.get_value(env))
+    else {
         return Ok(());
     };
-    drop(dispatch_ref);
-
-    unsafe {
-        let mut dispatch_fn = std::ptr::null_mut();
-        napi::check_status!(napi::sys::napi_get_reference_value(
-            env.raw(),
-            napi_ref,
-            &mut dispatch_fn
-        ))?;
-
-        let event_val = JsValue::raw(event);
-        let args = [event_val];
-        let mut result = std::ptr::null_mut();
-        napi::check_status!(napi::sys::napi_call_function(
-            env.raw(),
-            {
-                let mut undef = std::ptr::null_mut();
-                napi::sys::napi_get_undefined(env.raw(), &mut undef);
-                undef
-            },
-            dispatch_fn,
-            args.len(),
-            args.as_ptr(),
-            &mut result,
-        ))?;
-    }
+    let Some(dispatch_ref) = global::get_dispatch_fn() else {
+        return Ok(());
+    };
+    let dispatch_fn = dispatch_ref.borrow_back(env)?;
+    let target_ref = window.create_ref::<true>()?;
+    let event_ref = event.create_ref::<true>()?;
+    dispatch_fn.call(FnArgs::from((target_ref, event_ref)))?;
     Ok(())
 }
 
-// ── NAPI call helpers (concentrated unsafe) ───────────────────────────
-//
-// These functions use raw `sys::napi_*` calls to invoke JS functions
-// stored as `napi_ref`s. They are the unsafe counterpart to the safe
-// `FunctionRef::borrow_back + call` pattern, which we cannot use because
-// `Object<'env>` carries a lifetime that prevents storing
-// `FunctionRef<..., Object<'env>>` in struct fields.
+/// Call the registered JS `dispatchEvent(target, event)` function.
+/// Returns `true` if propagation was stopped.
+fn call_dispatch_event(node: &Object, event: &Object, env: &Env) -> Result<bool> {
+    let dispatch_ref = global::get_dispatch_fn()
+        .ok_or_else(|| Error::new(Status::GenericFailure, "dispatch_fn not registered"))?;
+    let dispatch_fn = dispatch_ref.borrow_back(env)?;
+    let target_ref = node.create_ref::<true>()?;
+    let event_ref = event.create_ref::<true>()?;
+    dispatch_fn.call(FnArgs::from((target_ref, event_ref)))?;
 
-/// Call the JS event factory: `factory(payload) → Object`.
-fn call_event_factory(
-    factory_ref: napi::sys::napi_ref,
-    payload: EventPayload,
-    env: &Env,
-) -> Result<Object<'_>> {
-    unsafe {
-        // Get the factory function.
-        let mut factory_val = std::ptr::null_mut();
-        napi::check_status!(napi::sys::napi_get_reference_value(
-            env.raw(),
-            factory_ref,
-            &mut factory_val
-        ))?;
-
-        // Convert payload to napi_value.
-        let payload_val = <EventPayload as ToNapiValue>::to_napi_value(env.raw(), payload)?;
-
-        // Call factory(payload).
-        let args = [payload_val];
-        let mut result = std::ptr::null_mut();
-        napi::check_status!(napi::sys::napi_call_function(
-            env.raw(),
-            // `this` = undefined
-            {
-                let mut undef = std::ptr::null_mut();
-                napi::sys::napi_get_undefined(env.raw(), &mut undef);
-                undef
-            },
-            factory_val,
-            args.len(),
-            args.as_ptr(),
-            &mut result,
-        ))?;
-
-        Ok(Object::from_raw(env.raw(), result))
-    }
-}
-
-/// Call `node.dispatchEvent(event)` and return `true` if propagation stopped.
-fn call_dispatch_event(node: &Object, event: &Object, _env: &Env) -> Result<bool> {
-    let dispatch_fn: Function<Object, bool> = node.get_named_property("dispatchEvent")?;
-    let _ = dispatch_fn.apply(*node, *event)?;
-    let cancel: bool = event.get_named_property("cancelBubble")?;
-    Ok(cancel)
+    let cancel_ref = global::get_cancel_bubble_getter().ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            "cancel_bubble_getter not registered",
+        )
+    })?;
+    let cancel_fn = cancel_ref.borrow_back(env)?;
+    let event_ref = event.create_ref::<true>()?;
+    cancel_fn.call(FnArgs::from((event_ref,)))
 }
 
 // ── Dispatch state reset ──────────────────────────────────────────────

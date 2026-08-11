@@ -3,7 +3,7 @@
 //! All methods are async napi functions so the JS event loop is not
 //! blocked while the native dialog is open.
 
-use crate::window::window_handle::WindowHandle;
+use crate::window::handle::WindowHandle;
 
 /// Extension filter entry, e.g. `{ name: "Images", extensions: ["png", "jpg"] }`.
 #[napi(object)]

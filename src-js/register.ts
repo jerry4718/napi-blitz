@@ -6,7 +6,15 @@
 // side stores in a global, and JS classes don't change).
 
 import type {EventPayload} from "./native";
-import {registerElementConstructor, registerEventFactory, registerNodeConstructor} from "./native";
+import {
+  initEnv,
+  registerCancelBubbleGetter,
+  registerDefaultPreventedGetter,
+  registerDispatchFn,
+  registerElementConstructor,
+  registerEventFactory,
+  registerNodeConstructor
+} from "./native";
 import {NodeTypes} from "./base/node";
 import {Text} from "./base/text";
 import {Comment} from "./base/comment";
@@ -15,13 +23,22 @@ import {HTMLElement} from "./element/html-element";
 import {HTMLInputElement} from "./element/html-input-element";
 import {HTMLTextAreaElement} from "./element/html-textarea-element";
 import {buildEvent} from "./events/events";
+import {dispatchEvent} from "./helpers/events.ts";
+
+initEnv();
+
+registerNodeConstructor(NodeTypes.TEXT_NODE, Text as any);
+registerNodeConstructor(NodeTypes.COMMENT_NODE, Comment as any);
+registerNodeConstructor(NodeTypes.DOCUMENT_NODE, Document as any);
+registerNodeConstructor(NodeTypes.ELEMENT_NODE, HTMLElement as any);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
-registerNodeConstructor(NodeTypes.TEXT_NODE, Text as unknown as (arg: unknown) => unknown);
-registerNodeConstructor(NodeTypes.COMMENT_NODE, Comment as unknown as (arg: unknown) => unknown);
-registerNodeConstructor(NodeTypes.DOCUMENT_NODE, Document as unknown as (arg: unknown) => unknown);
-registerNodeConstructor(NodeTypes.ELEMENT_NODE, HTMLElement as unknown as (arg: unknown) => unknown);
-registerElementConstructor(HTML_NS, "input", HTMLInputElement as unknown as (arg: unknown) => unknown);
-registerElementConstructor(HTML_NS, "textarea", HTMLTextAreaElement as unknown as (arg: unknown) => unknown);
+registerElementConstructor(HTML_NS, "input", HTMLInputElement as any);
+registerElementConstructor(HTML_NS, "textarea", HTMLTextAreaElement as any);
+
 registerEventFactory((payload: EventPayload) => buildEvent(payload));
+registerDispatchFn(dispatchEvent as any);
+
+registerCancelBubbleGetter(((event: Event) => event.cancelBubble) as any);
+registerDefaultPreventedGetter(((event: Event) => event.defaultPrevented) as any);
