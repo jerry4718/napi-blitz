@@ -1,20 +1,19 @@
-//! NodeCache - weak-reference cache of JS Node objects, keyed by blitz node id.
+//! NodeCache - switchable-reference cache of JS Node objects, keyed by blitz node id.
 //!
-//! The cache stores [`JsWeakRef`] handles (refcount-0 `napi_ref`). This means
-//! the cached reference does **not** prevent V8 from garbage-collecting the JS
-//! Node object. When `get` is called and the underlying object has been
-//! collected, `JsWeakRef::get_value` returns `None` and we report a cache miss.
+//! The cache stores [`SwitchableRef`] handles. Each entry's refcount can be
+//! toggled between strong (1, prevents GC) and weak (0, allows GC):
 //!
-//! All `napi_ref` unsafe operations are encapsulated in [`JsWeakRef`].
+//! - **In-document nodes**: strong. The JS object stays alive so event
+//!   listeners registered on it are never lost.
+//! - **Detached nodes**: weak. V8 may collect the JS object; the finalizer
+//!   then removes the cache entry and reclaims blitz-side node storage.
 //!
 //! ## GC finalizer
 //!
-//! In addition to the weak reference, we attach a **finalizer** to each
-//! cached JS object via `napi_add_finalizer`. When V8 collects the JS
-//! object, the finalizer fires and we:
-//!   1. Remove the entry from the NodeCache (by `node_id`).
-//!   2. Check if the blitz node is detached (no parent). If so, call
-//!      `remove_and_drop_node` on the blitz document to reclaim the
+//! A finalizer is attached to each cached JS object. When V8 collects it
+//! (only possible while in weak mode), the finalizer fires and:
+//!   1. Removes the entry from the NodeCache (by `node_id`).
+//!   2. Calls `remove_and_drop_node` on the blitz document to reclaim the
 //!      Rust-side node storage.
 
 use std::{collections::HashMap, rc::Weak};
@@ -24,12 +23,12 @@ use napi::{Env, Result, bindgen_prelude::Object};
 
 use crate::{
     dom::doc::SharedDoc,
-    helpers::{Finalize, JsWeakRef},
+    helpers::{Finalize, SwitchableRef},
 };
 
-/// Weak-reference cache: `blitz_node_id -> JsWeakRef`.
+/// Switchable-reference cache: `blitz_node_id -> SwitchableRef`.
 pub struct NodeCache {
-    entries: HashMap<NodeId, JsWeakRef>,
+    entries: HashMap<NodeId, SwitchableRef>,
 }
 
 impl NodeCache {
@@ -42,55 +41,66 @@ impl NodeCache {
     /// Try to retrieve a cached JS Node object.
     ///
     /// Returns `None` if the cache has no entry for `node_id` **or** if the
-    /// weak reference is dead (the JS object has been garbage-collected).
-    /// Stale entries are NOT removed here (use `sweep` for that).
+    /// reference is dead (the JS object has been garbage-collected, only
+    /// possible in weak mode).
     pub fn get<'env>(&self, node_id: NodeId, env: &'env Env) -> Option<Object<'env>> {
         self.entries.get(&node_id)?.get_value(env)
     }
 
-    /// Cache a freshly created JS Node object as a **weak** reference.
+    /// Cache a freshly created JS Node object with the given initial strength.
     ///
     /// Also attaches a finalizer to `obj` so that when V8 collects it we
-    /// can eagerly remove the cache entry, delete the `napi_ref`, and
-    /// potentially reclaim blitz-side node storage for detached nodes.
-    /// `doc_weak` is a `Weak<SharedDoc>` used by the finalizer to reach
-    /// the NodeCache and the blitz document.
+    /// can remove the cache entry and reclaim blitz-side node storage.
     pub fn insert(
         &mut self,
         node_id: NodeId,
         obj: &Object,
         env: &Env,
+        strong: bool,
         doc_weak: Weak<SharedDoc>,
     ) -> Result<()> {
-        let weak_ref = JsWeakRef::new(obj, env)?;
-        weak_ref.add_finalizer(env, NodeFinalizer { node_id, doc_weak })?;
-        self.entries.insert(node_id, weak_ref);
+        let sref = SwitchableRef::new(obj, env, strong)?;
+        sref.add_finalizer(env, NodeFinalizer { node_id, doc_weak })?;
+        self.entries.insert(node_id, sref);
         Ok(())
     }
 
     /// Explicitly remove a cache entry and delete the underlying `napi_ref`.
-    #[allow(unused)]
     pub fn remove(&mut self, node_id: NodeId) {
         self.entries.remove(&node_id);
     }
 
-    /// Remove all entries whose weak reference is dead (JS object collected).
-    ///
-    /// Intended to be called periodically (e.g. after a dispatch cycle) to
-    /// keep the HashMap from growing without bound. With the finalizer in
-    /// place this is less necessary but still useful as a backstop.
+    /// Switch a cache entry to strong (refcount 1). No-op if already strong
+    /// or not in cache.
+    pub fn make_strong(&mut self, node_id: NodeId, env: &Env) -> Result<()> {
+        if let Some(sref) = self.entries.get_mut(&node_id) {
+            sref.make_strong(env)?;
+        }
+        Ok(())
+    }
+
+    /// Switch a cache entry to weak (refcount 0). No-op if already weak
+    /// or not in cache.
+    pub fn make_weak(&mut self, node_id: NodeId, env: &Env) -> Result<()> {
+        if let Some(sref) = self.entries.get_mut(&node_id) {
+            sref.make_weak(env)?;
+        }
+        Ok(())
+    }
+
+    /// Remove all entries whose reference is dead (JS object collected).
     pub fn sweep(&mut self, env: &Env) {
         let stale: Vec<NodeId> = self
             .entries
             .iter()
-            .filter_map(|(&id, weak_ref)| (!weak_ref.is_alive(env)).then_some(id))
+            .filter_map(|(&id, sref)| (!sref.is_alive(env)).then_some(id))
             .collect();
         for id in stale {
             self.entries.remove(&id);
         }
     }
 
-    /// Number of entries currently in the cache (including potentially stale ones).
+    /// Number of entries currently in the cache.
     #[allow(unused)]
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -105,7 +115,7 @@ impl NodeCache {
     fn is_alive(&self, node_id: NodeId, env: &Env) -> bool {
         self.entries
             .get(&node_id)
-            .is_some_and(|weak_ref| weak_ref.is_alive(env))
+            .is_some_and(|sref| sref.is_alive(env))
     }
 }
 
@@ -115,6 +125,16 @@ impl Default for NodeCache {
     }
 }
 
+// ── Reference switching helpers ──────────────────────────────────────
+//
+// `is_in_document`, `make_subtree_strong`, `make_subtree_weak`,
+// `make_in_document_subtree_strong`, and `make_in_document_subtree_weak`
+// are implemented as methods on `SharedDoc` (see `doc.rs`) so they can
+// borrow `base` and `node_cache` together without callers having to
+// manage two separate borrows.
+
+// ── Finalizer ────────────────────────────────────────────────────────
+
 struct NodeFinalizer {
     node_id: NodeId,
     doc_weak: Weak<SharedDoc>,
@@ -122,8 +142,10 @@ struct NodeFinalizer {
 
 impl Finalize for NodeFinalizer {
     fn finalize(&self, env: Env) {
-        // Try to upgrade the weak ref to the SharedDoc. If the document has
-        // already been dropped, its NodeCache and JsWeakRefs were dropped too.
+        // The finalizer only fires in weak mode, which means the node was
+        // detached from the document. Try to upgrade the weak ref to the
+        // SharedDoc. If the document has already been dropped, its NodeCache
+        // and SwitchableRefs were dropped too.
         let Some(doc_rc) = self.doc_weak.upgrade() else {
             #[cfg(debug_assertions)]
             println!("[finalize] node_id={} doc_rc was None", self.node_id);
@@ -173,11 +195,9 @@ impl Finalize for NodeFinalizer {
     }
 }
 
-/// Plan A: from a detached node, walk up to find the topmost ancestor
-/// that still exists in the slab, then check if that subtree has no
-/// live JS wrapper. If so, drop the entire subtree.
-///
-/// Called from `NodeHandle::remove` and `NodeFinalizerState::finalize`.
+/// From a detached node, walk up to find the topmost ancestor that still
+/// exists in the slab, then check if that subtree has no live JS wrapper.
+/// If so, drop the entire subtree.
 pub fn cleanup_detached_subtree(
     doc: &mut BaseDocument,
     cache: &NodeCache,
@@ -185,7 +205,6 @@ pub fn cleanup_detached_subtree(
     env: &Env,
 ) {
     let doc_id = doc.id();
-    // Walk up to find the topmost node in the detached chain.
     let mut top = node_id;
     while let Some(p) = doc.get_node(top).and_then(|n| n.parent) {
         if doc.get_node(p).is_none() {
@@ -216,9 +235,6 @@ pub fn cleanup_detached_subtree(
     doc.mutate().remove_and_drop_node(top);
 }
 
-/// Like `Node::print_tree` but returns a `String`. Needed because the
-/// finalizer holds a mutable borrow on the document and cannot call
-/// `print_tree` (which would re-borrow the tree immutably).
 #[cfg(debug_assertions)]
 fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> String {
     if level > max_level {
@@ -245,9 +261,8 @@ fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> Stri
     out
 }
 
-/// Recursively check if any descendant of `node_id` has an entry in
-/// `node_cache` (i.e. still has a live JS wrapper).  Returns true if
-/// at least one descendant is still referenced from JS.
+/// Recursively check if any descendant of `node_id` has a live entry in
+/// `node_cache`.
 pub fn has_live_descendant(
     doc: &BaseDocument,
     cache: &NodeCache,

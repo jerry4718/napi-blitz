@@ -56,7 +56,7 @@ fn js_to_node_id(id: &BigInt) -> NodeId {
 ///
 /// Until blitz-dom exposes a fully invalidating style-property mutator, keep
 /// the parsed-style mutation path but add the public invalidation pieces here.
-pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, node_id: NodeId) {
+pub(crate) fn mark_inline_style_mutated(state: &mut BaseDocument, node_id: NodeId) {
     state.snapshot_node(node_id);
     if let Some(node) = state.get_node_mut(node_id) {
         node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
@@ -64,7 +64,7 @@ pub(crate) fn mark_inline_style_mutated(state: &mut blitz::dom::BaseDocument, no
 }
 
 pub(crate) fn set_detached_attribute(
-    state: &mut blitz::dom::BaseDocument,
+    state: &mut BaseDocument,
     node_id: NodeId,
     name: QualName,
     value: &str,
@@ -105,7 +105,7 @@ pub(crate) fn set_detached_attribute(
 }
 
 pub(crate) fn remove_detached_attribute(
-    state: &mut blitz::dom::BaseDocument,
+    state: &mut BaseDocument,
     node_id: NodeId,
     name: &QualName,
 ) -> bool {
@@ -641,16 +641,17 @@ impl NativeDoc {
     /// Replace this node's text content. For elements this resets to a single
     /// text-node child; for text/comment nodes this updates their content.
     #[napi]
-    pub fn set_text_content(&mut self, node_id: BigInt, text: String) {
+    pub fn set_text_content(&mut self, node_id: BigInt, text: String, env: &Env) {
+        let nid = js_to_node_id(&node_id);
         let mut state = self.doc.base.borrow_mut();
         // For text/comment nodes we update the existing data.
         let is_text = state
-            .get_node(js_to_node_id(&node_id))
+            .get_node(nid)
             .map(|n| n.is_text_node())
             .unwrap_or(false);
         if is_text {
             let mut mutator = state.mutate();
-            mutator.set_node_text(js_to_node_id(&node_id), &text);
+            mutator.set_node_text(nid, &text);
             drop(mutator);
             drop(state);
             self.doc.mark_host_dirty();
@@ -658,17 +659,13 @@ impl NativeDoc {
         }
 
         // Otherwise reset element children to a single text node.
-        let children: Vec<NodeId> = state
-            .get_node(js_to_node_id(&node_id))
-            .map(|n| n.children.iter().copied().collect::<Vec<NodeId>>())
-            .unwrap_or_default();
+        drop(state);
+        self.doc.detach_children(nid, env).ok();
+        let mut state = self.doc.base.borrow_mut();
         {
             let mut mutator = state.mutate();
-            for c in &children {
-                mutator.remove_and_drop_node(*c);
-            }
             let text_id = mutator.create_text_node(&text);
-            mutator.append_children(js_to_node_id(&node_id), &[text_id]);
+            mutator.append_children(nid, &[text_id]);
         }
         drop(state);
         self.doc.mark_host_dirty();
@@ -679,13 +676,17 @@ impl NativeDoc {
 impl NativeDoc {
     /// Append `child` as the last child of `parent`. Mirrors `Node.appendChild`.
     #[napi]
-    pub fn append_child(&mut self, parent_id: BigInt, child_id: BigInt) {
+    pub fn append_child(&mut self, parent_id: BigInt, child_id: BigInt, env: &Env) -> Result<()> {
+        let child_nid = js_to_node_id(&child_id);
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.append_children(js_to_node_id(&parent_id), &[js_to_node_id(&child_id)]);
+        mutator.append_children(js_to_node_id(&parent_id), &[child_nid]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
+        self.doc
+            .make_in_document_subtree_strong(js_to_node_id(&parent_id), child_nid, env)?;
+        Ok(())
     }
 
     /// Insert `node` immediately before `anchor`. If `anchor` is None, behaves
@@ -696,75 +697,90 @@ impl NativeDoc {
         parent_id: BigInt,
         node_id: BigInt,
         anchor_id: Option<BigInt>,
+        env: &Env,
     ) -> Result<()> {
+        let nid = js_to_node_id(&node_id);
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         match anchor_id {
             Some(anchor) => {
-                mutator.insert_nodes_before(js_to_node_id(&anchor), &[js_to_node_id(&node_id)]);
+                mutator.insert_nodes_before(js_to_node_id(&anchor), &[nid]);
             }
             None => {
-                mutator.append_children(js_to_node_id(&parent_id), &[js_to_node_id(&node_id)]);
+                mutator.append_children(js_to_node_id(&parent_id), &[nid]);
             }
         }
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
+        // Switch the inserted subtree to strong refs if parent is in document.
+        self.doc
+            .make_in_document_subtree_strong(js_to_node_id(&parent_id), nid, env)?;
         Ok(())
     }
 
     /// Insert `node` immediately after `anchor`.
     #[napi]
-    pub fn insert_after(&mut self, anchor_id: BigInt, node_id: BigInt) {
+    pub fn insert_after(&mut self, anchor_id: BigInt, node_id: BigInt, env: &Env) -> Result<()> {
+        let nid = js_to_node_id(&node_id);
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.insert_nodes_after(js_to_node_id(&anchor_id), &[js_to_node_id(&node_id)]);
+        mutator.insert_nodes_after(js_to_node_id(&anchor_id), &[nid]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
+        // Switch the inserted subtree to strong refs if parent is in document.
+        self.doc
+            .make_in_document_subtree_strong(js_to_node_id(&anchor_id), nid, env)?;
+        Ok(())
     }
 
     /// Detach a node from its parent. The node is kept around (still
     /// addressable by id) so JS wrappers stay valid. Use `drop_node` to
     /// release storage.
     #[napi]
-    pub fn remove(&mut self, node_id: BigInt) {
+    pub fn remove(&mut self, node_id: BigInt, env: &Env) -> Result<()> {
+        let nid = js_to_node_id(&node_id);
+        // Switch to weak before removing, while parent chain is intact.
+        self.doc.make_in_document_subtree_weak(nid, env)?;
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.remove_node(js_to_node_id(&node_id));
+        mutator.remove_node(nid);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
-    }
-
-    /// Detach and free the node.
-    #[napi]
-    pub fn drop_node(&mut self, node_id: BigInt) {
-        let mut state = self.doc.base.borrow_mut();
-        let mut mutator = state.mutate();
-        mutator.remove_and_drop_node(js_to_node_id(&node_id));
-        drop(mutator);
-        drop(state);
-        self.doc.mark_host_dirty();
+        Ok(())
     }
 
     /// Replace `anchor` with `node` in its parent.
     #[napi]
-    pub fn replace_with(&mut self, anchor_id: BigInt, node_id: BigInt) {
+    pub fn replace_with(&mut self, anchor_id: BigInt, node_id: BigInt, env: &Env) -> Result<()> {
+        let anchor_nid = js_to_node_id(&anchor_id);
+        let node_nid = js_to_node_id(&node_id);
+        // Switch the anchor to weak before detaching, while parent chain is intact.
+        if let Err(e) = self.doc.make_in_document_subtree_weak(anchor_nid, env) {
+            eprintln!("napi-blitz: make_in_document_subtree_weak failed: {e}");
+        }
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.replace_node_with(js_to_node_id(&anchor_id), &[js_to_node_id(&node_id)]);
+        mutator.replace_node_with(anchor_nid, &[node_nid]);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
+        // The new node is now in document -> strong.
+        self.doc
+            .make_in_document_subtree_strong(node_nid, node_nid, env)?;
+        Ok(())
     }
 
     /// Replace this element's inner HTML.
     #[napi]
-    pub fn set_inner_html(&mut self, node_id: BigInt, html: String) {
+    pub fn set_inner_html(&mut self, node_id: BigInt, html: String, env: &Env) {
+        let nid = js_to_node_id(&node_id);
+        self.doc.detach_children(nid, env).ok();
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
-        mutator.set_inner_html(js_to_node_id(&node_id), &html);
+        mutator.set_inner_html(nid, &html);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
@@ -819,7 +835,7 @@ impl NativeDoc {
         dfs_find(&state, state.root_node().id, |n| {
             n.data.is_element_with_tag_name(&needle)
         })
-        .map(|id| id.as_u64())
+            .map(|id| id.as_u64())
     }
 
     /// All element ids matching the given local tag name, in tree order.

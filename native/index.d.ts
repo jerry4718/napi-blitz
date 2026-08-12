@@ -302,8 +302,6 @@ export declare class NativeDoc {
    * release storage.
    */
   remove(nodeId: bigint): void
-  /** Detach and free the node. */
-  dropNode(nodeId: bigint): void
   /** Replace `anchor` with `node` in its parent. */
   replaceWith(anchorId: bigint, nodeId: bigint): void
   /** Replace this element's inner HTML. */

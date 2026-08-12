@@ -24,7 +24,7 @@ use napi::{
 
 type NodeConstructor = FunctionRef<FnArgs<(NativeNode, ObjectRef)>, ObjectRef>;
 type ElementConstructor =
-    FunctionRef<FnArgs<(NativeNode, ObjectRef, Option<ObjectRef>)>, ObjectRef>;
+FunctionRef<FnArgs<(NativeNode, ObjectRef, Option<ObjectRef>)>, ObjectRef>;
 type EventFactory = FunctionRef<FnArgs<(EventPayload,)>, ObjectRef>;
 type DispatchFn = FunctionRef<FnArgs<(ObjectRef, ObjectRef)>, UnknownRef>;
 type CancelBubbleGetter = FunctionRef<FnArgs<(ObjectRef,)>, bool>;

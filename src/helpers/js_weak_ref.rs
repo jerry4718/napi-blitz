@@ -8,13 +8,8 @@
 
 use std::{ffi::c_void, ptr};
 
+use crate::helpers::{Finalize, finalize_trampoline};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
-
-/// Trait implemented by finalizer data that needs to run when the JS
-/// object is garbage-collected.
-pub(crate) trait Finalize {
-    fn finalize(&self, env: Env);
-}
 
 /// A weak reference to a JS object.
 ///
@@ -52,6 +47,7 @@ impl JsWeakRef {
     }
 
     /// Whether the JS object is still alive (not yet collected).
+    #[allow(unused)]
     pub(crate) fn is_alive(&self, env: &Env) -> bool {
         self.get_value(env).is_some()
     }
@@ -60,6 +56,7 @@ impl JsWeakRef {
     /// it, `data.finalize(env)` will be called. Ownership of `data` is
     /// transferred via `Box::into_raw`; the trampoline reclaims it before
     /// calling `finalize`.
+    #[allow(unused)]
     pub(crate) fn add_finalizer<T: Finalize + 'static>(&self, env: &Env, data: T) -> Result<()> {
         let obj = self.get_value(env).ok_or_else(|| {
             napi::Error::new(
@@ -89,16 +86,6 @@ impl JsWeakRef {
         }
         Ok(())
     }
-}
-
-/// N-API finalizer trampoline. Reclaims the `Box<T>` and calls `T::finalize`.
-unsafe extern "C" fn finalize_trampoline<T: Finalize>(
-    env: sys::napi_env,
-    finalize_data: *mut c_void,
-    _finalize_hint: *mut c_void,
-) {
-    let data = unsafe { Box::from_raw(finalize_data as *mut T) };
-    data.finalize(Env::from_raw(env));
 }
 
 impl Drop for JsWeakRef {

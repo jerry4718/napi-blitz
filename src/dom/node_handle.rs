@@ -123,7 +123,7 @@ impl NativeNode {
     }
 
     #[napi]
-    pub fn set_text_content(&mut self, text: String) {
+    pub fn set_text_content(&mut self, text: String, env: &Env) {
         let mut base = self.doc.base.borrow_mut();
         let is_text = base
             .get_node(self.node_id)
@@ -138,18 +138,13 @@ impl NativeNode {
             return;
         }
 
-        let children: Vec<NodeId> = base
-            .get_node(self.node_id)
-            .map(|n| n.children.iter().copied().collect())
-            .unwrap_or_default();
-        {
-            let mut mutator = base.mutate();
-            for child_id in &children {
-                mutator.remove_and_drop_node(*child_id);
-            }
-            let text_id = mutator.create_text_node(&text);
-            mutator.append_children(self.node_id, &[text_id]);
-        }
+        drop(base);
+        self.doc.detach_children(self.node_id, env).ok();
+        let mut base = self.doc.base.borrow_mut();
+        let mut mutator = base.mutate();
+        let text_id = mutator.create_text_node(&text);
+        mutator.append_children(self.node_id, &[text_id]);
+        drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
     }
@@ -295,6 +290,8 @@ impl NativeNode {
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
+        self.doc
+            .make_in_document_subtree_strong(self.node_id, child.node_id, env)?;
         wrap_node(&self.doc, child.node_id, env)
     }
 
@@ -318,11 +315,17 @@ impl NativeNode {
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
+        self.doc
+            .make_in_document_subtree_strong(self.node_id, node.node_id, env)?;
         wrap_node(&self.doc, node.node_id, env)
     }
 
     #[napi]
-    pub fn remove(&mut self) {
+    pub fn remove(&mut self, env: &Env) {
+        // Switch to weak before removing, while parent chain is intact.
+        if let Err(e) = self.doc.make_in_document_subtree_weak(self.node_id, env) {
+            eprintln!("napi-blitz: make_in_document_subtree_weak failed: {e}");
+        }
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.remove_node(self.node_id);
@@ -333,12 +336,20 @@ impl NativeNode {
 
     #[napi]
     pub fn replace_with<'a>(&mut self, node: &NativeNode, env: &'a Env) -> Result<Object<'a>> {
+        let removed_id = self.node_id;
+        // Switch the removed node to weak before detaching, while parent chain is intact.
+        if let Err(e) = self.doc.make_in_document_subtree_weak(removed_id, env) {
+            eprintln!("napi-blitz: make_in_document_subtree_weak failed: {e}");
+        }
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
-        mutator.replace_node_with(self.node_id, &[node.node_id]);
+        mutator.replace_node_with(removed_id, &[node.node_id]);
         drop(mutator);
         drop(base);
         self.doc.mark_host_dirty();
+        // The new node is now in document -> strong.
+        self.doc
+            .make_in_document_subtree_strong(node.node_id, node.node_id, env)?;
         wrap_node(&self.doc, node.node_id, env)
     }
 
@@ -365,7 +376,8 @@ impl NativeNode {
     }
 
     #[napi]
-    pub fn set_inner_html(&mut self, html: String) {
+    pub fn set_inner_html(&mut self, html: String, env: &Env) {
+        self.doc.detach_children(self.node_id, env).ok();
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.set_inner_html(self.node_id, &html);

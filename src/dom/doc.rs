@@ -96,7 +96,8 @@ pub struct SharedDoc {
     pub base: RefCell<BaseDocument>,
     /// Host-dirty flag: JS mutated the DOM, window needs redraw.
     host_dirty: Cell<bool>,
-    /// Weak-reference cache: blitz_node_id -> napi_ref (refcount=0)
+    /// Switchable-reference cache: blitz_node_id -> SwitchableRef.
+    /// In-document nodes are strong (prevent GC); detached nodes are weak.
     pub node_cache: RefCell<NodeCache>,
     /// Weak ref to the JS Document object
     pub js_document_ref: RefCell<Option<JsWeakRef>>,
@@ -121,6 +122,97 @@ impl SharedDoc {
 
     pub fn take_host_dirty(&self) -> bool {
         self.host_dirty.replace(false)
+    }
+
+    // ── Reference switching ───────────────────────────────────────────
+
+    /// Check if a node is in the document using the blitz internal flag.
+    pub fn is_in_document(&self, node_id: NodeId) -> bool {
+        self.base
+            .borrow()
+            .get_node(node_id)
+            .is_some_and(|node| node.flags.is_in_document())
+    }
+
+    /// Recursively switch all cached nodes in a subtree to strong refs.
+    ///
+    /// **Caller must ensure `node_id` is in the document.**
+    fn make_subtree_strong(&self, node_id: NodeId, env: &Env) -> Result<()> {
+        self.node_cache.borrow_mut().make_strong(node_id, env)?;
+        let child_ids: Vec<NodeId> = self
+            .base
+            .borrow()
+            .get_node(node_id)
+            .map(|n| n.children.to_vec())
+            .unwrap_or_default();
+        for child_id in child_ids {
+            self.make_subtree_strong(child_id, env)?;
+        }
+        Ok(())
+    }
+
+    /// Recursively switch all cached nodes in a subtree to weak refs.
+    fn make_subtree_weak(&self, node_id: NodeId, env: &Env) -> Result<()> {
+        self.node_cache.borrow_mut().make_weak(node_id, env)?;
+        let child_ids: Vec<NodeId> = self
+            .base
+            .borrow()
+            .get_node(node_id)
+            .map(|n| n.children.to_vec())
+            .unwrap_or_default();
+        for child_id in child_ids {
+            self.make_subtree_weak(child_id, env)?;
+        }
+        Ok(())
+    }
+
+    /// Switch a subtree to strong refs if the parent is in the document.
+    /// If the parent is detached, the subtree stays weak.
+    pub fn make_in_document_subtree_strong(
+        &self,
+        parent_id: NodeId,
+        child_id: NodeId,
+        env: &Env,
+    ) -> Result<()> {
+        if self.is_in_document(parent_id) {
+            self.make_subtree_strong(child_id, env)?;
+        }
+        Ok(())
+    }
+
+    /// Switch a subtree to weak refs if the node is in the document.
+    /// If the node is already detached, no-op.
+    ///
+    /// **Must be called before `remove_node`**, while the node still has its
+    /// parent chain so `is_in_document` can be evaluated.
+    pub fn make_in_document_subtree_weak(&self, node_id: NodeId, env: &Env) -> Result<()> {
+        if self.is_in_document(node_id) {
+            self.make_subtree_weak(node_id, env)?;
+        }
+        Ok(())
+    }
+
+    /// Collect, weaken, and detach all children of `node_id`.
+    ///
+    /// After this call the node has no children and the caller can proceed
+    /// with whatever replacement operation it needs (set text, set inner
+    /// HTML, etc.).
+    pub fn detach_children(&self, node_id: NodeId, env: &Env) -> Result<()> {
+        let children: Vec<NodeId> = {
+            let base = self.base.borrow();
+            base.get_node(node_id)
+                .map(|n| n.children.iter().copied().collect())
+                .unwrap_or_default()
+        };
+        for child_id in &children {
+            self.make_in_document_subtree_weak(*child_id, env)?;
+        }
+        let mut base = self.base.borrow_mut();
+        let mut mutator = base.mutate();
+        for child_id in &children {
+            mutator.remove_node(*child_id);
+        }
+        Ok(())
     }
 }
 
@@ -176,9 +268,14 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
         .ok_or_else(|| Error::new(Status::GenericFailure, "js_document_ref not set or dead"))?;
 
     if node_type == 9 {
-        doc.node_cache
-            .borrow_mut()
-            .insert(node_id, &js_document, env, Rc::downgrade(doc))?;
+        let strong = true; // Document node is always in-document.
+        doc.node_cache.borrow_mut().insert(
+            node_id,
+            &js_document,
+            env,
+            strong,
+            Rc::downgrade(doc),
+        )?;
         return Ok(js_document);
     }
 
@@ -226,10 +323,14 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, node_id: NodeId, env: &'a Env) -> Resu
         Object::from_unknown(result)?
     };
 
-    // 8. Cache the JS wrapper as a weak ref.
+    // 8. Determine initial reference strength: strong if the node is
+    //    currently in the document tree, weak otherwise.
+    let strong = doc.is_in_document(node_id);
+
+    // 9. Cache the JS wrapper with the determined strength.
     doc.node_cache
         .borrow_mut()
-        .insert(node_id, &js_node, env, Rc::downgrade(doc))?;
+        .insert(node_id, &js_node, env, strong, Rc::downgrade(doc))?;
 
     Ok(js_node)
 }
