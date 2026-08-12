@@ -110,13 +110,9 @@ pkg install -y fontconfig
 ### 打开一个窗口
 
 ```ts
-import { BlitzApp } from "@ylcc/napi-blitz";
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
 
-const app = BlitzApp.create();
-const window = app.openWindow({
-  title: "napi-blitz demo",
-  width: 800,
-  height: 600,
+const document = HTMLDocument.create({
   baseHtml: `<!doctype html>
 <html>
 <head>
@@ -130,7 +126,14 @@ const window = app.openWindow({
 </html>`,
 });
 
-const { document } = window;
+const app = BlitzApp.create();
+const window = app.openWindow(
+  document,
+  WindowOptions.builder()
+    .title("napi-blitz demo")
+    .size(800, 600),
+);
+
 const button = document.createElement("button");
 let count = 0;
 
@@ -150,12 +153,13 @@ while (!window.closed) {
 ### CommonJS
 
 ```js
-const { BlitzApp } = require("@ylcc/napi-blitz");
+const { BlitzApp, HTMLDocument, WindowOptions } = require("@ylcc/napi-blitz");
 
+const doc = HTMLDocument.create();
 const app = BlitzApp.create();
-const win = app.openWindow({ title: "CommonJS demo" });
+const win = app.openWindow(doc, WindowOptions.builder().title("CommonJS demo"));
 
-win.document.body.textContent = "Hello from CommonJS";
+doc.body.textContent = "Hello from CommonJS";
 
 while (!win.closed) {
   app.pumpAppEvents(16);
@@ -165,22 +169,26 @@ while (!win.closed) {
 ### DOM 修改和样式
 
 ```ts
-import { BlitzApp } from "@ylcc/napi-blitz";
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
 
-const app = BlitzApp.create();
-const win = app.openWindow({
-  title: "DOM demo",
+const document = HTMLDocument.create({
   baseHtml: `<!doctype html><html><body></body></html>`,
 });
 
-const card = win.document.createElement("section");
+const app = BlitzApp.create();
+const win = app.openWindow(
+  document,
+  WindowOptions.builder().title("DOM demo"),
+);
+
+const card = document.createElement("section");
 card.setAttribute("class", "card");
 card.style.padding = "16px";
 card.style.border = "1px solid #999";
 card.style.borderRadius = "8px";
 card.textContent = "Created with the DOM API";
 
-win.document.body!.appendChild(card);
+document.body!.appendChild(card);
 
 while (!win.closed) {
   app.pumpAppEvents(16);
@@ -190,14 +198,16 @@ while (!win.closed) {
 ### 多窗口
 
 ```ts
-import { BlitzApp } from "@ylcc/napi-blitz";
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
 
 const app = BlitzApp.create();
-const a = app.openWindow({ title: "Window A", width: 360, height: 240 });
-const b = app.openWindow({ title: "Window B", width: 360, height: 240 });
+const docA = HTMLDocument.create();
+const docB = HTMLDocument.create();
+const a = app.openWindow(docA, WindowOptions.builder().title("Window A").size(360, 240));
+const b = app.openWindow(docB, WindowOptions.builder().title("Window B").size(360, 240));
 
-a.document.body.textContent = "A";
-b.document.body.textContent = "B";
+docA.body.textContent = "A";
+docB.body.textContent = "B";
 
 while (!a.closed || !b.closed) {
   app.pumpAppEvents(16);
@@ -227,7 +237,7 @@ pnpm --dir examples/vue-jsx-multi-window start
 
 - Rust toolchain
 - 支持 Node-API 的 Node.js
-- 通过 Corepack 使用 pnpm
+- pnpm
 
 ```bash
 corepack enable
