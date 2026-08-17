@@ -24,12 +24,12 @@ skia-pixels = ["dep:anyrender_skia", "anyrender_skia/pixels_window_renderer"]
 skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_renderer"]
 
 [dependencies]
-napi-derive = "3.6.2"
-winit = "0.31.0-beta.2"
+napi-derive = "3.6.3"
+winit = "=0.31.0-beta.2"
 log = "0.4"
 
 [dependencies.napi]
-version = "3.12.0"
+version = "3.12.1"
 features = ["napi6", "async"]
 
 [dependencies.blitz]
@@ -58,23 +58,23 @@ package = "stylo"
 version = "0.40.0"
 
 [dependencies.anyrender_vello]
-version = "0.13.0"
+version = "0.14.0"
 optional = true
 
 [dependencies.anyrender_vello_hybrid]
-version = "0.9.0"
-optional = true
-
-[dependencies.anyrender_vello_cpu]
-version = "0.15.0"
-optional = true
-
-[dependencies.anyrender_skia]
 version = "0.10.0"
 optional = true
 
+[dependencies.anyrender_vello_cpu]
+version = "0.16.0"
+optional = true
+
+[dependencies.anyrender_skia]
+version = "0.11.0"
+optional = true
+
 [dependencies.parley]
-version = "0.10"
+version = "0.11.1"
 default-features = false
 features = ["std"]
 
@@ -82,7 +82,7 @@ features = ["std"]
 # fontconfig-dlopen feature enables yeslogic-fontconfig-sys/dlopen, so the
 # native library is loaded at runtime instead of discovered at build time.
 [dependencies.fontique]
-version = "0.10.0"
+version = "0.11.1"
 features = ["fontconfig-dlopen"]
 
 # Force icu_provider to use the `log` framework instead of bare `eprintln!`
@@ -95,15 +95,15 @@ features = ["logging"]
 # OpenSSL from source instead of trying to locate a target sysroot via pkg-config.
 # This covers both musl and cross-compiled GNU targets such as aarch64/armv7.
 [target.'cfg(target_os = "linux")'.dependencies.reqwest]
-version = "0.13.4"
+version = "0.13"
 default-features = false
 features = ["native-tls-vendored"]
 
 [dependencies.rfd]
-version = "0.17.2"
+version = "0.17.1"
 
 [build-dependencies]
-napi-build = "2.4.0"
+napi-build = "2.4.1"
 
 [profile.release]
 lto = true
@@ -115,15 +115,15 @@ strip = "symbols"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 [patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "d3803b22079c33c3674e12488dcec8a54cbf87d9" }
-taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "2db0609db5dce52a17e0308f580a016c5e14c09f" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
+taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "902aa4de8b0918c4d6c6e59aca12e243058bcda7" }
 
 #[patch.crates-io]
 #blitz = { path = "external/blitz/packages/blitz" }

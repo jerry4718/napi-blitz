@@ -80,7 +80,7 @@
     "version": "napi version"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.8.2",
+    "@napi-rs/cli": "^3.8.6",
     "@oxc-node/core": "^0.1.0",
     "@types/node": "^24.13.3",
     "ava": "^8.0.0",
