@@ -18,7 +18,7 @@
 
 use std::{collections::HashMap, rc::Weak};
 
-use blitz::dom::{BaseDocument, Node, NodeId};
+use blitz::dom::{BaseDocument, NodeId};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 use crate::{
@@ -157,6 +157,7 @@ impl Finalize for NodeFinalizer {
         doc.node_cache.borrow_mut().remove(self.node_id);
 
         let mut doc_mut = doc.base.borrow_mut();
+
         let doc_id = doc_mut.id();
 
         let Some(hint_node) = doc_mut.get_node_mut(self.node_id) else {
@@ -172,7 +173,7 @@ impl Finalize for NodeFinalizer {
 
         if is_detached {
             #[cfg(debug_assertions)]
-            let node_tree = node_tree_string(Some(hint_node), 1, 4);
+            let node_tree = da::node_tree_string(Some(hint_node), 1, 4);
 
             let cache = doc.node_cache.borrow();
             if !has_live_descendant(&doc_mut, &cache, self.node_id, &env) {
@@ -204,6 +205,7 @@ pub fn cleanup_detached_subtree(
     node_id: NodeId,
     env: &Env,
 ) {
+    #[allow(dead_code)]
     let doc_id = doc.id();
     let mut top = node_id;
     while let Some(p) = doc.get_node(top).and_then(|n| n.parent) {
@@ -236,29 +238,56 @@ pub fn cleanup_detached_subtree(
 }
 
 #[cfg(debug_assertions)]
-fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> String {
-    if level > max_level {
-        return format!("{} ... (max_level)\n", "  ".repeat(level));
+mod da {
+    use blitz_dom::Node;
+
+    pub(crate) fn node_tree_string(node: Option<&Node>, level: usize, max_level: usize) -> String {
+        node_tree_string_inner(node, level, max_level, true)
     }
-    let Some(node) = node else {
-        return format!("{} (missing)\n", "  ".repeat(level));
-    };
-    let mut out = format!(
-        "{} {} {:?} {} {:?}\n",
-        "  ".repeat(level),
-        node.id,
-        node.parent,
-        node.node_debug_str().replace('\n', ""),
-        node.children
-    );
-    for &child_id in &*node.children {
-        out.push_str(&node_tree_string(
-            node.try_with(child_id),
-            level + 1,
-            max_level,
-        ));
+
+    #[inline]
+    pub fn node_tree_string_inner(
+        node: Option<&Node>,
+        level: usize,
+        max_level: usize,
+        first: bool,
+    ) -> String {
+        if level > max_level {
+            return format!("{} ... (max_level)\n", "  ".repeat(level));
+        }
+        let Some(node) = node else {
+            return format!("{} (missing)\n", "  ".repeat(level));
+        };
+
+        let mut out = if first {
+            format!(
+                "{} {} parent = {:?} {} {:?}\n",
+                "  ".repeat(level),
+                node.id,
+                node.parent,
+                node.node_debug_str().replace('\n', ""),
+                node.children
+            )
+        } else {
+            format!(
+                "{} {} {} {:?}\n",
+                "  ".repeat(level),
+                node.id,
+                node.node_debug_str().replace('\n', ""),
+                node.children
+            )
+        };
+
+        for &child_id in &*node.children {
+            out.push_str(&node_tree_string_inner(
+                node.try_with(child_id),
+                level + 1,
+                max_level,
+                false,
+            ));
+        }
+        out
     }
-    out
 }
 
 /// Recursively check if any descendant of `node_id` has a live entry in
