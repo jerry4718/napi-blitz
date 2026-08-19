@@ -7,6 +7,11 @@ version = "0.1.217"
 [lib]
 crate-type = ["cdylib"]
 
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
+
 [features]
 default = ["native-window", "vello-hybrid"]
 native-window = []
@@ -24,72 +29,41 @@ skia-pixels = ["dep:anyrender_skia", "anyrender_skia/pixels_window_renderer"]
 skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_renderer"]
 
 [dependencies]
+napi = { version = "3.12.1", features = ["napi6", "async"] }
 napi-derive = "3.6.3"
 winit = "=0.31.0-beta.2"
-log = "0.4"
 
-[dependencies.napi]
-version = "3.12.1"
-features = ["napi6", "async"]
-
-[dependencies.blitz]
-version = "=0.3.0-beta.1"
-default-features = false
-features = ["net"]
-
+blitz = { version = "=0.3.0-beta.1", default-features = false, features = ["net"] }
 # Depend on blitz-dom directly with `system_fonts` enabled. Cargo unifies
 # features across all dependents, so the `blitz` crate's internal
 # `blitz-dom` dependency picks up `system_fonts` too. Without this,
 # fontique does not register system fonts and text renders as empty boxes.
-[dependencies.blitz-dom]
-version = "=0.3.0-beta.1"
-default-features = false
-features = ["system-fonts"]
-
+blitz-dom = { version = "=0.3.0-beta.1", default-features = false, features = ["system-fonts"] }
 # Stylo / selectors, pinned to the same versions blitz uses so the
 # trait impls in blitz-dom's private `stylo` module (which are written
 # against `&Node`) line up with the crates we call directly. The stylo
 # crate's lib name is `style`, so we import it under that name to match
 # blitz's own usage.
-[dependencies.style]
-version = "0.20.0"
-package = "stylo"
-[dependencies.selectors]
-version = "0.40.0"
+style = { version = "0.20.0", package = "stylo" }
+selectors = { version = "0.40.0" }
 
-[dependencies.anyrender_vello]
-version = "0.14.0"
-optional = true
+anyrender_vello = { version = "0.14.0", optional = true }
+anyrender_vello_hybrid = { version = "0.10.0", optional = true }
+anyrender_vello_cpu = { version = "0.16.0", optional = true }
+anyrender_skia = { version = "0.11.0", optional = true }
 
-[dependencies.anyrender_vello_hybrid]
-version = "0.10.0"
-optional = true
-
-[dependencies.anyrender_vello_cpu]
-version = "0.16.0"
-optional = true
-
-[dependencies.anyrender_skia]
-version = "0.11.0"
-optional = true
-
-[dependencies.parley]
-version = "0.11.1"
-default-features = false
-features = ["std"]
-
+parley = { version = "0.11.1", default-features = false, features = ["std"] }
 # Avoid pkg-config for cross-compiled Linux/FreeBSD builds. fontique's
 # fontconfig-dlopen feature enables yeslogic-fontconfig-sys/dlopen, so the
 # native library is loaded at runtime instead of discovered at build time.
-[dependencies.fontique]
-version = "0.11.1"
-features = ["fontconfig-dlopen"]
+fontique = { version = "0.11.1", features = ["fontconfig-dlopen"] }
 
 # Force icu_provider to use the `log` framework instead of bare `eprintln!`
 # in debug builds, so ICU4X data errors can be filtered.
-[dependencies.icu_provider]
-version = "2.1.1"
-features = ["logging"]
+icu_provider = { version = "2.1.1", features = ["logging"] }
+
+rfd = { version = "0.17.1" }
+log = "0.4"
 
 # Unify reqwest's TLS feature for Linux builds so openssl-sys builds
 # OpenSSL from source instead of trying to locate a target sysroot via pkg-config.
@@ -99,31 +73,22 @@ version = "0.13"
 default-features = false
 features = ["native-tls-vendored"]
 
-[dependencies.rfd]
-version = "0.17.1"
-
 [build-dependencies]
 napi-build = "2.4.1"
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = "symbols"
-
 
 # Release builds use the git source instead of the local path.
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 [patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "5dca2a814b1a95aee136829a1eb366a52db5d13c" }
-taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "902aa4de8b0918c4d6c6e59aca12e243058bcda7" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "e35abd0bbe54aaf1bc9119cff381ac2fc38a77a6" }
+taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "4ae4219b34e0ad22fd907cb1a7fa9a68c1ea1621" }
 
 #[patch.crates-io]
 #blitz = { path = "external/blitz/packages/blitz" }

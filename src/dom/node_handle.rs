@@ -524,7 +524,7 @@ impl NativeNode {
         base.get_node(self.node_id)
             .map(|n| {
                 let layout = n.final_layout();
-                layout.content_size.height as f64
+                layout.content_box_height() as f64
             })
             .unwrap_or(0.0)
     }
@@ -535,7 +535,7 @@ impl NativeNode {
         base.get_node(self.node_id)
             .map(|n| {
                 let layout = n.final_layout();
-                layout.content_size.width as f64
+                layout.content_box_width() as f64
             })
             .unwrap_or(0.0)
     }

@@ -158,6 +158,7 @@ impl Finalize for NodeFinalizer {
 
         let mut doc_mut = doc.base.borrow_mut();
 
+        #[cfg(debug_assertions)]
         let doc_id = doc_mut.id();
 
         let Some(hint_node) = doc_mut.get_node_mut(self.node_id) else {
@@ -205,7 +206,7 @@ pub fn cleanup_detached_subtree(
     node_id: NodeId,
     env: &Env,
 ) {
-    #[allow(dead_code)]
+    #[cfg(debug_assertions)]
     let doc_id = doc.id();
     let mut top = node_id;
     while let Some(p) = doc.get_node(top).and_then(|n| n.parent) {
