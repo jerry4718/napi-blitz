@@ -298,6 +298,9 @@ fn reset_dispatch_state(event: &mut Object, _env: &Env) {
 /// Set `event.target` to a lazy getter that calls `wrap_node` only when
 /// JS code reads the property.
 fn set_lazy_target(event: &Object, node_id: NodeId, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
+    let setter_ref = global::get_lazy_target_setter()
+        .ok_or_else(|| Error::new(Status::GenericFailure, "lazy_target_setter not registered"))?;
+    let setter = setter_ref.borrow_back(env)?;
     let doc_clone = doc.clone();
     let getter: Function<(), Unknown> =
         env.create_function_from_closure("target_getter", move |ctx| {
@@ -306,10 +309,13 @@ fn set_lazy_target(event: &Object, node_id: NodeId, doc: &Rc<SharedDoc>, env: &E
             let raw = JsValue::raw(&n);
             unsafe { Unknown::from_napi_value(env_raw, raw) }
         })?;
-    let setter: Function<Unknown, Unknown> = event.get_named_property("__setLazyTarget")?;
+    let event_ref = event.create_ref::<true>()?;
     let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Unknown::from_napi_value(env.raw(), getter_raw) }?;
-    setter.call(getter_unknown)?;
+    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
+    let getter_ref = getter_unknown.create_ref::<true>()?;
+    setter.call(FnArgs {
+        data: (event_ref, getter_ref),
+    })?;
     Ok(())
 }
 
@@ -322,6 +328,13 @@ fn set_lazy_current_target(
     doc: &Rc<SharedDoc>,
     env: &Env,
 ) -> Result<()> {
+    let setter_ref = global::get_lazy_current_target_setter().ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            "lazy_current_target_setter not registered",
+        )
+    })?;
+    let setter = setter_ref.borrow_back(env)?;
     let doc_clone = doc.clone();
     let getter: Function<(), Unknown> =
         env.create_function_from_closure("currentTarget_getter", move |ctx| {
@@ -330,12 +343,12 @@ fn set_lazy_current_target(
             let raw = JsValue::raw(&n);
             unsafe { Unknown::from_napi_value(env_raw, raw) }
         })?;
-    let setter: Function<FnArgs<(Unknown, u32)>, Unknown> =
-        event.get_named_property("__setLazyCurrentTarget")?;
+    let event_ref = event.create_ref::<true>()?;
     let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Unknown::from_napi_value(env.raw(), getter_raw) }?;
+    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
+    let getter_ref = getter_unknown.create_ref::<true>()?;
     setter.call(FnArgs {
-        data: (getter_unknown, phase),
+        data: (event_ref, getter_ref, phase),
     })?;
     Ok(())
 }

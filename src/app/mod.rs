@@ -462,9 +462,9 @@ impl NativeApp {
                 }
             };
 
-            // 2. Notify from Rust: `closed` on the window, `window:close` +
-            //    `window:closed` on the app. No outstanding AppState borrow,
-            //    so JS re-entry into `open_window` / `close_window` is safe.
+            // 2. Notify from Rust: `window:closed` on the window, propagated
+            //    up to the app. No outstanding AppState borrow, so JS
+            //    re-entry into `open_window` / `close_window` is safe.
             if let Some(shared_doc) = shared_doc {
                 let env = match global::env() {
                     Ok(e) => e,
@@ -474,11 +474,10 @@ impl NativeApp {
                     }
                 };
                 let handler = JsShellEventHandler::new(app_ref);
-                // The cancelable close request (`close` / `window:close`)
-                // was already dispatched by `close_window`; here only the
-                // post-teardown notifications remain.
-                handler.dispatch_window_event("closed", &shared_doc, &env);
-                handler.dispatch_app_event("window:closed", &env);
+                // The cancelable close request (`window:close`) was already
+                // dispatched by `close_window`; here only the post-teardown
+                // notification remains, propagated window → app.
+                handler.notify_closed(&shared_doc, &env);
             }
 
             // 3. Fulfil the `close_window` promise after the notifications,

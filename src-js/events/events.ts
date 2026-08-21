@@ -18,9 +18,10 @@ import type {EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,}
 /**
  * Base class for every event we dispatch into the JS layer.
  *
- * Adds the `__setLazyTarget` / `__setLazyCurrentTarget` internal hooks
- * that Rust calls via napi to set `target`, `currentTarget`, and
- * `eventPhase` lazily (the node is only wrapped when JS reads it).
+ * `target`, `currentTarget`, and `eventPhase` are set lazily by Rust via
+ * the globally registered `setLazyTarget` / `setLazyCurrentTarget`
+ * functions (see `register.ts`). The node is only wrapped when JS
+ * reads it.
  */
 export class UIEvent extends Event {
   constructor(payload: EventPayload, init?: EventInit) {
@@ -31,26 +32,30 @@ export class UIEvent extends Event {
       ...init,
     });
   }
+}
 
-  /** @internal */
-  __setLazyTarget(getter: () => EventTarget | null): void {
-    Object.defineProperty(this, "target", {
-      get: getter,
-      configurable: true,
-    });
-  }
+/** @internal Set `event.target` to a lazy getter. Registered globally. */
+export function setLazyTarget(event: UIEvent, getter: () => EventTarget | null): void {
+  Object.defineProperty(event, "target", {
+    get: getter,
+    configurable: true,
+  });
+}
 
-  /** @internal */
-  __setLazyCurrentTarget(getter: () => EventTarget | null, phase: number): void {
-    Object.defineProperty(this, "currentTarget", {
-      get: getter,
-      configurable: true,
-    });
-    Object.defineProperty(this, "eventPhase", {
-      value: phase,
-      configurable: true,
-    });
-  }
+/** @internal Set `event.currentTarget` and `event.eventPhase`. Registered globally. */
+export function setLazyCurrentTarget(
+  event: UIEvent,
+  getter: () => EventTarget | null,
+  phase: number,
+): void {
+  Object.defineProperty(event, "currentTarget", {
+    get: getter,
+    configurable: true,
+  });
+  Object.defineProperty(event, "eventPhase", {
+    value: phase,
+    configurable: true,
+  });
 }
 
 /** Mouse events: click, mousedown, mouseup, mousemove, etc. */

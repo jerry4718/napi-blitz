@@ -13,6 +13,8 @@ import {
   registerDispatchFn,
   registerElementConstructor,
   registerEventFactory,
+  registerLazyCurrentTargetSetter,
+  registerLazyTargetSetter,
   registerNodeConstructor
 } from "./native";
 import {NodeTypes} from "./base/node";
@@ -22,7 +24,7 @@ import {Document} from "./document/document";
 import {HTMLElement} from "./element/html-element";
 import {HTMLInputElement} from "./element/html-input-element";
 import {HTMLTextAreaElement} from "./element/html-textarea-element";
-import {buildEvent} from "./events/events";
+import {buildEvent, setLazyCurrentTarget, setLazyTarget} from "./events/events";
 import {dispatchEvent} from "./helpers/events.ts";
 
 initEnv();
@@ -42,3 +44,6 @@ registerDispatchFn(dispatchEvent as any);
 
 registerCancelBubbleGetter(((event: Event) => event.cancelBubble) as any);
 registerDefaultPreventedGetter(((event: Event) => event.defaultPrevented) as any);
+
+registerLazyTargetSetter(setLazyTarget as any);
+registerLazyCurrentTargetSetter(setLazyCurrentTarget as any);
