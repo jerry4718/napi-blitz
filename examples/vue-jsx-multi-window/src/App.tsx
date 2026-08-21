@@ -10,10 +10,10 @@
 
 import { computed, defineComponent, inject, ref } from 'vue'
 import { HTMLDocument, pickFile, WindowOptions, type Window as BlitzWindow } from '@ylcc/napi-blitz'
-import { BlitzAppKey, BlitzWindowKey, ChildWindowsKey } from '../keys.ts'
-import { childBaseHtml, mountChild } from '../child.tsx'
+import { BlitzAppKey, BlitzWindowKey, ChildWindowsKey } from './keys.ts'
+import { childBaseHtml, mountChild } from './Child.tsx'
 
-export const MainApp = defineComponent({
+export const App = defineComponent({
     setup() {
         const app = inject(BlitzAppKey)!
         const mainWindow = inject(BlitzWindowKey)!

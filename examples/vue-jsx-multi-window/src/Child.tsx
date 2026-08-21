@@ -7,7 +7,7 @@ import { defineComponent, inject, ref } from 'vue'
 import type { BlitzApp, Window } from '@ylcc/napi-blitz'
 import { BlitzAppKey, BlitzDocumentKey, BlitzWindowKey } from './keys.ts'
 import { createRendererFor } from './renderer.ts'
-import { randomColor } from './utils/color.ts'
+import { randomColor } from './color.ts'
 
 /** Boilerplate HTML that every child window starts from. */
 export function childBaseHtml(): string {

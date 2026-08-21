@@ -23,7 +23,7 @@ import {
     type Window as BlitzWindow,
 } from '@ylcc/napi-blitz'
 
-import { MainApp } from './components/MainApp.tsx'
+import { App } from './App.tsx'
 import { createRendererFor } from './renderer.ts'
 import {
     BlitzAppKey,
@@ -70,7 +70,7 @@ export async function bootstrap() {
     body.appendChild(mountEl)
 
     const createApp = createRendererFor(mainDocument)
-    const vueApp = createApp(MainApp)
+    const vueApp = createApp(App)
     vueApp.provide(BlitzAppKey, app)
     vueApp.provide(BlitzWindowKey, main)
     vueApp.provide(BlitzDocumentKey, mainDocument)
