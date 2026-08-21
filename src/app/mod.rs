@@ -17,7 +17,7 @@ use crate::{
     dom::doc::NativeDoc,
     renderer::CurrentRenderer,
     window::{
-        NativeWindow, WindowInner, make_window_document,
+        NativeWindow, WindowState, make_window_document,
         monitor::{MonitorInfo, monitor_to_info},
         options::WindowOptions,
         util::build_window_attributes,
@@ -56,7 +56,7 @@ pub struct PumpResult {
 #[napi]
 pub struct NativeApp {
     event_loop: EventLoop,
-    pub(crate) inner: AppInner,
+    pub(crate) state: AppState,
 }
 
 /// A live window: the blitz `View` plus the JS-side `Window` handle
@@ -65,15 +65,15 @@ pub struct NativeApp {
 /// so `WindowEntry::close` takes the Arc out before dropping the view.
 pub(crate) struct WindowEntry {
     pub(crate) view: View<CurrentRenderer>,
-    pub(crate) inner: Rc<RefCell<WindowInner>>,
+    pub(crate) state: Rc<RefCell<WindowState>>,
 }
 
 impl WindowEntry {
     fn close(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.window = None;
-        inner.closed = true;
-        drop(inner);
+        let mut state = self.state.borrow_mut();
+        state.window = None;
+        state.closed = true;
+        drop(state);
         self.view
             .doc
             .inner_mut()
@@ -81,7 +81,7 @@ impl WindowEntry {
     }
 }
 
-pub(crate) struct AppInner {
+pub(crate) struct AppState {
     /// Live windows keyed by winit `WindowId`.
     pub(crate) windows: HashMap<WindowId, WindowEntry>,
     /// Window configs requested via `openWindow` but not yet promoted to live `View`s.
@@ -118,7 +118,7 @@ impl NativeApp {
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         Self {
             event_loop,
-            inner: AppInner {
+            state: AppState {
                 windows: HashMap::new(),
                 pending: Vec::new(),
                 proxy,
@@ -146,7 +146,7 @@ impl NativeApp {
     ) -> Result<()> {
         let callback_ref: FunctionRef<AppEventPayload, AppDispatchResult> =
             callback.create_ref()?;
-        self.inner.bridge = Some(JsAppBridge::new(env, callback_ref));
+        self.state.bridge = Some(JsAppBridge::new(env, callback_ref));
         Ok(())
     }
 
@@ -176,17 +176,17 @@ impl NativeApp {
         let window_doc = make_window_document(doc);
         let attributes = build_window_attributes(options)?;
         let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
-        self.inner.pending.push(config);
-        self.inner.has_opened_window = true;
-        self.inner.outstanding_windows += 1;
+        self.state.pending.push(config);
+        self.state.has_opened_window = true;
+        self.state.outstanding_windows += 1;
 
         // winit only assigns a WindowId while dispatching through an active
         // event loop. Run one non-blocking pump so the window is created, then
         // grab the Arc<dyn Window> and WindowId straight from the view.
-        let before: Vec<WindowId> = self.inner.windows.keys().copied().collect();
+        let before: Vec<WindowId> = self.state.windows.keys().copied().collect();
         self.pump_app_events(0.0);
         let entry = self
-            .inner
+            .state
             .windows
             .iter()
             .find(|(id, _)| !before.contains(id))
@@ -195,7 +195,7 @@ impl NativeApp {
 
         Ok(NativeWindow {
             window_id: entry.view.window.id(),
-            inner: Rc::clone(&entry.inner),
+            state: Rc::clone(&entry.state),
         })
     }
 
@@ -209,27 +209,27 @@ impl NativeApp {
     #[napi]
     pub fn close_window(&mut self, window: &mut NativeWindow) {
         let window_id = window.window_id;
-        let mut inner = window.inner.borrow_mut();
+        let mut state = window.state.borrow_mut();
 
         // Public JS API guarantee: close() is idempotent. Multiple calls are
         // common when listeners race with UI state updates, so only the first
         // one has side effects.
-        if inner.closed || self.inner.closing_window_ids.contains(&window_id) {
-            inner.closed = true;
+        if state.closed || self.state.closing_window_ids.contains(&window_id) {
+            state.closed = true;
             return;
         }
 
-        let was_initialised = self.inner.windows.contains_key(&window_id);
+        let was_initialised = self.state.windows.contains_key(&window_id);
         if was_initialised {
-            self.inner.closing_window_ids.push(window_id);
+            self.state.closing_window_ids.push(window_id);
         }
 
-        inner.closed = true;
-        inner.window = None;
-        drop(inner);
+        state.closed = true;
+        state.window = None;
+        drop(state);
 
         if was_initialised {
-            self.inner.outstanding_windows = self.inner.outstanding_windows.saturating_sub(1);
+            self.state.outstanding_windows = self.state.outstanding_windows.saturating_sub(1);
         }
 
         // Live windows are notified from `flush_closing_windows`,
@@ -248,7 +248,7 @@ impl NativeApp {
     /// no windows have been created yet.
     #[napi]
     pub fn available_monitors(&self) -> Vec<MonitorInfo> {
-        let Some(entry) = self.inner.windows.values().next() else {
+        let Some(entry) = self.state.windows.values().next() else {
             return Vec::new();
         };
         entry
@@ -263,7 +263,7 @@ impl NativeApp {
     /// created yet.
     #[napi]
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
-        let entry = self.inner.windows.values().next()?;
+        let entry = self.state.windows.values().next()?;
         entry.view.window.primary_monitor().map(monitor_to_info)
     }
 
@@ -279,7 +279,7 @@ impl NativeApp {
     #[napi]
     pub fn set_zoom(&mut self, window: &NativeWindow, zoom: f64) -> Result<()> {
         let entry = self
-            .inner
+            .state
             .windows
             .get_mut(&window.window_id)
             .ok_or_else(|| Error::from_reason("window not found"))?;
@@ -291,7 +291,7 @@ impl NativeApp {
     #[napi]
     pub fn get_zoom(&self, window: &NativeWindow) -> Result<f32> {
         let entry = self
-            .inner
+            .state
             .windows
             .get(&window.window_id)
             .ok_or_else(|| Error::from_reason("window not found"))?;
@@ -301,24 +301,24 @@ impl NativeApp {
 
 impl NativeApp {
     fn poll_live_views(&mut self) {
-        for entry in self.inner.windows.values_mut() {
+        for entry in self.state.windows.values_mut() {
             entry.view.poll();
         }
     }
 
     fn flush_closing_windows(&mut self) {
-        if self.inner.closing_window_ids.is_empty() {
+        if self.state.closing_window_ids.is_empty() {
             return;
         }
 
-        let closing_window_ids = std::mem::take(&mut self.inner.closing_window_ids);
+        let closing_window_ids = std::mem::take(&mut self.state.closing_window_ids);
         for window_id in closing_window_ids {
-            if let Some(mut entry) = self.inner.windows.remove(&window_id) {
+            if let Some(mut entry) = self.state.windows.remove(&window_id) {
                 entry.close();
                 drop(entry);
             }
 
-            if let Some(bridge) = self.inner.bridge.as_ref() {
+            if let Some(bridge) = self.state.bridge.as_ref() {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
                     window_id: BigInt::from(window_id.into_raw() as u64),
@@ -353,7 +353,7 @@ impl NativeApp {
         // triggers `event_loop.exit()` from inside
         // `BlitzApplication::window_event`, but JS-initiated
         // `BlitzApp::close_window` bypasses winit's pipeline entirely.
-        if self.inner.has_opened_window && self.inner.outstanding_windows == 0 {
+        if self.state.has_opened_window && self.state.outstanding_windows == 0 {
             return PumpResult {
                 r#continue: false,
                 exit: true,
@@ -364,7 +364,7 @@ impl NativeApp {
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
 
         let mut handler = AppHandler {
-            inner: &mut self.inner,
+            state: &mut self.state,
         };
         let status = self.event_loop.pump_app_events(timeout, &mut handler);
         self.flush_closing_windows();
