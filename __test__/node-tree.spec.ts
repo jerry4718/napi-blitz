@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import {HTMLDocument} from './shim.ts';
+import {HTMLDocument} from './_shim.ts';
 import {pluckDocument} from "./_helpers.ts";
 
 test("appendChild / parentNode / childNodes are on Node", (t) => {

@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import {Comment, Element, HTMLDocument, HTMLElement, Node, Text,} from './shim.ts';
+import {Comment, Element, HTMLDocument, HTMLElement, Node, Text,} from './_shim.ts';
 
 test("HTMLDocument has documentElement / head / body", (t) => {
   const doc = HTMLDocument.create();

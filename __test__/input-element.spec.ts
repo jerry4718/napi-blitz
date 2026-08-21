@@ -3,7 +3,7 @@
 
 import test from "ava";
 
-import {Element, HTMLDocument, HTMLElement, HTMLInputElement, HTMLTextAreaElement,} from './shim.ts';
+import {Element, HTMLDocument, HTMLElement, HTMLInputElement, HTMLTextAreaElement,} from './_shim.ts';
 
 // ---- Construction & inheritance --------------------------------------------
 

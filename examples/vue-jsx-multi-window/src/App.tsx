@@ -22,14 +22,17 @@ export const App = defineComponent({
         const pickedFile = ref<string | null>(null)
         let nextChildId = 1
 
-        function spawn() {
+        async function spawn() {
             closeBlocked.value = false
 
             const id = nextChildId++
             const document = HTMLDocument.create({ baseHtml: childBaseHtml() })
             const options = WindowOptions.builder()
             options.title(`Child #${id}`).size(480, 320)
-            const child = app.openWindow(document, options)
+            // `openWindow` is async: when called from a click handler the
+            // window is created by the current/next pump, and the promise
+            // resolves once the OS window exists.
+            const child = await app.openWindow(document, options)
             mountChild(app, child, id)
             children.value = [...children.value, child]
 
@@ -40,7 +43,7 @@ export const App = defineComponent({
             })
         }
 
-        function spawnChild() {
+        async function spawnChild() {
             closeBlocked.value = false
 
             const id = nextChildId++
@@ -48,7 +51,7 @@ export const App = defineComponent({
             const handle = mainWindow.windowHandle()
             const options = WindowOptions.builder()
             options.title(`Child #${id}`).size(480, 320).parentWindow(handle)
-            const child = app.openWindow(document, options)
+            const child = await app.openWindow(document, options)
             mountChild(app, child, id)
             children.value = [...children.value, child]
 
@@ -64,7 +67,7 @@ export const App = defineComponent({
         }
 
         function closeChild(child: BlitzWindow) {
-            child.close()
+            void child.close()
         }
 
         function flashCloseBlocked() {

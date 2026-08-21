@@ -20,7 +20,6 @@ import {
 import { App } from './App.tsx'
 import { DOCUMENT_KEY } from './utils/useDocument.ts'
 import { WINDOW_KEY } from './utils/useWindow.ts'
-import process from 'node:process'
 
 const BASE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -152,11 +151,12 @@ const { createApp } = createRenderer<Node, Node>({
 
 export async function bootstrap() {
   const app = BlitzApp.create()
+  app.pumpLoop()
 
   const document = HTMLDocument.create({ baseHtml: BASE_HTML })
   const options = WindowOptions.builder()
   options.title('Blitz Date Picker Demo')
-  const window = app.openWindow(document, options)
+  const window = await app.openWindow(document, options)
   nodeGlobalDoc = document
 
   const body = document.body!
@@ -168,16 +168,4 @@ export async function bootstrap() {
   vueApp.provide(DOCUMENT_KEY, document)
   vueApp.provide(WINDOW_KEY, window)
   vueApp.mount(mountEl)
-
-  await pump(app)
-}
-
-async function pump(app: BlitzApp) {
-  while (true) {
-    const result = app.pumpAppEvents(0)
-    if (result.exit) {
-      process.exit(result.code ?? 0)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 16))
-  }
 }

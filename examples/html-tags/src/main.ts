@@ -5,7 +5,6 @@ import {
   Node as BlitzNode,
   WindowOptions,
 } from '@ylcc/napi-blitz'
-import process from 'node:process'
 
 const BASE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -223,10 +222,11 @@ const SECTIONS: readonly TagSection[] = [
 
 export async function bootstrap(): Promise<void> {
   const app = BlitzApp.create()
+  app.pumpLoop()
   const document = HTMLDocument.create({ baseHtml: BASE_HTML })
   const options = WindowOptions.builder()
   options.title('Blitz HTML Tag Matrix').size(1200, 900)
-  app.openWindow(document, options)
+  await app.openWindow(document, options)
 
   installStyles(document)
   renderTagMatrix(document)
@@ -234,8 +234,6 @@ export async function bootstrap(): Promise<void> {
   document.documentElement.addEventListener('keydown', () => {
     console.log(document.body?.outerHTML ?? '<no body>')
   })
-
-  await pump(app)
 }
 
 function renderTagMatrix(document: HTMLDocument): void {
@@ -523,14 +521,4 @@ function installStyles(document: HTMLDocument): void {
     input, textarea, button, select { max-width: 100%; }
   `
   document.head!.appendChild(style)
-}
-
-async function pump(app: BlitzApp): Promise<void> {
-  while (true) {
-    const result = app.pumpAppEvents(0)
-    if (result.exit) {
-      process.exit(result.code ?? 0)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 16))
-  }
 }

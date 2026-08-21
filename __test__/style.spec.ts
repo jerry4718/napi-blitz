@@ -3,7 +3,7 @@
 
 import test from "ava";
 
-import {HTMLDocument, HTMLElement} from './shim.ts';
+import {HTMLDocument, HTMLElement} from './_shim.ts';
 
 test("style is a stable Proxy on HTMLElement", (t) => {
   const doc = HTMLDocument.create();

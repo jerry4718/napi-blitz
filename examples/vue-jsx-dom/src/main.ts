@@ -18,7 +18,6 @@ import {
   WindowOptions,
 } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
-import process from 'node:process'
 
 const BASE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -156,11 +155,12 @@ let nodeGlobalDoc: HTMLDocument | null = null
 
 export async function bootstrap() {
   const app = BlitzApp.create()
+  app.pumpLoop()
 
   const document = HTMLDocument.create({ baseHtml: BASE_HTML })
   const options = WindowOptions.builder()
   options.title('Blitz DOM Demo')
-  app.openWindow(document, options)
+  await app.openWindow(document, options)
   nodeGlobalDoc = document
 
   const body = document.body!
@@ -202,8 +202,6 @@ export async function bootstrap() {
     const blocksInBody = body.getElementsByClassName('block')
     console.log(`blocks in body: ${blocksInBody.length}`)
   })
-
-  await pump(app)
 }
 
 function randomHex(): string {
@@ -212,12 +210,3 @@ function randomHex(): string {
     .padStart(6, '0')
 }
 
-async function pump(app: BlitzApp) {
-  while (true) {
-    const result = app.pumpAppEvents(0)
-    if (result.exit) {
-      process.exit(result.code ?? 0)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 16))
-  }
-}

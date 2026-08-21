@@ -13,7 +13,7 @@
 
 import test from "ava";
 
-import {FontFace, FontFaceSet, HTMLDocument} from './shim.ts';
+import {FontFace, FontFaceSet, HTMLDocument} from './_shim.ts';
 
 test("FontFace constructor validates family name", (t) => {
   const buf = new Uint8Array([0, 0, 0, 0]);

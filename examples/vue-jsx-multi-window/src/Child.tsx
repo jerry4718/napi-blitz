@@ -72,7 +72,7 @@ const ChildApp = defineComponent({
         }
 
         function closeMe() {
-            window.close()
+            void window.close()
         }
 
         return () => (

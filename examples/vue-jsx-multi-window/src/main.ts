@@ -46,10 +46,19 @@ const MAIN_BASE_HTML = `<!DOCTYPE html>
 export async function bootstrap() {
     const app = BlitzApp.create()
 
-    const mainDocument = HTMLDocument.create({ baseHtml: MAIN_BASE_HTML })
-    const mainOptions = WindowOptions.builder()
-    mainOptions.title('Main · napi-blitz multi-window').size(720, 520)
-    const main = app.openWindow(mainDocument, mainOptions)
+    // `openWindow` never drives the event loop itself — it only queues the
+    // request and resolves once a pump promotes the window to a live View.
+    // So the pump loop must be running before we `await` the result.
+    app.pumpLoop()
+    // When every window is gone, native reports exit, the pump loop ends,
+    // and we leave the process.
+    app.addEventListener('pump:end', () => process.exit(0))
+
+    const main = await app.openWindow(
+        HTMLDocument.create({ baseHtml: MAIN_BASE_HTML }),
+        WindowOptions.builder().title('Main · napi-blitz multi-window').size(720, 520)
+    )
+    const mainDocument = main.document;
 
     const childWindows = shallowRef<BlitzWindow[]>([])
 
@@ -80,16 +89,4 @@ export async function bootstrap() {
     main.addEventListener('closed', () => {
         vueApp.unmount()
     })
-
-    await pump(app)
-}
-
-async function pump(app: BlitzApp) {
-    while (true) {
-        const result = app.pumpAppEvents(0)
-        if (result.exit) {
-            process.exit(result.code ?? 0)
-        }
-        await new Promise((resolve) => setTimeout(resolve, 16))
-    }
 }

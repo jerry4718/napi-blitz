@@ -3,7 +3,7 @@
 
 import test from "ava";
 
-import {HTMLDocument} from './shim.ts';
+import {HTMLDocument} from './_shim.ts';
 
 test("getAttribute / setAttribute / removeAttribute round trip", (t) => {
   const doc = HTMLDocument.create();

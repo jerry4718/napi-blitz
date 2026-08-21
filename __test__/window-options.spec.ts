@@ -1,50 +1,31 @@
-// Window size validation at the JS -> N-API boundary.
+// Window size validation at the JS -> N-API boundary. Only the pure
+// parameter-validation cases live here (no pump / no real window), so they
+// run everywhere, including CI. The resize case that needs a real OS window
+// + vello rendering lives in `windows/window-options.spec.ts` (CI-skipped).
 
 import test from "ava";
 
-import {BlitzApp, HTMLDocument, WindowOptions} from './shim.ts';
+import {createApp, newDoc} from "./_helpers.ts";
+import {WindowOptions} from "./_shim.ts";
 
-// winit only allows one event loop per process, so share a single
-// BlitzApp across all tests in this file.
-const app = BlitzApp.create();
-const newDoc = () => HTMLDocument.create();
+const app = createApp();
 
-test("window surface dimensions are validated before reaching winit", (t) => {
+test("window surface dimensions are validated before reaching winit", async (t) => {
   const negative = WindowOptions.builder();
   negative.size(-1, 100);
-  t.throws(() => app.openWindow(newDoc(), negative), {
+  await t.throwsAsync(() => app.openWindow(newDoc(), negative), {
     message: /width must be >= 1/,
   });
 
   const fractional = WindowOptions.builder();
   fractional.size(100.5, 100);
-  t.throws(() => app.openWindow(newDoc(), fractional), {
+  await t.throwsAsync(() => app.openWindow(newDoc(), fractional), {
     message: /width must be an integer/,
   });
 
   const infinite = WindowOptions.builder();
   infinite.size(Number.POSITIVE_INFINITY, 100);
-  t.throws(() => app.openWindow(newDoc(), infinite), {
+  await t.throwsAsync(() => app.openWindow(newDoc(), infinite), {
     message: /width must be finite/,
   });
-});
-
-// openWindow with valid dimensions triggers pump_app_events -> vello
-// rendering. CI containers lack GPU support (same as
-// dom-mutation-style.spec.ts), so skip in CI.
-const testFn = process.env.CI ? test.skip : test;
-
-testFn("window resize dimensions are validated at the napi boundary", (t) => {
-  const valid = WindowOptions.builder();
-  valid.size(100, 100);
-  const window = app.openWindow(newDoc(), valid);
-
-  t.throws(() => window.resize(-1, 100), {
-    message: /width must be >= 1/,
-  });
-  t.throws(() => window.resize(100, 50.25), {
-    message: /height must be an integer/,
-  });
-
-  window.close();
 });

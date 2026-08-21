@@ -151,6 +151,22 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0
 
+  examples/window-events:
+    dependencies:
+      '@ylcc/napi-blitz':
+        specifier: workspace:*
+        version: link:../..
+    devDependencies:
+      '@oxc-node/core':
+        specifier: ^0.0.35
+        version: 0.0.35(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
+      '@types/node':
+        specifier: ^22.7.4
+        version: 22.19.21
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
+
 packages:
 
   '@babel/helper-string-parser@7.29.7':

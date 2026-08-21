@@ -5,7 +5,6 @@ import {
   Node as BlitzNode,
   WindowOptions,
 } from '@ylcc/napi-blitz'
-import process from 'node:process'
 import { generateIcosaSphere, type TriangleFace, type Vec3 } from './sphere.ts'
 
 const SPHERE_RADIUS_PX = 240
@@ -60,10 +59,13 @@ const BASE_HTML = `<!DOCTYPE html>
 
 export async function bootstrap() {
   const app = BlitzApp.create()
+  app.pumpLoop()
+
   const document = HTMLDocument.create({ baseHtml: BASE_HTML })
   const options = WindowOptions.builder()
   options.title('3D Sphere (HTML)')
-  app.openWindow(document, options)
+
+  const win = await app.openWindow(document, options)
   globalDoc = document
 
   installStyles(document)
@@ -97,10 +99,9 @@ export async function bootstrap() {
     console.log("renderFaces:", performance.now() - p0);
   }
 
-  // Pump + animation
-  while (true) {
-    const result = app.pumpAppEvents(60)
-    if (result.exit) process.exit(result.code ?? 0)
+  // Animation loop; ends when the window closes (the pump loop exits on its
+  // own once every window is gone).
+  while (!win.closed) {
     applyLevelChange()
     loop()
     await new Promise((r) => setTimeout(r, 60))

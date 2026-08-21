@@ -11,7 +11,7 @@
 
 import test from "ava";
 
-import {HTMLDocument, Node, PointerEvent, UIEvent} from './shim.ts';
+import {HTMLDocument, Node, PointerEvent, UIEvent} from './_shim.ts';
 
 /**
  * Simulate the Rust-side bubble walk: dispatch `event` on `target`,

@@ -67,22 +67,142 @@ const { BlitzApp } = napiBlitz;
 deno run --allow-ffi --allow-env --allow-read main.ts
 ```
 
-## Runtime dependencies
+## Quick start
 
-Linux and FreeBSD builds use Blitz system font integration, so minimal runtime images need `fontconfig` available at runtime. `pkg-config` and development headers are only needed when building from source.
+> 💡 Tip: In environments that support top-level `await`, the `main` function wrapper is not required.
 
-Most desktop Linux distributions already include these libraries. Slim containers usually do not.
+### Open a window
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+const document = HTMLDocument.create({
+  baseHtml: `<!doctype html>
+<html>
+<head>
+  <title>napi-blitz demo</title>
+  <style>
+    body { margin: 24px; font-family: sans-serif; }
+    button { padding: 8px 12px; }
+  </style>
+</head>
+<body></body>
+</html>`,
+});
+
+async function main() {
+  const app = BlitzApp.create();
+  // Start the pump loop first: `openWindow` only resolves once a pump
+  // creates the window. The loop runs in the background and exits on its
+  // own once every window is closed.
+  app.pumpLoop();
+  const window = await app.openWindow(
+    document,
+    WindowOptions.builder()
+      .title("napi-blitz demo")
+      .size(800, 600),
+  );
+
+  const button = document.createElement("button");
+  let count = 0;
+
+  button.textContent = `Clicked ${count} times`;
+  button.addEventListener("click", () => {
+    count += 1;
+    button.textContent = `Clicked ${count} times`;
+  });
+
+  document.body!.appendChild(button);
+}
+
+main();
+```
+
+### CommonJS
+
+```js
+const { BlitzApp, HTMLDocument, WindowOptions } = require("@ylcc/napi-blitz");
+
+async function main() {
+  const doc = HTMLDocument.create();
+  const app = BlitzApp.create();
+  // Start the pump loop first: `openWindow` only resolves once a pump
+  // creates the window.
+  app.pumpLoop();
+  const win = await app.openWindow(doc, WindowOptions.builder().title("CommonJS demo"));
+
+  doc.body.textContent = "Hello from CommonJS";
+}
+
+main();
+```
+
+### DOM mutation and style
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+const document = HTMLDocument.create({
+  baseHtml: `<!doctype html><html><body></body></html>`,
+});
+
+async function main() {
+  const app = BlitzApp.create();
+  app.pumpLoop();
+  const win = await app.openWindow(
+    document,
+    WindowOptions.builder().title("DOM demo"),
+  );
+
+  const card = document.createElement("section");
+  card.setAttribute("class", "card");
+  card.style.padding = "16px";
+  card.style.border = "1px solid #999";
+  card.style.borderRadius = "8px";
+  card.textContent = "Created with the DOM API";
+
+  document.body!.appendChild(card);
+}
+
+main();
+```
+
+### Multiple windows
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+async function main() {
+  const app = BlitzApp.create();
+  app.pumpLoop();
+  const docA = HTMLDocument.create();
+  const docB = HTMLDocument.create();
+  const a = await app.openWindow(docA, WindowOptions.builder().title("Window A").size(360, 240));
+  const b = await app.openWindow(docB, WindowOptions.builder().title("Window B").size(360, 240));
+
+  docA.body.textContent = "A";
+  docB.body.textContent = "B";
+}
+
+main();
+```
+
+## Examples in this repository
 
 ```bash
-# Debian / Ubuntu runtime images
-apt-get install -y fontconfig libfontconfig1
+pnpm install
+pnpm run build:debug
 
-# Alpine runtime images
-apk add --no-cache fontconfig
-
-# FreeBSD
-pkg install -y fontconfig
+pnpm --dir examples/html-tags start
+pnpm --dir examples/vue-jsx-dom start
+pnpm --dir examples/vue-jsx-multi-window start
 ```
+
+Examples:
+
+- `examples/html-tags`: DOM-only HTML tag matrix.
+- `examples/vue-jsx-dom`: Vue 3 custom renderer targeting the napi-blitz DOM API.
+- `examples/vue-jsx-multi-window`: multi-window Vue renderer demo.
 
 ## Supported platforms
 
@@ -105,131 +225,22 @@ The package publishes prebuilt N-API binaries for the platforms that pass the CI
 
 When building Linux targets from source, the CI enables vendored OpenSSL and runtime-loaded fontconfig to avoid cross `pkg-config` sysroot requirements.
 
-## Quick start
+## Runtime dependencies
 
-### Open a window
+Linux and FreeBSD builds use Blitz system font integration, so minimal runtime images need `fontconfig` available at runtime. `pkg-config` and development headers are only needed when building from source.
 
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const document = HTMLDocument.create({
-  baseHtml: `<!doctype html>
-<html>
-<head>
-  <title>napi-blitz demo</title>
-  <style>
-    body { margin: 24px; font-family: sans-serif; }
-    button { padding: 8px 12px; }
-  </style>
-</head>
-<body></body>
-</html>`,
-});
-
-const app = BlitzApp.create();
-const window = app.openWindow(
-  document,
-  WindowOptions.builder()
-    .title("napi-blitz demo")
-    .size(800, 600),
-);
-
-const button = document.createElement("button");
-let count = 0;
-
-button.textContent = `Clicked ${count} times`;
-button.addEventListener("click", () => {
-  count += 1;
-  button.textContent = `Clicked ${count} times`;
-});
-
-document.body!.appendChild(button);
-
-while (!window.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### CommonJS
-
-```js
-const { BlitzApp, HTMLDocument, WindowOptions } = require("@ylcc/napi-blitz");
-
-const doc = HTMLDocument.create();
-const app = BlitzApp.create();
-const win = app.openWindow(doc, WindowOptions.builder().title("CommonJS demo"));
-
-doc.body.textContent = "Hello from CommonJS";
-
-while (!win.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### DOM mutation and style
-
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const document = HTMLDocument.create({
-  baseHtml: `<!doctype html><html><body></body></html>`,
-});
-
-const app = BlitzApp.create();
-const win = app.openWindow(
-  document,
-  WindowOptions.builder().title("DOM demo"),
-);
-
-const card = document.createElement("section");
-card.setAttribute("class", "card");
-card.style.padding = "16px";
-card.style.border = "1px solid #999";
-card.style.borderRadius = "8px";
-card.textContent = "Created with the DOM API";
-
-document.body!.appendChild(card);
-
-while (!win.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### Multiple windows
-
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const app = BlitzApp.create();
-const docA = HTMLDocument.create();
-const docB = HTMLDocument.create();
-const a = app.openWindow(docA, WindowOptions.builder().title("Window A").size(360, 240));
-const b = app.openWindow(docB, WindowOptions.builder().title("Window B").size(360, 240));
-
-docA.body.textContent = "A";
-docB.body.textContent = "B";
-
-while (!a.closed || !b.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-## Examples in this repository
+Most desktop Linux distributions already include these libraries. Slim containers usually do not.
 
 ```bash
-pnpm install
-pnpm run build:debug
+# Debian / Ubuntu runtime images
+apt-get install -y fontconfig libfontconfig1
 
-pnpm --dir examples/html-tags start
-pnpm --dir examples/vue-jsx-dom start
-pnpm --dir examples/vue-jsx-multi-window start
+# Alpine runtime images
+apk add --no-cache fontconfig
+
+# FreeBSD
+pkg install -y fontconfig
 ```
-
-Examples:
-
-- `examples/html-tags`: DOM-only HTML tag matrix.
-- `examples/vue-jsx-dom`: Vue 3 custom renderer targeting the napi-blitz DOM API.
-- `examples/vue-jsx-multi-window`: multi-window Vue renderer demo.
 
 ## Development
 

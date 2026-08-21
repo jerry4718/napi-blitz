@@ -67,22 +67,140 @@ const { BlitzApp } = napiBlitz;
 deno run --allow-ffi --allow-env --allow-read main.ts
 ```
 
-## 运行时依赖
+## 快速开始
 
-Linux 和 FreeBSD 构建会使用 Blitz 的系统字体集成，所以在精简运行时镜像里需要有 `fontconfig`。`pkg-config` 和开发头文件只在从源码构建时需要，运行时不需要。
+> 💡 提示：在支持 top-level `await` 的环境下，`main` 函数的包装不是必须的。
 
-大多数桌面 Linux 发行版默认已经带有这些库，但 slim 容器通常没有。
+### 打开一个窗口
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+const document = HTMLDocument.create({
+  baseHtml: `<!doctype html>
+<html>
+<head>
+  <title>napi-blitz demo</title>
+  <style>
+    body { margin: 24px; font-family: sans-serif; }
+    button { padding: 8px 12px; }
+  </style>
+</head>
+<body></body>
+</html>`,
+});
+
+async function main() {
+  const app = BlitzApp.create();
+  // 先启动 pump 循环：`openWindow` 只有在一次 pump 创建窗口后才 resolve。
+  // 该循环在后台运行，所有窗口关闭后自动退出。
+  app.pumpLoop();
+  const window = await app.openWindow(
+    document,
+    WindowOptions.builder()
+      .title("napi-blitz demo")
+      .size(800, 600),
+  );
+
+  const button = document.createElement("button");
+  let count = 0;
+
+  button.textContent = `Clicked ${count} times`;
+  button.addEventListener("click", () => {
+    count += 1;
+    button.textContent = `Clicked ${count} times`;
+  });
+
+  document.body!.appendChild(button);
+}
+
+main();
+```
+
+### CommonJS
+
+```js
+const { BlitzApp, HTMLDocument, WindowOptions } = require("@ylcc/napi-blitz");
+
+async function main() {
+  const doc = HTMLDocument.create();
+  const app = BlitzApp.create();
+  // 先启动 pump 循环：`openWindow` 只有在一次 pump 创建窗口后才 resolve。
+  app.pumpLoop();
+  const win = await app.openWindow(doc, WindowOptions.builder().title("CommonJS demo"));
+
+  doc.body.textContent = "Hello from CommonJS";
+}
+
+main();
+```
+
+### DOM 修改和样式
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+const document = HTMLDocument.create({
+  baseHtml: `<!doctype html><html><body></body></html>`,
+});
+
+async function main() {
+  const app = BlitzApp.create();
+  app.pumpLoop();
+  const win = await app.openWindow(
+    document,
+    WindowOptions.builder().title("DOM demo"),
+  );
+
+  const card = document.createElement("section");
+  card.setAttribute("class", "card");
+  card.style.padding = "16px";
+  card.style.border = "1px solid #999";
+  card.style.borderRadius = "8px";
+  card.textContent = "Created with the DOM API";
+
+  document.body!.appendChild(card);
+}
+
+main();
+```
+
+### 多窗口
+
+```ts
+import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
+
+async function main() {
+  const app = BlitzApp.create();
+  app.pumpLoop();
+  const docA = HTMLDocument.create();
+  const docB = HTMLDocument.create();
+  const a = await app.openWindow(docA, WindowOptions.builder().title("Window A").size(360, 240));
+  const b = await app.openWindow(docB, WindowOptions.builder().title("Window B").size(360, 240));
+
+  docA.body.textContent = "A";
+  docB.body.textContent = "B";
+}
+
+main();
+```
+
+## 仓库内示例
 
 ```bash
-# Debian / Ubuntu 运行时镜像
-apt-get install -y fontconfig libfontconfig1
+pnpm install
+pnpm run build:debug
 
-# Alpine 运行时镜像
-apk add --no-cache fontconfig
-
-# FreeBSD
-pkg install -y fontconfig
+pnpm --dir examples/html-tags start
+pnpm --dir examples/vue-jsx-dom start
+pnpm --dir examples/vue-jsx-multi-window start
 ```
+
+示例说明：
+
+- `examples/html-tags`：纯 DOM API 的 HTML 标签矩阵。
+- `examples/vue-jsx-dom`：Vue 3 custom renderer，渲染目标是 napi-blitz DOM API。
+- `examples/vue-jsx-multi-window`：多窗口 Vue renderer demo。
 
 ## 支持平台
 
@@ -105,131 +223,22 @@ pkg install -y fontconfig
 
 从源码构建 Linux targets 时，CI 会启用 vendored OpenSSL，并让 fontconfig 走运行时加载，以避免交叉编译时配置 `pkg-config` sysroot。
 
-## 快速开始
+## 运行时依赖
 
-### 打开一个窗口
+Linux 和 FreeBSD 构建会使用 Blitz 的系统字体集成，所以在精简运行时镜像里需要有 `fontconfig`。`pkg-config` 和开发头文件只在从源码构建时需要，运行时不需要。
 
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const document = HTMLDocument.create({
-  baseHtml: `<!doctype html>
-<html>
-<head>
-  <title>napi-blitz demo</title>
-  <style>
-    body { margin: 24px; font-family: sans-serif; }
-    button { padding: 8px 12px; }
-  </style>
-</head>
-<body></body>
-</html>`,
-});
-
-const app = BlitzApp.create();
-const window = app.openWindow(
-  document,
-  WindowOptions.builder()
-    .title("napi-blitz demo")
-    .size(800, 600),
-);
-
-const button = document.createElement("button");
-let count = 0;
-
-button.textContent = `Clicked ${count} times`;
-button.addEventListener("click", () => {
-  count += 1;
-  button.textContent = `Clicked ${count} times`;
-});
-
-document.body!.appendChild(button);
-
-while (!window.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### CommonJS
-
-```js
-const { BlitzApp, HTMLDocument, WindowOptions } = require("@ylcc/napi-blitz");
-
-const doc = HTMLDocument.create();
-const app = BlitzApp.create();
-const win = app.openWindow(doc, WindowOptions.builder().title("CommonJS demo"));
-
-doc.body.textContent = "Hello from CommonJS";
-
-while (!win.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### DOM 修改和样式
-
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const document = HTMLDocument.create({
-  baseHtml: `<!doctype html><html><body></body></html>`,
-});
-
-const app = BlitzApp.create();
-const win = app.openWindow(
-  document,
-  WindowOptions.builder().title("DOM demo"),
-);
-
-const card = document.createElement("section");
-card.setAttribute("class", "card");
-card.style.padding = "16px";
-card.style.border = "1px solid #999";
-card.style.borderRadius = "8px";
-card.textContent = "Created with the DOM API";
-
-document.body!.appendChild(card);
-
-while (!win.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-### 多窗口
-
-```ts
-import { BlitzApp, HTMLDocument, WindowOptions } from "@ylcc/napi-blitz";
-
-const app = BlitzApp.create();
-const docA = HTMLDocument.create();
-const docB = HTMLDocument.create();
-const a = app.openWindow(docA, WindowOptions.builder().title("Window A").size(360, 240));
-const b = app.openWindow(docB, WindowOptions.builder().title("Window B").size(360, 240));
-
-docA.body.textContent = "A";
-docB.body.textContent = "B";
-
-while (!a.closed || !b.closed) {
-  app.pumpAppEvents(16);
-}
-```
-
-## 仓库内示例
+大多数桌面 Linux 发行版默认已经带有这些库，但 slim 容器通常没有。
 
 ```bash
-pnpm install
-pnpm run build:debug
+# Debian / Ubuntu 运行时镜像
+apt-get install -y fontconfig libfontconfig1
 
-pnpm --dir examples/html-tags start
-pnpm --dir examples/vue-jsx-dom start
-pnpm --dir examples/vue-jsx-multi-window start
+# Alpine 运行时镜像
+apk add --no-cache fontconfig
+
+# FreeBSD
+pkg install -y fontconfig
 ```
-
-示例说明：
-
-- `examples/html-tags`：纯 DOM API 的 HTML 标签矩阵。
-- `examples/vue-jsx-dom`：Vue 3 custom renderer，渲染目标是 napi-blitz DOM API。
-- `examples/vue-jsx-multi-window`：多窗口 Vue renderer demo。
 
 ## 开发
 
