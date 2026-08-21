@@ -5,6 +5,20 @@
 //! to it. JS drives the loop synchronously via `pumpAppEvents(millis)` from
 //! the main thread; this keeps event callbacks re-entrant on the napi env so
 //! we can call back into JS without a ThreadsafeFunction.
+//!
+//! # Async `openWindow`
+//!
+//! `openWindow` is async: it returns a `Promise<NativeWindow>` and never
+//! recursively drives the event loop. Window creation happens inside a
+//! *later* `pump_app_events` (via `AppHandler::drain_pending_windows`), where
+//! winit hands us an `ActiveEventLoop`. Two paths resolve the promise:
+//!
+//! - Outside a pump (initial setup): `open_window` runs one non-recursive
+//!   pump itself, so the caller's `await` resolves immediately.
+//! - Inside a pump (an event handler): `open_window` only queues the request;
+//!   the current or next pump's `drain_pending_windows` creates the window and
+//!   resolves the promise. This is what makes opening a window from a click
+//!   handler safe — there is no nested event-loop recursion.
 
 mod bridge;
 mod handler;
@@ -24,7 +38,12 @@ use crate::{
     },
 };
 use std::{
-    cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, sync::mpsc::Receiver, time::Duration,
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    sync::Arc,
+    sync::mpsc::Receiver,
+    time::Duration,
 };
 
 use blitz::{
@@ -34,8 +53,8 @@ use blitz::{
     traits::shell::DummyShellProvider,
 };
 use napi::{
-    Env, Error, Result,
-    bindgen_prelude::{BigInt, Function, FunctionRef},
+    Env, Error, JsDeferred, JsValue, Result,
+    bindgen_prelude::{BigInt, Function, FunctionRef, PromiseRaw},
 };
 use winit::{
     event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus},
@@ -55,16 +74,22 @@ pub struct PumpResult {
 
 #[napi]
 pub struct NativeApp {
-    event_loop: EventLoop,
-    pub(crate) state: AppState,
+    pub(super) event_loop: RefCell<EventLoop>,
+    pub(crate) state: Rc<RefCell<AppState>>,
 }
 
 /// A live window: the blitz `View` plus the JS-side `Window` handle
 /// that holds an `Arc<dyn Window>`. Dropping the view alone does not
 /// release the winit window if the JS `Window` still holds a clone,
 /// so `WindowEntry::close` takes the Arc out before dropping the view.
+///
+/// `view` is `Rc<RefCell<...>>` so that `AppHandler::window_event` can clone
+/// the Rc, drop the `AppState` borrow, and only then call `handle_winit_event`
+/// (which re-enters JS). Re-entrant JS that calls back into `NativeApp`
+/// methods never sees an outstanding `AppState` borrow, and the event
+/// dispatch only ever mutably borrows its own window's view.
 pub(crate) struct WindowEntry {
-    pub(crate) view: View<CurrentRenderer>,
+    pub(crate) view: Rc<RefCell<View<CurrentRenderer>>>,
     pub(crate) state: Rc<RefCell<WindowState>>,
 }
 
@@ -75,17 +100,30 @@ impl WindowEntry {
         state.closed = true;
         drop(state);
         self.view
+            .borrow_mut()
             .doc
             .inner_mut()
             .set_shell_provider(Arc::new(DummyShellProvider));
     }
 }
 
+/// A window requested via `openWindow` that has not yet been promoted to a
+/// live `View`. Created inside `drain_pending_windows` during the next pump;
+/// resolving `deferred` is what fulfils the JS-side `Promise` returned by
+/// `openWindow`.
+pub(crate) struct PendingWindow {
+    pub(crate) config: WindowConfig<CurrentRenderer>,
+    /// Shared with the `NativeWindow` handed to JS; filled in once the OS
+    /// window exists.
+    pub(crate) state: Rc<RefCell<WindowState>>,
+    pub(crate) deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
+}
+
 pub(crate) struct AppState {
     /// Live windows keyed by winit `WindowId`.
     pub(crate) windows: HashMap<WindowId, WindowEntry>,
     /// Window configs requested via `openWindow` but not yet promoted to live `View`s.
-    pub(crate) pending: Vec<WindowConfig<CurrentRenderer>>,
+    pub(crate) pending_windows: Vec<PendingWindow>,
     /// Proxy for sending events into the event loop (redraw, poll, etc.).
     pub(crate) proxy: BlitzShellProxy,
     /// Receiver for `BlitzShellEvent`s from the proxy channel.
@@ -117,17 +155,17 @@ impl NativeApp {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         Self {
-            event_loop,
-            state: AppState {
+            event_loop: RefCell::new(event_loop),
+            state: Rc::new(RefCell::new(AppState {
                 windows: HashMap::new(),
-                pending: Vec::new(),
+                pending_windows: Vec::new(),
                 proxy,
                 event_queue: receiver,
                 closing_window_ids: Vec::new(),
                 bridge: None,
                 outstanding_windows: 0,
                 has_opened_window: false,
-            },
+            })),
         }
     }
 
@@ -140,13 +178,13 @@ impl NativeApp {
     /// `preventDefault()` called on it.
     #[napi]
     pub fn set_app_event_handler(
-        &mut self,
+        &self,
         env: Env,
         callback: Function<AppEventPayload, AppDispatchResult>,
     ) -> Result<()> {
         let callback_ref: FunctionRef<AppEventPayload, AppDispatchResult> =
             callback.create_ref()?;
-        self.state.bridge = Some(JsAppBridge::new(env, callback_ref));
+        self.state.borrow_mut().bridge = Some(JsAppBridge::new(env, callback_ref));
         Ok(())
     }
 
@@ -160,14 +198,24 @@ impl NativeApp {
     /// title shortly after open; this is expected, with the document treated
     /// as the source of truth for window-title content.
     ///
-    /// The returned `Window` carries the winit `WindowId` of the created
-    /// window, which we use as the napi-side window identifier.
+    /// Returns a `Promise<NativeWindow>`. This method never drives the event
+    /// loop itself: it only queues the window request and returns a promise
+    /// that resolves once a `pump_app_events` call promotes the pending config
+    /// to a live window (see `AppHandler::drain_pending_windows`). That makes
+    /// it safe to invoke from inside an event handler — the in-flight pump
+    /// creates the window, with no nested event-loop recursion.
+    ///
+    /// Because creation is deferred to the caller's pump, the caller must
+    /// ensure a pump is (or will be) running before `await`-ing the result;
+    /// otherwise the promise never resolves. Typical setup drives at least one
+    /// `pump_app_events` before awaiting.
     #[napi]
     pub fn open_window(
-        &mut self,
+        &self,
+        env: Env,
         doc: &mut NativeDoc,
         options: Option<&WindowOptions>,
-    ) -> Result<NativeWindow> {
+    ) -> Result<PromiseRaw<'_, NativeWindow>> {
         if !doc.mark_attached() {
             return Err(Error::from_reason(
                 "DocHandle has already been attached to a window".to_string(),
@@ -176,27 +224,27 @@ impl NativeApp {
         let window_doc = make_window_document(doc);
         let attributes = build_window_attributes(options)?;
         let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
-        self.state.pending.push(config);
-        self.state.has_opened_window = true;
-        self.state.outstanding_windows += 1;
 
-        // winit only assigns a WindowId while dispatching through an active
-        // event loop. Run one non-blocking pump so the window is created, then
-        // grab the Arc<dyn Window> and WindowId straight from the view.
-        let before: Vec<WindowId> = self.state.windows.keys().copied().collect();
-        self.pump_app_events(0.0);
-        let entry = self
-            .state
-            .windows
-            .iter()
-            .find(|(id, _)| !before.contains(id))
-            .map(|(_, entry)| entry as &WindowEntry)
-            .ok_or_else(|| Error::from_reason("failed to create native window"))?;
+        let win_state = Rc::new(RefCell::new(WindowState {
+            window: None,
+            closed: false,
+        }));
+        let (deferred, promise_obj) = env
+            .create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
+        let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
 
-        Ok(NativeWindow {
-            window_id: entry.view.window.id(),
-            state: Rc::clone(&entry.state),
-        })
+        {
+            let mut app_state = self.state.borrow_mut();
+            app_state.pending_windows.push(PendingWindow {
+                config,
+                state: win_state,
+                deferred,
+            });
+            app_state.has_opened_window = true;
+            app_state.outstanding_windows += 1;
+        }
+
+        Ok(promise)
     }
 
     /// Synchronously close the given window. Removes it from the
@@ -207,21 +255,23 @@ impl NativeApp {
     /// This is intentionally not GC-driven: dropping the JS `Window` object
     /// does not close the OS window. Callers must invoke this explicitly.
     #[napi]
-    pub fn close_window(&mut self, window: &mut NativeWindow) {
+    pub fn close_window(&self, window: &NativeWindow) {
         let window_id = window.window_id;
         let mut state = window.state.borrow_mut();
 
         // Public JS API guarantee: close() is idempotent. Multiple calls are
         // common when listeners race with UI state updates, so only the first
         // one has side effects.
-        if state.closed || self.state.closing_window_ids.contains(&window_id) {
+        let app_state = self.state.borrow();
+        if state.closed || app_state.closing_window_ids.contains(&window_id) {
             state.closed = true;
             return;
         }
+        drop(app_state);
 
-        let was_initialised = self.state.windows.contains_key(&window_id);
+        let was_initialised = self.state.borrow().windows.contains_key(&window_id);
         if was_initialised {
-            self.state.closing_window_ids.push(window_id);
+            self.state.borrow_mut().closing_window_ids.push(window_id);
         }
 
         state.closed = true;
@@ -229,7 +279,8 @@ impl NativeApp {
         drop(state);
 
         if was_initialised {
-            self.state.outstanding_windows = self.state.outstanding_windows.saturating_sub(1);
+            let mut app_state = self.state.borrow_mut();
+            app_state.outstanding_windows = app_state.outstanding_windows.saturating_sub(1);
         }
 
         // Live windows are notified from `flush_closing_windows`,
@@ -248,11 +299,13 @@ impl NativeApp {
     /// no windows have been created yet.
     #[napi]
     pub fn available_monitors(&self) -> Vec<MonitorInfo> {
-        let Some(entry) = self.state.windows.values().next() else {
+        let state = self.state.borrow();
+        let Some(entry) = state.windows.values().next() else {
             return Vec::new();
         };
         entry
             .view
+            .borrow()
             .window
             .available_monitors()
             .map(monitor_to_info)
@@ -263,13 +316,14 @@ impl NativeApp {
     /// created yet.
     #[napi]
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
-        let entry = self.state.windows.values().next()?;
-        entry.view.window.primary_monitor().map(monitor_to_info)
+        let state = self.state.borrow();
+        let entry = state.windows.values().next()?;
+        entry.view.borrow().window.primary_monitor().map(monitor_to_info)
     }
 
     /// Pump pending winit events for at most `millis` milliseconds.
     #[napi]
-    pub fn pump_app_events(&mut self, millis: f64) -> PumpResult {
+    pub fn pump_app_events(&self, millis: f64) -> PumpResult {
         self.pump_app_events_inner(millis)
     }
 
@@ -277,48 +331,62 @@ impl NativeApp {
     /// system scale factor to produce the total viewport scale
     /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
     #[napi]
-    pub fn set_zoom(&mut self, window: &NativeWindow, zoom: f64) -> Result<()> {
-        let entry = self
-            .state
+    pub fn set_zoom(&self, window: &NativeWindow, zoom: f64) -> Result<()> {
+        let state = self.state.borrow();
+        let entry = state
             .windows
-            .get_mut(&window.window_id)
+            .get(&window.window_id)
             .ok_or_else(|| Error::from_reason("window not found"))?;
-        entry.view.with_viewport(|v| v.set_zoom(zoom as f32));
+        entry
+            .view
+            .borrow_mut()
+            .with_viewport(|v| v.set_zoom(zoom as f32));
         Ok(())
     }
 
     /// Get the current document zoom level.
     #[napi]
     pub fn get_zoom(&self, window: &NativeWindow) -> Result<f32> {
-        let entry = self
-            .state
+        let state = self.state.borrow();
+        let entry = state
             .windows
             .get(&window.window_id)
             .ok_or_else(|| Error::from_reason("window not found"))?;
-        Ok(entry.view.doc.inner().viewport().zoom())
+        Ok(entry.view.borrow().doc.inner().viewport().zoom())
     }
 }
 
 impl NativeApp {
-    fn poll_live_views(&mut self) {
-        for entry in self.state.windows.values_mut() {
-            entry.view.poll();
+    fn poll_live_views(&self) {
+        let state = self.state.borrow();
+        for entry in state.windows.values() {
+            entry.view.borrow_mut().poll();
         }
     }
 
-    fn flush_closing_windows(&mut self) {
-        if self.state.closing_window_ids.is_empty() {
-            return;
-        }
+    fn flush_closing_windows(&self) {
+        let closing_window_ids = {
+            let mut state = self.state.borrow_mut();
+            if state.closing_window_ids.is_empty() {
+                return;
+            }
+            std::mem::take(&mut state.closing_window_ids)
+        };
 
-        let closing_window_ids = std::mem::take(&mut self.state.closing_window_ids);
         for window_id in closing_window_ids {
-            if let Some(mut entry) = self.state.windows.remove(&window_id) {
-                entry.close();
-                drop(entry);
+            // 1. Remove + close the entry (needs &mut AppState), then
+            //    release the borrow before dispatching to JS.
+            {
+                let mut state = self.state.borrow_mut();
+                if let Some(mut entry) = state.windows.remove(&window_id) {
+                    entry.close();
+                }
             }
 
-            if let Some(bridge) = self.state.bridge.as_ref() {
+            // 2. Dispatch `closed` to JS. No outstanding AppState borrow, so
+            //    JS re-entry into `open_window` / `close_window` is safe.
+            let state = self.state.borrow();
+            if let Some(bridge) = state.bridge.as_ref() {
                 let _ = bridge.dispatch(AppEventPayload {
                     event_type: APP_EVENT_CLOSED.to_string(),
                     window_id: BigInt::from(window_id.into_raw() as u64),
@@ -331,13 +399,13 @@ impl NativeApp {
     /// Pump pending winit events for at most `millis` milliseconds. JS should
     /// call this in a loop (typically once per animation frame) to drive the
     /// renderer and event handling.
-    fn pump_app_events_inner(&mut self, millis: f64) -> PumpResult {
+    fn pump_app_events_inner(&self, millis: f64) -> PumpResult {
         // Give host-driven DOM mutations from the previous JS turn a chance to
         // flow through Blitz's normal `View::poll -> Document::poll ->
         // request_redraw` path before winit waits for more events.
         self.poll_live_views();
 
-        // Pending windows are promoted to live Views by `JsAppHandler::drain_pending_windows`
+        // Pending windows are promoted to live Views by `AppHandler::drain_pending_windows`
         // during the pump. No need to hand them to an intermediate application layer.
 
         // A caller may invoke `window.close()` between pump ticks. In that
@@ -353,7 +421,11 @@ impl NativeApp {
         // triggers `event_loop.exit()` from inside
         // `BlitzApplication::window_event`, but JS-initiated
         // `BlitzApp::close_window` bypasses winit's pipeline entirely.
-        if self.state.has_opened_window && self.state.outstanding_windows == 0 {
+        let (has_opened, outstanding) = {
+            let state = self.state.borrow();
+            (state.has_opened_window, state.outstanding_windows)
+        };
+        if has_opened && outstanding == 0 {
             return PumpResult {
                 r#continue: false,
                 exit: true,
@@ -364,9 +436,9 @@ impl NativeApp {
         let timeout = Some(Duration::from_millis(millis.max(0.0).round() as u64));
 
         let mut handler = AppHandler {
-            state: &mut self.state,
+            state: Rc::clone(&self.state),
         };
-        let status = self.event_loop.pump_app_events(timeout, &mut handler);
+        let status = self.event_loop.borrow_mut().pump_app_events(timeout, &mut handler);
         self.flush_closing_windows();
         self.poll_live_views();
 

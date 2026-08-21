@@ -11,15 +11,22 @@
 //      window synchronously. Both paths dispatch a cancelable `close`
 //      on the window first; if not prevented, native closes the
 //      window and we dispatch `closed` on the window plus a
-//      `windowclose` / `windowclosed` pair on the app.
+//      `window:close` / `window:closed` pair on the app.
 //
 // `BlitzApp` extends `EventTarget` so JS code can observe lifecycle
 // changes across all windows from a single place:
 //
-//   - `windowopen`   (non-cancelable, `detail: { window }`)
-//   - `windowclose`  (non-cancelable; the window-level `close` already
+//   - `window:open`   (non-cancelable, `detail: { window }`)
+//   - `window:close`  (non-cancelable; the window-level `close` already
 //                     gave anyone a chance to cancel)
-//   - `windowclosed` (non-cancelable)
+//   - `window:closed` (non-cancelable)
+//
+// Pump-loop lifecycle (`pumpLoop` / `pumpStart`):
+//
+//   - `pump:start` (non-cancelable)
+//   - `pump`       (non-cancelable, `detail: { result }`)
+//   - `pump:end`   (non-cancelable, `detail: { reason: 'exit' | 'aborted' }`)
+//   - `pump:error` (non-cancelable, `detail: { error }`) — loop threw
 //
 // JS Document objects are private to their Window: a single Document is
 // only ever attached to one Window in this design. If you need multiple
@@ -42,6 +49,27 @@ interface DocumentInternalsForApp {
   readonly _native: InstanceType<typeof NativeDoc>;
 }
 
+/**
+ * Options for `BlitzApp.pumpLoop`. All durations are in milliseconds.
+ */
+export interface PumpOptions {
+  /**
+   * Target cadence: the nominal interval between two pump iterations.
+   * Defaults to `16.67` (~60fps).
+   */
+  targetPeriod?: number;
+  /**
+   * How long a single pump may block waiting for events before returning.
+   * Defaults to `targetPeriod`.
+   */
+  timeout?: number;
+  /**
+   * Optional stop signal. When aborted, the loop exits after the current
+   * pump returns and `pumpend` fires with `reason: 'aborted'`.
+   */
+  signal?: AbortSignal;
+}
+
 function pluckDoc(doc: HTMLDocument): DocumentInternalsForApp {
   return doc as unknown as DocumentInternalsForApp;
 }
@@ -52,6 +80,9 @@ export class BlitzApp extends EventTarget {
 
   /** Live windows, keyed by their `windowId`. */
   private readonly _windows: Map<bigint, Window> = new Map();
+
+  /** True while a `pumpLoop` loop is running (re-entrancy guard). */
+  private _pumping = false;
 
   private constructor(native: InstanceType<typeof NativeApp>) {
     super();
@@ -72,9 +103,14 @@ export class BlitzApp extends EventTarget {
   /**
    * Open a new window for an existing `HTMLDocument`.
    * Construct window attributes with `WindowOptions.builder()`.
+   *
+   * Async: the window is physically created by the next event-loop pump, so
+   * this resolves once the OS window exists and `windowId` is valid. Safe to
+   * call from inside an event handler (e.g. a click) — the native side never
+   * recursively pumps the event loop.
    */
-  openWindow(document: HTMLDocument, options?: InstanceType<typeof WindowOptions>): Window {
-    const nativeWindow: InstanceType<typeof NativeWindow> = this._native.openWindow(
+  async openWindow(document: HTMLDocument, options?: InstanceType<typeof WindowOptions>): Promise<Window> {
+    const nativeWindow: InstanceType<typeof NativeWindow> = await this._native.openWindow(
       pluckDoc(document)._native,
       options,
     );
@@ -82,7 +118,7 @@ export class BlitzApp extends EventTarget {
     this._windows.set(nativeWindow.windowId, window);
 
     this.dispatchEvent(
-      new CustomEvent("windowopen", {detail: {window}}),
+      new CustomEvent("window:open", {detail: {window}}),
     );
     return window;
   }
@@ -95,7 +131,7 @@ export class BlitzApp extends EventTarget {
    * Dispatches `close` (cancelable) on the window first. If the
    * default is prevented, this call returns without closing. On a
    * successful close, dispatches `closed` on the window plus
-   * `windowclose` and `windowclosed` on this app.
+   * `window:close` and `window:closed` on this app.
    */
   closeWindow(window: Window): void {
     if (!this._windows.has(pluckWindow(window)._nativeWindow.windowId)) return;
@@ -120,10 +156,10 @@ export class BlitzApp extends EventTarget {
 
     window._dispatchClosed();
     this.dispatchEvent(
-      new CustomEvent("windowclose", {detail: {window}}),
+      new CustomEvent("window:close", {detail: {window}}),
     );
     this.dispatchEvent(
-      new CustomEvent("windowclosed", {detail: {window}}),
+      new CustomEvent("window:closed", {detail: {window}}),
     );
   }
 
@@ -135,6 +171,110 @@ export class BlitzApp extends EventTarget {
    */
   pumpAppEvents(millis: number): PumpResult {
     return this._native.pumpAppEvents(millis);
+  }
+
+  /**
+   * Whether a `pumpLoop` loop is currently running.
+   */
+  get pumping(): boolean {
+    return this._pumping;
+  }
+
+  /**
+   * Start a background pump loop that keeps driving the event loop until
+   * the native side reports exit (all windows closed) or `signal` aborts.
+   *
+   * The loop targets a stable cadence of `targetPeriod` ms per iteration,
+   * anchored to an absolute `performance.now()` timeline: each pump may
+   * block up to `timeout` ms waiting for events, and the loop sleeps until
+   * the next target tick (so a pump that returns early does not make the
+   * cadence faster, and `setTimeout` imprecision does not accumulate). If a
+   * pump overruns its period (e.g. heavy rendering), the next iteration runs
+   * immediately, aligned to now + targetPeriod.
+   *
+   * Events dispatched on this app:
+   *   - `pump:start` (non-cancelable) — loop started.
+   *   - `pump`       (non-cancelable, `detail.result`) — after each pump.
+   *   - `pump:end`   (non-cancelable, `detail.reason: 'exit' | 'aborted'`)
+   *                  — loop finished.
+   *   - `pump:error` (non-cancelable, `detail.error`) — the loop threw.
+   *
+   * The `join` option controls how the loop's completion is exposed:
+   *   - `join: true` — returns a `Promise<void>` that resolves when the
+   *     loop ends.
+   *   - omitted or `join: false` — returns `undefined`: the loop runs in
+   *     the background, and a thrown error is surfaced as `pump:error`
+   *     instead of an unhandled rejection.
+   *
+   * Only one pump loop may run per app; calling again while one is active
+   * throws. Start the loop from top-level setup, not from inside an event
+   * handler — pumping from within a pump re-enters the native loop.
+   */
+  pumpLoop(options?: PumpOptions & { join?: false }): undefined
+  pumpLoop(options?: PumpOptions & { join: true }): Promise<void>
+  pumpLoop(options: PumpOptions & { join?: boolean } = {}): Promise<void> | undefined {
+    if (this._pumping) {
+      throw new Error("pumpLoop: a pump loop is already running");
+    }
+    const {
+      targetPeriod = 16.67,
+      timeout = targetPeriod,
+      signal,
+      join,
+    } = options;
+
+    this._pumping = true;
+    this.dispatchEvent(new CustomEvent("pump:start"));
+
+    const looping = this._pumpLoop(targetPeriod, timeout, signal);
+
+    if (join) return looping;
+
+    looping.catch((error) => {
+      this.dispatchEvent(
+        new CustomEvent("pump:error", {detail: {error}}),
+      );
+    })
+  }
+
+  private async _pumpLoop(
+    targetPeriod: number,
+    timeout: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const native = this._native;
+    let reason: "exit" | "aborted" = "exit";
+    try {
+      // Absolute target tick on the `performance.now()` timeline. Each
+      // iteration takes exactly one `now` sample, sleeps until the target
+      // tick, then advances it. Anchoring to absolute timestamps (rather
+      // than a fixed per-iteration sleep) means `setTimeout`'s imprecision
+      // never accumulates into cadence drift.
+      let next = performance.now() + targetPeriod;
+      while (true) {
+        if (signal?.aborted) {
+          reason = "aborted";
+          break;
+        }
+        const result = native.pumpAppEvents(timeout);
+        this.dispatchEvent(
+          new CustomEvent("pump", {detail: {result}}),
+        );
+        if (result.exit) {
+          reason = "exit";
+          break;
+        }
+        const now = performance.now();
+        const diff = next - now;
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.max(diff, 0)));
+        next = (diff <= 0 ? now : next) + targetPeriod;
+      }
+    } finally {
+      this._pumping = false;
+      this.dispatchEvent(
+        new CustomEvent("pump:end", {detail: {reason}}),
+      );
+    }
   }
 
   /** Set the document zoom level for a window. `1.0` is unzoomed. */
@@ -169,10 +309,10 @@ export class BlitzApp extends EventTarget {
       this._windows.delete(payload.windowId);
       window._dispatchClosed();
       this.dispatchEvent(
-        new CustomEvent("windowclose", {detail: {window}}),
+        new CustomEvent("window:close", {detail: {window}}),
       );
       this.dispatchEvent(
-        new CustomEvent("windowclosed", {detail: {window}}),
+        new CustomEvent("window:closed", {detail: {window}}),
       );
       return {defaultPrevented: false};
     }
