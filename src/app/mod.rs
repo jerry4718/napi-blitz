@@ -24,10 +24,7 @@ mod handler;
 mod shell_event;
 
 use crate::{
-    app::{
-        handler::AppHandler,
-        shell_event::JsShellEventHandler,
-    },
+    app::{handler::AppHandler, shell_event::JsShellEventHandler},
     dom::doc::{NativeDoc, SharedDoc},
     global,
     helpers::JsWeakRef,
@@ -40,12 +37,7 @@ use crate::{
     },
 };
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::Rc,
-    sync::Arc,
-    sync::mpsc::Receiver,
-    time::Duration,
+    cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, sync::mpsc::Receiver, time::Duration,
 };
 
 use blitz::{
@@ -154,7 +146,7 @@ pub(crate) struct AppState {
     pub(crate) event_queue: Receiver<BlitzShellEvent>,
     /// Weak ref to the JS `BlitzApp` object, for dispatching app-level
     /// lifecycle events (`window:open`, `window:close`, `window:closed`).
-    /// Set lazily by `set_app_ref`; absent until JS opts in.
+    /// Set by `set_app_ref`; absent until JS opts in.
     pub(crate) js_app_ref: Rc<RefCell<Option<JsWeakRef>>>,
     /// Number of windows currently considered "alive". Incremented
     /// on `openWindow`, decremented in the `close_window` path when we
@@ -240,20 +232,18 @@ impl NativeApp {
             window: None,
             closed: false,
         };
-        let (deferred, promise_obj) = env
-            .create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
+        let (deferred, promise_obj) =
+            env.create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
         let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
 
         {
             let mut app_state = self.state.borrow_mut();
-            app_state
-                .pending_requests
-                .push(PendingRequest::Open {
-                    config,
-                    state: win_state,
-                    shared_doc,
-                    deferred,
-                });
+            app_state.pending_requests.push(PendingRequest::Open {
+                config,
+                state: win_state,
+                shared_doc,
+                deferred,
+            });
             app_state.has_opened_window = true;
             app_state.outstanding_windows += 1;
         }
@@ -321,19 +311,19 @@ impl NativeApp {
             (Rc::clone(&entry.shared_doc), Rc::clone(&state.js_app_ref))
         };
         let handler = JsShellEventHandler::new(app_ref);
-        if !handler.close_request(&shared_doc, &env) {
+        if !handler.close_request(&shared_doc, &env)? {
             // A `close` listener on the window or a `window:close`
             // listener on the app prevented the close: the window stays
             // open and the caller's promise rejects.
-            let (deferred, promise_obj) = env
-                .create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
+            let (deferred, promise_obj) =
+                env.create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
             let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
             deferred.reject(Error::from_reason("close prevented"));
             return Ok(promise);
         }
 
-        let (deferred, promise_obj) = env
-            .create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
+        let (deferred, promise_obj) =
+            env.create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
         let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
 
         {
@@ -343,9 +333,10 @@ impl NativeApp {
         }
         {
             let mut app_state = self.state.borrow_mut();
-            app_state
-                .pending_requests
-                .push(PendingRequest::Close { window_id, deferred });
+            app_state.pending_requests.push(PendingRequest::Close {
+                window_id,
+                deferred,
+            });
             app_state.outstanding_windows = app_state.outstanding_windows.saturating_sub(1);
         }
 
@@ -382,7 +373,12 @@ impl NativeApp {
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
         let state = self.state.borrow();
         let entry = state.windows.values().next()?;
-        entry.view.borrow().window.primary_monitor().map(monitor_to_info)
+        entry
+            .view
+            .borrow()
+            .window
+            .primary_monitor()
+            .map(monitor_to_info)
     }
 
     /// Pump pending winit events for at most `millis` milliseconds.
@@ -443,7 +439,11 @@ impl NativeApp {
         };
 
         for req in closing {
-            let PendingRequest::Close { window_id, deferred } = req else {
+            let PendingRequest::Close {
+                window_id,
+                deferred,
+            } = req
+            else {
                 unreachable!()
             };
 
@@ -477,7 +477,9 @@ impl NativeApp {
                 // The cancelable close request (`window:close`) was already
                 // dispatched by `close_window`; here only the post-teardown
                 // notification remains, propagated window → app.
-                handler.notify_closed(&shared_doc, &env);
+                if let Err(e) = handler.notify_closed(&shared_doc, &env) {
+                    eprintln!("napi-blitz: flush_closing_windows: notify_closed failed: {e}");
+                }
             }
 
             // 3. Fulfil the `close_window` promise after the notifications,
@@ -528,7 +530,10 @@ impl NativeApp {
         let mut handler = AppHandler {
             state: Rc::clone(&self.state),
         };
-        let status = self.event_loop.borrow_mut().pump_app_events(timeout, &mut handler);
+        let status = self
+            .event_loop
+            .borrow_mut()
+            .pump_app_events(timeout, &mut handler);
         self.flush_closing_windows();
         self.poll_live_views();
 

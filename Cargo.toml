@@ -7,6 +7,10 @@ version = "0.1.217"
 [lib]
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "node"
+path = "src/debug-node.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1

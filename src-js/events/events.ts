@@ -18,10 +18,9 @@ import type {EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,}
 /**
  * Base class for every event we dispatch into the JS layer.
  *
- * `target`, `currentTarget`, and `eventPhase` are set lazily by Rust via
- * the globally registered `setLazyTarget` / `setLazyCurrentTarget`
- * functions (see `register.ts`). The node is only wrapped when JS
- * reads it.
+ * `target`, `currentTarget`, and `eventPhase` are set by Rust via
+ * `napi_define_properties` (see `dom/event.rs`): the `target` /
+ * `currentTarget` getters wrap the node only when JS reads them.
  */
 export class UIEvent extends Event {
   constructor(payload: EventPayload, init?: EventInit) {
@@ -32,30 +31,6 @@ export class UIEvent extends Event {
       ...init,
     });
   }
-}
-
-/** @internal Set `event.target` to a lazy getter. Registered globally. */
-export function setLazyTarget(event: UIEvent, getter: () => EventTarget | null): void {
-  Object.defineProperty(event, "target", {
-    get: getter,
-    configurable: true,
-  });
-}
-
-/** @internal Set `event.currentTarget` and `event.eventPhase`. Registered globally. */
-export function setLazyCurrentTarget(
-  event: UIEvent,
-  getter: () => EventTarget | null,
-  phase: number,
-): void {
-  Object.defineProperty(event, "currentTarget", {
-    get: getter,
-    configurable: true,
-  });
-  Object.defineProperty(event, "eventPhase", {
-    value: phase,
-    configurable: true,
-  });
 }
 
 /** Mouse events: click, mousedown, mouseup, mousemove, etc. */

@@ -11,27 +11,25 @@
 //      rejects the `openWindow` promise and no Window is handed out.
 //   3. `app.pumpAppEvents(ms)` drives the loop. Call once per frame.
 //   4. `app.closeWindow(window)` (or `window.close()`) closes the window
-//      asynchronously. Rust dispatches the cancelable `window:close` event
-//      through the ancestor chain — the window receives it first, then this
-//      app. A `preventDefault()` at either level rejects the promise and the
-//      window stays open. Otherwise native sets the closed flag immediately,
-//      tears the window down on the next pump, then dispatches the
-//      non-cancelable `window:closed` (again propagated window → app).
+//      asynchronously. Rust dispatches a cancelable `close` on the window
+//      and a matching cancelable `window:close` on the app; if either is
+//      prevented the promise **rejects** and the window stays open.
+//      Otherwise native sets the closed flag immediately, tears the window
+//      down on the next pump, then dispatches `closed` on the window plus
+//      `window:closed` on the app.
 //
 // All of these lifecycle events are dispatched from the Rust side
 // (`JsShellEventHandler`) — JS holds no parallel dispatch model.
 //
 // `BlitzApp` extends `EventTarget` so JS code can observe lifecycle
-// changes across all windows from a single place. Lifecycle events share
-// one `window:*` namespace and propagate window → app in bubble order —
-// window and app see the SAME event type (`event.target` is the window):
+// changes across all windows from a single place:
 //
 //   - `window:open`   (cancelable — app-only; fires before `openWindow`
 //                     resolves, so JS does not hold a Window object yet.
 //                     A listener that does not call `preventDefault()`
 //                     confirms the open.)
-//   - `window:close`  (cancelable — bubbles from the window; either level
-//                     may preventDefault() to veto the close)
+//   - `window:close`  (cancelable — the app-level echo of the window's
+//                     `close`, same moment; may preventDefault() to veto)
 //   - `window:closed` (non-cancelable — after teardown)
 //
 // Pump-loop lifecycle (`pumpLoop` / `pumpStart`):
@@ -135,11 +133,11 @@ export class BlitzApp extends EventTarget {
   /**
    * Close a window asynchronously. The promise resolves once the native
    * `View` has actually been torn down (on the next pump) and rejects if a
-   * `window:close` listener (window or app level) calls
+   * `close` (window) or `window:close` (app) listener calls
    * `preventDefault()`.
    *
-   * All lifecycle events (`window:close`, then `window:closed`) are
-   * dispatched from the Rust side and propagate window → app.
+   * All lifecycle events (`close`/`window:close`, then
+   * `closed`/`window:closed`) are dispatched from the Rust side.
    */
   async closeWindow(window: Window): Promise<void> {
     if (!this._windows.has(pluckWindow(window)._nativeWindow.windowId)) return;
@@ -147,10 +145,10 @@ export class BlitzApp extends EventTarget {
       this._windows.delete(pluckWindow(window)._nativeWindow.windowId);
       return;
     }
-    // Rust dispatches the cancelable `window:close` event (window then app)
-    // at the moment of the request; `preventDefault()` rejects this promise
-    // and the window stays open (map kept — the delete below is skipped).
-    // On success Rust already dispatched `window:closed` through the chain,
+    // Rust dispatches the cancelable `close` (window) + `window:close`
+    // (app) events at the moment of the request; `preventDefault()` rejects
+    // this promise and the window stays open (map kept — the delete below is
+    // skipped). On success Rust already dispatched `closed` + `window:closed`,
     // so we only drop the map entry.
     await this._native.closeWindow(pluckWindow(window)._nativeWindow);
     this._windows.delete(pluckWindow(window)._nativeWindow.windowId);

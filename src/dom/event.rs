@@ -23,6 +23,9 @@ use crate::{
         payload::{EventPayload, ImeData, InputData, KeyData, PointerData, WheelData},
     },
     global,
+    helpers::{
+        build_event_object, dispatch_event, read_event_flag, reset_dispatch_state, resolve_window,
+    },
 };
 use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
@@ -32,8 +35,10 @@ use blitz::{
     },
 };
 use napi::{
-    Env, Error, JsValue, Result, Status,
-    bindgen_prelude::{FnArgs, FromNapiValue, Function, JsObjectValue, Object, Unknown},
+    Env, JsValue, Result,
+    bindgen_prelude::{
+        FromNapiValue, JsObjectValue, Object, Property, PropertyAttributes, This, Unknown,
+    },
 };
 use std::rc::{Rc, Weak};
 
@@ -94,30 +99,37 @@ impl EventHandler for JsEventHandler {
             return;
         };
 
+        // The dispatch pipeline is best-effort: a napi boundary failure is
+        // logged and dropped, the event is simply not delivered further.
+        if let Err(e) = self.dispatch(chain, event, doc, event_state, &shared_doc, &env) {
+            eprintln!("napi-blitz: event dispatch failed: {e}");
+        }
+    }
+}
+
+impl JsEventHandler {
+    /// Run the full event dispatch pipeline: build the JS `Event`, walk the
+    /// chain in capture → target → bubble order, reset transient dispatch
+    /// state, forward pointer events to the window, and write the resulting
+    /// flags back to blitz's `EventState`.
+    fn dispatch(
+        &mut self,
+        chain: &[NodeId],
+        event: &mut DomEvent,
+        doc: &mut dyn BlitzDocument,
+        event_state: &mut EventState,
+        shared_doc: &Rc<SharedDoc>,
+        env: &Env,
+    ) -> Result<()> {
         // 1. Build the JS Event object via the registered factory.
         let payload = serialize_event(event);
-        let Some(factory_ref) = global::get_event_factory() else {
-            return;
-        };
-        let mut event_obj = match (|| -> Result<Object> {
-            let factory_fn = factory_ref.borrow_back(&env)?;
-            let result_ref = factory_fn.call(FnArgs::from((payload,)))?;
-            let result = result_ref.get_value(&env)?;
-            result_ref.unref(&env)?;
-            Ok(result)
-        })() {
-            Ok(obj) => obj,
-            Err(e) => {
-                eprintln!("napi-blitz: event factory call failed: {e}");
-                return;
-            }
-        };
+        let mut event_obj = build_event_object(payload, env)?;
 
         // 2. Normalize target (skip AnonymousBlock).
         let target_nid = normalize_event_target(doc, event.target);
 
         // 3. Set lazy target getter on the event.
-        let _ = set_lazy_target(&event_obj, target_nid, &shared_doc, &env);
+        set_lazy_target(&mut event_obj, target_nid, shared_doc, env)?;
 
         // 4. Filter anonymous nodes from the chain.
         let clean_chain: Vec<NodeId> = chain
@@ -134,13 +146,13 @@ impl EventHandler for JsEventHandler {
                 break;
             }
             propagation_stopped =
-                self.dispatch_to_node(nid, &event_obj, CAPTURING_PHASE, &shared_doc, &env);
+                self.dispatch_to_node(nid, &mut event_obj, CAPTURING_PHASE, shared_doc, env);
         }
 
         // 6. Target phase.
         if !propagation_stopped {
             propagation_stopped =
-                self.dispatch_to_node(target_nid, &event_obj, AT_TARGET, &shared_doc, &env);
+                self.dispatch_to_node(target_nid, &mut event_obj, AT_TARGET, shared_doc, env);
         }
 
         // 7. Bubble phase (target's parent → root).
@@ -150,14 +162,14 @@ impl EventHandler for JsEventHandler {
                     break;
                 }
                 propagation_stopped =
-                    self.dispatch_to_node(nid, &event_obj, BUBBLING_PHASE, &shared_doc, &env);
+                    self.dispatch_to_node(nid, &mut event_obj, BUBBLING_PHASE, shared_doc, env);
             }
         }
 
         // 8. Reset transient dispatch state: currentTarget → null,
         //    eventPhase → NONE (0). Per DOM spec, after dispatch ends
         //    these values are cleared so async callbacks see null.
-        reset_dispatch_state(&mut event_obj, &env);
+        reset_dispatch_state(&mut event_obj, env);
 
         // 9. Dispatch pointer events to the window-level EventTarget.
         //    JS code may register `pointermove`/`pointerup` listeners on
@@ -165,16 +177,12 @@ impl EventHandler for JsEventHandler {
         //    walk above only reaches DOM nodes, so we explicitly forward
         //    here.
         if is_pointer_event(event) {
-            let _ = dispatch_to_window(&event_obj, &shared_doc, &env);
+            let _ = dispatch_to_window(&event_obj, shared_doc, env);
         }
 
         // 10. Read back flags and write to blitz EventState.
-        let default_prevented: bool = global::get_default_prevented_getter()
-            .and_then(|dp_ref| dp_ref.borrow_back(&env).ok())
-            .and_then(|dp_fn| {
-                let event_ref = event_obj.create_ref::<true>().ok()?;
-                dp_fn.call(FnArgs::from((event_ref,))).ok()
-            })
+        let default_prevented: bool = event_obj
+            .get_named_property::<bool>("defaultPrevented")
             .unwrap_or(false);
         if default_prevented {
             event_state.prevent_default();
@@ -184,17 +192,17 @@ impl EventHandler for JsEventHandler {
         }
 
         // 11. Sweep stale cache entries periodically.
-        shared_doc.node_cache.borrow_mut().sweep(&env);
-    }
-}
+        shared_doc.node_cache.borrow_mut().sweep(env);
 
-impl JsEventHandler {
+        Ok(())
+    }
+
     /// Dispatch the event to a single node. Returns `true` if propagation
     /// was stopped (stopPropagation / stopImmediatePropagation).
     fn dispatch_to_node(
         &self,
         node_id: NodeId,
-        event: &Object,
+        event: &mut Object,
         phase: u32,
         doc: &Rc<SharedDoc>,
         env: &Env,
@@ -245,111 +253,78 @@ fn is_pointer_event(event: &DomEvent) -> bool {
 /// dispatch function. This lets `window.addEventListener('pointermove', ...)`
 /// work for pointer events that reach the DOM root.
 fn dispatch_to_window(event: &Object, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
-    let Some(window) = doc
-        .js_window_ref
-        .borrow()
-        .as_ref()
-        .and_then(|weak| weak.get_value(env))
-    else {
+    let Some(window) = resolve_window(doc, env) else {
         return Ok(());
     };
-    let Some(dispatch_ref) = global::get_dispatch_fn() else {
-        return Ok(());
-    };
-    let dispatch_fn = dispatch_ref.borrow_back(env)?;
-    let target_ref = window.create_ref::<true>()?;
-    let event_ref = event.create_ref::<true>()?;
-    dispatch_fn.call(FnArgs::from((target_ref, event_ref)))?;
-    Ok(())
+    dispatch_event(&window, event, env)
 }
 
 /// Call the registered JS `dispatchEvent(target, event)` function.
 /// Returns `true` if propagation was stopped.
 fn call_dispatch_event(node: &Object, event: &Object, env: &Env) -> Result<bool> {
-    let dispatch_ref = global::get_dispatch_fn()
-        .ok_or_else(|| Error::new(Status::GenericFailure, "dispatch_fn not registered"))?;
-    let dispatch_fn = dispatch_ref.borrow_back(env)?;
-    let target_ref = node.create_ref::<true>()?;
-    let event_ref = event.create_ref::<true>()?;
-    dispatch_fn.call(FnArgs::from((target_ref, event_ref)))?;
-
-    let cancel_ref = global::get_cancel_bubble_getter().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            "cancel_bubble_getter not registered",
-        )
-    })?;
-    let cancel_fn = cancel_ref.borrow_back(env)?;
-    let event_ref = event.create_ref::<true>()?;
-    cancel_fn.call(FnArgs::from((event_ref,)))
+    dispatch_event(node, event, env)?;
+    Ok(read_event_flag(event, "cancelBubble"))
 }
 
-// ── Dispatch state reset ──────────────────────────────────────────────
+// ── target/currentTarget setters via `napi_define_properties` ─────────
 
-/// Reset `currentTarget` to `null` and `eventPhase` to `0` (NONE) after
-/// dispatch completes, per DOM spec.
-fn reset_dispatch_state(event: &mut Object, _env: &Env) {
-    let _ = event.set_named_property("currentTarget", ());
-    let _ = event.set_named_property("eventPhase", 0u32);
+/// Wrap a node into a JS `Unknown` value. Shared getter body for the lazy
+/// `target` / `currentTarget` property getters: the node is wrapped only
+/// when JS actually reads the property.
+fn wrap_node_unknown<'env>(
+    ctx: &Env,
+    doc: &Rc<SharedDoc>,
+    node_id: NodeId,
+) -> Result<Unknown<'env>> {
+    let env_raw = ctx.raw();
+    let n = wrap_node(doc, node_id, ctx)?;
+    let raw = JsValue::raw(&n);
+    unsafe { Unknown::from_napi_value(env_raw, raw) }
 }
 
-// ── Lazy target/currentTarget setters ─────────────────────────────────
-
-/// Set `event.target` to a lazy getter that calls `wrap_node` only when
-/// JS code reads the property.
-fn set_lazy_target(event: &Object, node_id: NodeId, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
-    let setter_ref = global::get_lazy_target_setter()
-        .ok_or_else(|| Error::new(Status::GenericFailure, "lazy_target_setter not registered"))?;
-    let setter = setter_ref.borrow_back(env)?;
+/// Set `event.target` to a getter that wraps the node only when JS reads
+/// it. Equivalent to
+/// `Object.defineProperty(event, "target", { get, configurable: true })`.
+fn set_lazy_target(
+    event: &mut Object,
+    node_id: NodeId,
+    doc: &Rc<SharedDoc>,
+    _env: &Env,
+) -> Result<()> {
     let doc_clone = doc.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("target_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let n = wrap_node(&doc_clone, node_id, ctx.env)?;
-            let raw = JsValue::raw(&n);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref),
-    })?;
+    let getter = move |ctx: Env, _this: This| -> Result<Unknown> {
+        wrap_node_unknown(&ctx, &doc_clone, node_id)
+    };
+    let prop = Property::new()
+        .with_utf8_name("target")?
+        .with_getter_closure(getter)
+        .with_property_attributes(PropertyAttributes::Configurable);
+    event.define_properties(&[prop])?;
     Ok(())
 }
 
-/// Set `event.currentTarget` to a lazy getter and `event.eventPhase` to
-/// the given phase value.
+/// Set `event.currentTarget` to a getter that wraps the node only when JS
+/// reads it, and set `event.eventPhase` to the given phase.
 fn set_lazy_current_target(
-    event: &Object,
+    event: &mut Object,
     node_id: NodeId,
     phase: u32,
     doc: &Rc<SharedDoc>,
     env: &Env,
 ) -> Result<()> {
-    let setter_ref = global::get_lazy_current_target_setter().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            "lazy_current_target_setter not registered",
-        )
-    })?;
-    let setter = setter_ref.borrow_back(env)?;
     let doc_clone = doc.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("currentTarget_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let n = wrap_node(&doc_clone, node_id, ctx.env)?;
-            let raw = JsValue::raw(&n);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref, phase),
-    })?;
+    let getter = move |ctx: Env, _this: This| -> Result<Unknown> {
+        wrap_node_unknown(&ctx, &doc_clone, node_id)
+    };
+    let ct = Property::new()
+        .with_utf8_name("currentTarget")?
+        .with_getter_closure(getter)
+        .with_property_attributes(PropertyAttributes::Configurable);
+    let ph = Property::new()
+        .with_utf8_name("eventPhase")?
+        .with_napi_value(env, phase)?
+        .with_property_attributes(PropertyAttributes::Configurable);
+    event.define_properties(&[ct, ph])?;
     Ok(())
 }
 

@@ -16,21 +16,16 @@ use std::{
 use crate::dom::{node_handle::NativeNode, payload::EventPayload};
 use blitz::dom::{LocalName, Namespace};
 use napi::{
-    Env, Error, Result, Status, UnknownRef,
+    Env, Error, Result, Status, Unknown,
     bindgen_prelude::{FnArgs, FunctionRef, ObjectRef},
 };
-
 // ── Type aliases ──────────────────────────────────────────────────────
 
-type NodeConstructor = FunctionRef<FnArgs<(NativeNode, ObjectRef)>, ObjectRef>;
+type NodeConstructor = FunctionRef<FnArgs<(NativeNode, ObjectRef)>, Option<Unknown<'static>>>;
 type ElementConstructor =
-    FunctionRef<FnArgs<(NativeNode, ObjectRef, Option<ObjectRef>)>, ObjectRef>;
-type EventFactory = FunctionRef<FnArgs<(EventPayload,)>, ObjectRef>;
-type DispatchFn = FunctionRef<FnArgs<(ObjectRef, ObjectRef)>, UnknownRef>;
-type CancelBubbleGetter = FunctionRef<FnArgs<(ObjectRef,)>, bool>;
-type DefaultPreventedGetter = FunctionRef<FnArgs<(ObjectRef,)>, bool>;
-type LazyTargetSetter = FunctionRef<FnArgs<(ObjectRef, ObjectRef)>, UnknownRef>;
-type LazyCurrentTargetSetter = FunctionRef<FnArgs<(ObjectRef, ObjectRef, u32)>, UnknownRef>;
+    FunctionRef<FnArgs<(NativeNode, ObjectRef, Option<ObjectRef>)>, Option<Unknown<'static>>>;
+type EventFactory = FunctionRef<FnArgs<(EventPayload,)>, Option<Unknown<'static>>>;
+type DispatchFn = FunctionRef<FnArgs<(ObjectRef, ObjectRef)>, Option<Unknown<'static>>>;
 
 struct GlobalRegistry {
     /// nodeType -> JS constructor function: `new (handle, doc) -> Node`
@@ -41,14 +36,6 @@ struct GlobalRegistry {
     event_factory_ref: RefCell<Option<Rc<EventFactory>>>,
     /// JS dispatchEvent function: `(target, event) -> void`
     dispatch_fn_ref: RefCell<Option<Rc<DispatchFn>>>,
-    /// JS cancelBubble getter: `(event) -> bool`
-    cancel_bubble_getter_ref: RefCell<Option<Rc<CancelBubbleGetter>>>,
-    /// JS defaultPrevented getter: `(event) -> bool`
-    default_prevented_getter_ref: RefCell<Option<Rc<DefaultPreventedGetter>>>,
-    /// JS lazy target setter: `(event, getter) -> void`
-    lazy_target_setter_ref: RefCell<Option<Rc<LazyTargetSetter>>>,
-    /// JS lazy currentTarget setter: `(event, getter, phase) -> void`
-    lazy_current_target_setter_ref: RefCell<Option<Rc<LazyCurrentTargetSetter>>>,
     /// napi env (stable for addon lifetime in Node.js)
     env: Cell<Option<Env>>,
 }
@@ -59,10 +46,6 @@ thread_local! {
         element_constructors: RefCell::new(HashMap::new()),
         event_factory_ref: RefCell::new(None),
         dispatch_fn_ref: RefCell::new(None),
-        cancel_bubble_getter_ref: RefCell::new(None),
-        default_prevented_getter_ref: RefCell::new(None),
-        lazy_target_setter_ref: RefCell::new(None),
-        lazy_current_target_setter_ref: RefCell::new(None),
         env: Cell::new(None),
     };
 }
@@ -131,46 +114,6 @@ pub fn get_dispatch_fn() -> Option<Rc<DispatchFn>> {
     GLOBAL_REGISTRY.with(|g| g.dispatch_fn_ref.borrow().as_ref().cloned())
 }
 
-pub fn set_cancel_bubble_getter(fn_ref: CancelBubbleGetter) {
-    GLOBAL_REGISTRY.with(|g| {
-        *g.cancel_bubble_getter_ref.borrow_mut() = Some(Rc::new(fn_ref));
-    });
-}
-
-pub fn get_cancel_bubble_getter() -> Option<Rc<CancelBubbleGetter>> {
-    GLOBAL_REGISTRY.with(|g| g.cancel_bubble_getter_ref.borrow().as_ref().cloned())
-}
-
-pub fn set_default_prevented_getter(fn_ref: DefaultPreventedGetter) {
-    GLOBAL_REGISTRY.with(|g| {
-        *g.default_prevented_getter_ref.borrow_mut() = Some(Rc::new(fn_ref));
-    });
-}
-
-pub fn get_default_prevented_getter() -> Option<Rc<DefaultPreventedGetter>> {
-    GLOBAL_REGISTRY.with(|g| g.default_prevented_getter_ref.borrow().as_ref().cloned())
-}
-
-pub fn set_lazy_target_setter(fn_ref: LazyTargetSetter) {
-    GLOBAL_REGISTRY.with(|g| {
-        *g.lazy_target_setter_ref.borrow_mut() = Some(Rc::new(fn_ref));
-    });
-}
-
-pub fn get_lazy_target_setter() -> Option<Rc<LazyTargetSetter>> {
-    GLOBAL_REGISTRY.with(|g| g.lazy_target_setter_ref.borrow().as_ref().cloned())
-}
-
-pub fn set_lazy_current_target_setter(fn_ref: LazyCurrentTargetSetter) {
-    GLOBAL_REGISTRY.with(|g| {
-        *g.lazy_current_target_setter_ref.borrow_mut() = Some(Rc::new(fn_ref));
-    });
-}
-
-pub fn get_lazy_current_target_setter() -> Option<Rc<LazyCurrentTargetSetter>> {
-    GLOBAL_REGISTRY.with(|g| g.lazy_current_target_setter_ref.borrow().as_ref().cloned())
-}
-
 // ── Global registration functions (no DocHandle instance needed) ──────
 
 /// One-time env injection. JS calls this during addon init (before any
@@ -213,29 +156,5 @@ pub fn register_event_factory(factory: EventFactory) -> Result<()> {
 #[napi(ts_args_type = "dispatchFn: (target: EventTarget, event: Event) => unknown")]
 pub fn register_dispatch_fn(dispatch_fn: DispatchFn) -> Result<()> {
     set_dispatch_fn(dispatch_fn);
-    Ok(())
-}
-
-#[napi(ts_args_type = "getter: (event: Event) => boolean")]
-pub fn register_cancel_bubble_getter(getter: CancelBubbleGetter) -> Result<()> {
-    set_cancel_bubble_getter(getter);
-    Ok(())
-}
-
-#[napi(ts_args_type = "getter: (event: Event) => boolean")]
-pub fn register_default_prevented_getter(getter: DefaultPreventedGetter) -> Result<()> {
-    set_default_prevented_getter(getter);
-    Ok(())
-}
-
-#[napi(ts_args_type = "setter: (event: Event, getter: () => EventTarget | null) => void")]
-pub fn register_lazy_target_setter(setter: LazyTargetSetter) -> Result<()> {
-    set_lazy_target_setter(setter);
-    Ok(())
-}
-
-#[napi(ts_args_type = "setter: (event: Event, getter: () => EventTarget | null, phase: number) => void")]
-pub fn register_lazy_current_target_setter(setter: LazyCurrentTargetSetter) -> Result<()> {
-    set_lazy_current_target_setter(setter);
     Ok(())
 }

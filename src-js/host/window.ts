@@ -4,24 +4,22 @@
 // and a `close()` action.
 //
 // `Window` extends `EventTarget`, so JS code can listen for lifecycle
-// events. All lifecycle events live in the `window:*` namespace and
-// propagate from the window up to its app ancestor (the `BlitzApp`) via
-// the shared ancestor chain — window and app observe the SAME event type:
+// events:
 //
-//   - `window:close`  (cancelable): fires before the window is torn down.
+//   - `close`   (cancelable): fires before the window is torn down.
 //                Dispatched from Rust (`JsShellEventHandler`), for both:
 //                  * The OS window manager's "close request" (user
 //                    clicked the X button or hit Cmd-W / Alt-F4).
 //                  * `Window.close()` / `BlitzApp.closeWindow(w)`.
-//                Calling `event.preventDefault()` at the window OR the app
-//                level cancels the close; for `closeWindow` the returned
-//                promise rejects. `event.target` is this window;
-//                `event.currentTarget` is the level being handled.
+//                Calling `event.preventDefault()` cancels the close;
+//                for `closeWindow` the returned promise rejects. The app
+//                receives the same request as `window:close` (see
+//                `BlitzApp`), so it can veto too.
 //
-//   - `window:closed`  (non-cancelable): fires after the window has been
-//                removed from the application, again propagating to the
-//                app. This is the place to drop references and let the GC
-//                reclaim the associated document tree.
+//   - `closed`  (non-cancelable): fires after the window has been
+//                removed from the application. This is the place to
+//                drop references and let the GC reclaim the
+//                associated document tree. The app gets `window:closed`.
 //
 // We deliberately do NOT close the OS window in a `FinalizationRegistry`
 // callback. GC timing is unpredictable, and a user calling `close()`
@@ -73,11 +71,10 @@ export class Window extends EventTarget {
 
   /**
    * Close the OS window. Equivalent to `app.closeWindow(window)`.
-   * Dispatches the cancelable `window:close` event first (window level,
-   * then app level); if a listener calls `event.preventDefault()` the
-   * close is aborted and the returned promise **rejects** (`window:closed`
-   * will not fire). Subsequent calls on an already-closed window are
-   * no-ops.
+   * Dispatches a cancelable `close` event first; if the listener calls
+   * `event.preventDefault()` the close is aborted and the returned
+   * promise **rejects** (`closed` will not fire). Subsequent calls on an
+   * already-closed window are no-ops.
    *
    * On success the promise resolves once the native `View` has actually
    * been torn down (on the next pump); the JS-side `closed` flag flips
@@ -87,7 +84,6 @@ export class Window extends EventTarget {
     await this._app.closeWindow(this);
   }
 
-  /**
   /**
    * Current surface size in physical pixels, as `[width, height]`.
    * Returns `null` if the window has not been initialised yet (no

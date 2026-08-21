@@ -18,9 +18,7 @@ use winit::{
 };
 
 use crate::{
-    app::{
-        AppState, NativeWindow, PendingRequest, WindowEntry, shell_event::JsShellEventHandler,
-    },
+    app::{AppState, NativeWindow, PendingRequest, WindowEntry, shell_event::JsShellEventHandler},
     global,
 };
 
@@ -72,7 +70,15 @@ impl AppHandler {
             // listener may call back into `NativeApp`.
             let js_app_ref = Rc::clone(&self.state.borrow().js_app_ref);
             let allowed = match global::env() {
-                Ok(env) => JsShellEventHandler::new(js_app_ref).open_sequence(&env),
+                Ok(env) => match JsShellEventHandler::new(js_app_ref).open_sequence(&env) {
+                    Ok(allowed) => allowed,
+                    Err(e) => {
+                        eprintln!(
+                            "napi-blitz: drain_pending_windows: open_sequence failed, treating open as confirmed: {e}"
+                        );
+                        true
+                    }
+                },
                 Err(e) => {
                     eprintln!(
                         "napi-blitz: drain_pending_windows: env not available, treating open as confirmed: {e}"
@@ -146,8 +152,7 @@ impl AppHandler {
                         if state.windows.is_empty() {
                             event_loop.exit();
                         }
-                        state.outstanding_windows =
-                            state.outstanding_windows.saturating_sub(1);
+                        state.outstanding_windows = state.outstanding_windows.saturating_sub(1);
                     }
                 }
                 // Embedder / Navigate / NavigationLoad: no-op
@@ -205,8 +210,17 @@ impl ApplicationHandler for AppHandler {
             // Dispatch `close` (cancelable) -> `closed` (window) ->
             // `window:close` + `window:closed` (app). If `close` was
             // prevented, abort — the window stays open.
-            if !handler.close_sequence(&shared_doc, &env) {
-                return;
+            match handler.close_sequence(&shared_doc, &env) {
+                // Not prevented: proceed to tear down.
+                Ok(true) => {}
+                // A `close` / `window:close` listener prevented the close.
+                Ok(false) => return,
+                Err(e) => {
+                    eprintln!(
+                        "napi-blitz: window_event CloseRequested: close_sequence failed: {e}"
+                    );
+                    return;
+                }
             }
 
             // Tear down the view.

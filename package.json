@@ -67,7 +67,7 @@
     "build": "pnpm run build:native && tsdown",
     "build:debug": "pnpm run build:native:debug && tsdown",
     "build:native": "napi build --platform --release --strip --output-dir native --js index.cjs --dts index.d.ts",
-    "build:native:debug": "napi build --platform --strip --output-dir native --js index.cjs --dts index.d.ts",
+    "build:native:debug": "napi build --platform --output-dir native --js index.cjs --dts index.d.ts",
     "build:ts": "tsdown",
     "prepublishOnly": "napi prepublish -t npm",
     "createNpmDirs": "napi create-npm-dirs",

@@ -2,29 +2,43 @@
 //!
 //! Mirrors `JsEventHandler` (DOM events) but for shell-level events that
 //! originate from winit's `ApplicationHandler` and the async `openWindow`
-//! / `closeWindow` paths: `window:open`, `window:close`, `window:closed`.
+//! / `closeWindow` paths: `open`, `close`, `closed` (window-level) and
+//! `window:open`, `window:close`, `window:closed` (app-level echoes).
 //!
-//! The `window:` prefix marks the event's subject (the window — a listener
-//! on the app sees `window:close` as "a window is closing", never as "the
-//! app is closing"). Window and app therefore observe the SAME event type
-//! via an ancestor chain: a `window:*` event dispatched on a window
-//! propagates up to the app — the window's shell ancestor — in bubble
-//! order. One event object, one type, both levels can call
-//! `preventDefault()` (veto the default action) or `stopPropagation()`.
-//! The receiver at each level is `event.currentTarget`; the originating
-//! window is `event.target`, fixed across the walk.
+//! A close request is currently dispatched to the two receivers
+//! INDEPENDENTLY: the window receives `close` (its own event), and the app
+//! receives `window:close` (the `window:` prefix marks the subject so the
+//! app never mistakes it for its own close). Same moment, same capability
+//! — a `preventDefault()` at either level vetoes the close.
+//!
+//! The window → app **ancestor chain** (`dispatch_propagating`) is a
+//! reserved mechanism for future events that genuinely need to bubble: one
+//! event object, one type, target = window, walked window → app in bubble
+//! order. Nothing currently routes through it — it exists so later events
+//! (e.g. a window-level event that should also reach the app) can opt in.
 //!
 //! Both event systems share the same dispatch primitives:
 //! - `global::get_event_factory()` to build the JS `Event`
 //! - `global::get_dispatch_fn()` to call `dispatchEvent(target, event)`
-//! - `global::get_default_prevented_getter()` / `get_cancel_bubble_getter()`
+//! - `event.get_named_property::<bool>("defaultPrevented" | "cancelBubble")`
+//!   to read back dispatch flags
+//!
+//! They differ in how `target`/`currentTarget` are set: DOM events attach
+//! a getter that wraps the node on read; shell events attach the existing
+//! window/app object directly. Both go through `napi_define_properties`.
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{dom::doc::SharedDoc, global, helpers::JsWeakRef};
+use crate::{
+    dom::doc::SharedDoc,
+    helpers::{
+        JsWeakRef, build_event_object, dispatch_event, read_event_flag, reset_dispatch_state,
+        resolve_window,
+    },
+};
 use napi::{
-    Env, JsValue, Result, Status,
-    bindgen_prelude::{FnArgs, FromNapiValue, Function, JsObjectValue, Object, Unknown},
+    Env, Result, Status,
+    bindgen_prelude::{JsObjectValue, Object, Property, PropertyAttributes},
 };
 
 const BUBBLING_PHASE: u32 = 3;
@@ -35,8 +49,8 @@ const BUBBLING_PHASE: u32 = 3;
 /// target is resolved from `SharedDoc::js_window_ref`. Both are
 /// refcount-0 weak references; JS keeps the objects alive on its side.
 pub struct JsShellEventHandler {
-    /// Weak ref to the JS `BlitzApp` object. Set lazily by
-    /// `NativeApp::set_app_ref`.
+    /// Weak ref to the JS `BlitzApp` object, set by `NativeApp::set_app_ref`
+    /// when JS opts in.
     pub app_ref: Rc<RefCell<Option<JsWeakRef>>>,
 }
 
@@ -45,121 +59,151 @@ impl JsShellEventHandler {
         Self { app_ref }
     }
 
-    /// Dispatch a single event object that propagates from the window up to
-    /// the app (bubble order): the window receives it at target phase, then
-    /// the app — the window's ancestor — receives the same object in the
-    /// bubble phase. A listener at either level may call
-    /// `preventDefault()` (read back as the return value) or
-    /// `stopPropagation()` (skips the app level). Returns `true` if the
-    /// default was prevented.
+    /// Dispatch a cancelable event to the window alone. Returns `true` if
+    /// the default was prevented. Used for the window-level `close`
+    /// request, where a listener can veto the action.
+    pub fn dispatch_cancelable(
+        &self,
+        event_type: &str,
+        doc: &Rc<SharedDoc>,
+        env: &Env,
+    ) -> Result<bool> {
+        let window = resolve_window(doc, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no window to dispatch to"))?;
+        let mut event_obj = build_event(event_type, true, false, env)?;
+        dispatch_event(&window, &event_obj, env)?;
+        let prevented = read_event_flag(&event_obj, "defaultPrevented");
+        reset_dispatch_state(&mut event_obj, env);
+        Ok(prevented)
+    }
+
+    /// Dispatch a non-cancelable event to the window alone. Used for the
+    /// post-teardown notification `closed`.
+    pub fn dispatch_window_event(
+        &self,
+        event_type: &str,
+        doc: &Rc<SharedDoc>,
+        env: &Env,
+    ) -> Result<()> {
+        let window = resolve_window(doc, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no window to dispatch to"))?;
+        let mut event_obj = build_event(event_type, false, false, env)?;
+        dispatch_event(&window, &event_obj, env)?;
+        reset_dispatch_state(&mut event_obj, env);
+        Ok(())
+    }
+
+    /// Dispatch a non-cancelable event to the app alone. Used for the
+    /// post-teardown notification `window:closed`.
+    pub fn dispatch_app_event(&self, event_type: &str, env: &Env) -> Result<()> {
+        let app = resolve_app(&self.app_ref, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app to dispatch to"))?;
+        let mut event_obj = build_event(event_type, false, false, env)?;
+        dispatch_event(&app, &event_obj, env)?;
+        reset_dispatch_state(&mut event_obj, env);
+        Ok(())
+    }
+
+    /// Dispatch a cancelable event to the app alone. Returns `true` if the
+    /// default was prevented. Used for `window:open` (no window-level
+    /// receiver exists at creation time).
+    pub fn dispatch_app_cancelable(&self, event_type: &str, env: &Env) -> Result<bool> {
+        let app = resolve_app(&self.app_ref, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app to dispatch to"))?;
+        let mut event_obj = build_event(event_type, true, false, env)?;
+        dispatch_event(&app, &event_obj, env)?;
+        let prevented = read_event_flag(&event_obj, "defaultPrevented");
+        reset_dispatch_state(&mut event_obj, env);
+        Ok(prevented)
+    }
+
+    /// RESERVED ancestor-chain dispatch: one event object, one type,
+    /// target = window, walked window → app in bubble order (skipping the
+    /// app when a window listener called `stopPropagation()`). A listener
+    /// at either level may `preventDefault()`. Returns `Ok(true)` if the
+    /// default was prevented; any napi failure propagates.
+    ///
+    /// Nothing routes through this today — it is the infrastructure for
+    /// future events that should genuinely bubble to the app. The current
+    /// `close` request dispatches its two receivers independently (see the
+    /// module docs).
     pub fn dispatch_propagating(
         &self,
         event_type: &str,
         cancelable: bool,
         doc: &Rc<SharedDoc>,
         env: &Env,
-    ) -> bool {
-        let Some(window) = resolve_window(doc, env) else {
-            return false;
-        };
-        let Some(app) = resolve_app(&self.app_ref, env) else {
-            return false;
-        };
-        let mut event_obj = match build_event(event_type, cancelable, true, env) {
-            Ok(obj) => obj,
-            Err(e) => {
-                eprintln!("napi-blitz: shell event factory failed for {event_type}: {e}");
-                return false;
-            }
-        };
-        // event.target = the originating window, fixed across the walk.
-        let _ = set_lazy_target(&event_obj, doc, env);
+    ) -> Result<bool> {
+        let window = resolve_window(doc, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no window to dispatch to"))?;
+        let app = resolve_app(&self.app_ref, env)
+            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app to dispatch to"))?;
+        let mut event_obj = build_event(event_type, cancelable, true, env)?;
+        // target = the originating window, fixed across the chain.
+        set_target_value(&mut event_obj, &window)?;
 
-        // Window (target phase), then app (bubble phase) unless stopped.
-        let stopped = dispatch_to_receiver(&event_obj, &window, false, doc, &self.app_ref, env);
+        set_current_target_value(&mut event_obj, &window, BUBBLING_PHASE, env)?;
+        dispatch_event(&window, &event_obj, env)?;
+        let stopped = read_event_flag(&event_obj, "cancelBubble");
+
         if !stopped {
-            let _ = dispatch_to_receiver(&event_obj, &app, true, doc, &self.app_ref, env);
+            set_current_target_value(&mut event_obj, &app, BUBBLING_PHASE, env)?;
+            dispatch_event(&app, &event_obj, env)?;
         }
 
-        let prevented = read_default_prevented(&event_obj, env);
+        let prevented = read_event_flag(&event_obj, "defaultPrevented");
         reset_dispatch_state(&mut event_obj, env);
-        prevented
+        Ok(prevented)
     }
 
-    /// Dispatch the cancelable `window:close` request through the ancestor
-    /// chain. A listener on the window or the app may `preventDefault()`.
-    /// Returns `true` if the close should proceed (not prevented).
-    pub fn close_request(&self, doc: &Rc<SharedDoc>, env: &Env) -> bool {
-        !self.dispatch_propagating("window:close", true, doc, env)
+    /// Dispatch the cancelable close request to the window (`close`) and,
+    /// independently, to the app (`window:close`). A listener at either
+    /// level may `preventDefault()`. Returns `Ok(true)` if the close should
+    /// proceed (neither level prevented).
+    pub fn close_request(&self, doc: &Rc<SharedDoc>, env: &Env) -> Result<bool> {
+        let window_prevented = self.dispatch_cancelable("close", doc, env)?;
+        let app_prevented = self.dispatch_app_cancelable("window:close", env)?;
+        Ok(!window_prevented && !app_prevented)
     }
 
-    /// Dispatch the full close sequence: the cancelable `window:close`
-    /// request, and — if not prevented — the post-teardown notification
-    /// `window:closed` (also propagated window → app). Returns `true` if
-    /// the close should proceed (not prevented).
-    pub fn close_sequence(&self, doc: &Rc<SharedDoc>, env: &Env) -> bool {
-        if !self.close_request(doc, env) {
-            return false;
+    /// Dispatch the full close sequence: the cancelable close request
+    /// (window `close` + app `window:close`), and — if not prevented —
+    /// the post-teardown notifications `closed` (window) and
+    /// `window:closed` (app). Returns `Ok(true)` if the close should
+    /// proceed (not prevented).
+    pub fn close_sequence(&self, doc: &Rc<SharedDoc>, env: &Env) -> Result<bool> {
+        if !self.close_request(doc, env)? {
+            return Ok(false);
         }
-        self.notify_closed(doc, env);
-        true
+        self.dispatch_window_event("closed", doc, env)?;
+        self.dispatch_app_event("window:closed", env)?;
+        Ok(true)
     }
 
-    /// Dispatch the post-teardown notification `window:closed` along the
-    /// ancestor chain (window + app). Non-cancelable.
-    pub fn notify_closed(&self, doc: &Rc<SharedDoc>, env: &Env) {
-        self.dispatch_propagating("window:closed", false, doc, env);
+    /// Dispatch the post-teardown notifications `closed` (window) and
+    /// `window:closed` (app) after a close that already passed its
+    /// cancelable request.
+    pub fn notify_closed(&self, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
+        self.dispatch_window_event("closed", doc, env)?;
+        self.dispatch_app_event("window:closed", env)?;
+        Ok(())
     }
 
     /// Dispatch the full open sequence: at window-creation time (before
     /// `openWindow` resolves — JS does not yet hold a Window object), the
     /// app-level `window:open` event is dispatched to the app as a
     /// cancelable request. A listener's `preventDefault()` cancels the
-    /// open and rejects the `openWindow` promise. Returns `true` if the
+    /// open and rejects the `openWindow` promise. Returns `Ok(true)` if the
     /// open should proceed (not prevented).
-    pub fn open_sequence(&self, env: &Env) -> bool {
-        !self.dispatch_app_cancelable("window:open", env)
-    }
-
-    /// Dispatch a cancelable event to the app alone. Used for `window:open`
-    /// — at that moment no window-level receiver exists yet (JS has no
-    /// Window object until `openWindow` resolves). Returns `true` if the
-    /// default was prevented.
-    fn dispatch_app_cancelable(&self, event_type: &str, env: &Env) -> bool {
-        let Some(app) = resolve_app(&self.app_ref, env) else {
-            return false;
-        };
-        let mut event_obj = match build_event(event_type, true, false, env) {
-            Ok(obj) => obj,
-            Err(e) => {
-                eprintln!("napi-blitz: shell event factory failed for {event_type}: {e}");
-                return false;
-            }
-        };
-        let _ = set_lazy_target_app(&event_obj, &self.app_ref, env);
-        let _ = set_lazy_current_target_app(&event_obj, &self.app_ref, BUBBLING_PHASE, env);
-        let _ = dispatch_to_target(&app, &event_obj, env);
-        let prevented = read_default_prevented(&event_obj, env);
-        reset_dispatch_state(&mut event_obj, env);
-        prevented
+    pub fn open_sequence(&self, env: &Env) -> Result<bool> {
+        Ok(!self.dispatch_app_cancelable("window:open", env)?)
     }
 }
 
 // ── Dispatch primitives ────────────────────────────────────────────────
 
-/// Resolve the JS Window object from `SharedDoc::js_window_ref`.
-fn resolve_window<'a>(doc: &Rc<SharedDoc>, env: &'a Env) -> Option<Object<'a>> {
-    doc.js_window_ref
-        .borrow()
-        .as_ref()
-        .and_then(|weak| weak.get_value(env))
-}
-
 /// Resolve the JS BlitzApp object from the app-level weak ref.
-fn resolve_app<'a>(
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
-    env: &'a Env,
-) -> Option<Object<'a>> {
+fn resolve_app<'a>(app_ref: &Rc<RefCell<Option<JsWeakRef>>>, env: &'a Env) -> Option<Object<'a>> {
     app_ref
         .borrow()
         .as_ref()
@@ -184,199 +228,39 @@ fn build_event<'a>(
         input: None,
         ime: None,
     };
-    let factory_ref = global::get_event_factory()
-        .ok_or_else(|| napi::Error::new(Status::GenericFailure, "event_factory not registered"))?;
-    let factory_fn = factory_ref.borrow_back(env)?;
-    let result_ref = factory_fn.call(FnArgs::from((payload,)))?;
-    let result = result_ref.get_value(env)?;
-    result_ref.unref(env)?;
-    Ok(result)
+    build_event_object(payload, env)
 }
 
-/// Call `dispatchEvent(target, event)` via the registered dispatch fn.
-fn dispatch_to_target(target: &Object, event: &Object, env: &Env) -> Result<()> {
-    let dispatch_ref = global::get_dispatch_fn()
-        .ok_or_else(|| napi::Error::new(Status::GenericFailure, "dispatch_fn not registered"))?;
-    let dispatch_fn = dispatch_ref.borrow_back(env)?;
-    let target_ref = target.create_ref::<true>()?;
-    let event_ref = event.create_ref::<true>()?;
-    dispatch_fn.call(FnArgs::from((target_ref, event_ref)))?;
+// ── target/currentTarget setters via `napi_define_properties` ─────────
+
+/// Set `event.target` to the given JS object. Equivalent to
+/// `Object.defineProperty(event, "target", { value, configurable: true })`.
+fn set_target_value(event: &mut Object, target: &Object) -> Result<()> {
+    let prop = Property::new()
+        .with_utf8_name("target")?
+        .with_value(target)
+        .with_property_attributes(PropertyAttributes::Configurable);
+    event.define_properties(&[prop])?;
     Ok(())
 }
 
-/// Dispatch the event to one receiver of the chain, setting its
-/// `currentTarget`/`eventPhase`, and report whether the listener called
-/// `stopPropagation()` (`cancelBubble`).
-fn dispatch_to_receiver(
-    event: &Object,
-    receiver: &Object,
-    is_app: bool,
-    doc: &Rc<SharedDoc>,
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
-    env: &Env,
-) -> bool {
-    let _ = set_lazy_current_target(event, doc, app_ref, is_app, BUBBLING_PHASE, env);
-    let _ = dispatch_to_target(receiver, event, env);
-    read_cancel_bubble(event, env)
-}
-
-/// Read `event.defaultPrevented` via the registered getter.
-fn read_default_prevented(event: &Object, env: &Env) -> bool {
-    global::get_default_prevented_getter()
-        .and_then(|dp_ref| dp_ref.borrow_back(env).ok())
-        .and_then(|dp_fn| {
-            let event_ref = event.create_ref::<true>().ok()?;
-            dp_fn.call(FnArgs::from((event_ref,))).ok()
-        })
-        .unwrap_or(false)
-}
-
-/// Read `event.cancelBubble` via the registered getter (true when a
-/// listener called `stopPropagation()`).
-fn read_cancel_bubble(event: &Object, env: &Env) -> bool {
-    global::get_cancel_bubble_getter()
-        .and_then(|cb_ref| cb_ref.borrow_back(env).ok())
-        .and_then(|cb_fn| {
-            let event_ref = event.create_ref::<true>().ok()?;
-            cb_fn.call(FnArgs::from((event_ref,))).ok()
-        })
-        .unwrap_or(false)
-}
-
-/// Reset `currentTarget` to `null` and `eventPhase` to `0` (NONE) after
-/// dispatch completes, per DOM spec.
-fn reset_dispatch_state(event: &mut Object, _env: &Env) {
-    let _ = event.set_named_property("currentTarget", ());
-    let _ = event.set_named_property("eventPhase", 0u32);
-}
-
-// ── Lazy target/currentTarget setters ──────────────────────────────────
-
-/// Set `event.target` to a lazy getter resolving the JS Window object.
-fn set_lazy_target(event: &Object, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
-    let setter_ref = global::get_lazy_target_setter().ok_or_else(|| {
-        napi::Error::new(Status::GenericFailure, "lazy_target_setter not registered")
-    })?;
-    let setter = setter_ref.borrow_back(env)?;
-    let doc_clone = doc.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("shell_target_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let obj = resolve_window(&doc_clone, &ctx.env)
-                .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no window"))?;
-            let raw = JsValue::raw(&obj);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref),
-    })?;
-    Ok(())
-}
-
-/// Set `event.target` to a lazy getter resolving the JS BlitzApp object.
-fn set_lazy_target_app(
-    event: &Object,
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
-    env: &Env,
-) -> Result<()> {
-    let setter_ref = global::get_lazy_target_setter().ok_or_else(|| {
-        napi::Error::new(Status::GenericFailure, "lazy_target_setter not registered")
-    })?;
-    let setter = setter_ref.borrow_back(env)?;
-    let app_clone = app_ref.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("shell_target_app_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let obj = resolve_app(&app_clone, &ctx.env)
-                .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app"))?;
-            let raw = JsValue::raw(&obj);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref),
-    })?;
-    Ok(())
-}
-
-/// Set `event.currentTarget` to a lazy getter resolving the window or the
-/// app (per `is_app`) and set `event.eventPhase`.
-fn set_lazy_current_target(
-    event: &Object,
-    doc: &Rc<SharedDoc>,
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
-    is_app: bool,
+/// Set `event.currentTarget` to the given JS object and `event.eventPhase`
+/// to the given phase. Equivalent to the corresponding
+/// `Object.defineProperty(event, ...)` calls.
+fn set_current_target_value(
+    event: &mut Object,
+    target: &Object,
     phase: u32,
     env: &Env,
 ) -> Result<()> {
-    let setter_ref = global::get_lazy_current_target_setter().ok_or_else(|| {
-        napi::Error::new(
-            Status::GenericFailure,
-            "lazy_current_target_setter not registered",
-        )
-    })?;
-    let setter = setter_ref.borrow_back(env)?;
-    let doc_clone = doc.clone();
-    let app_clone = app_ref.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("shell_ct_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let obj = if is_app {
-                resolve_app(&app_clone, &ctx.env)
-            } else {
-                resolve_window(&doc_clone, &ctx.env)
-            }
-            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no receiver"))?;
-            let raw = JsValue::raw(&obj);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref, phase),
-    })?;
-    Ok(())
-}
-
-/// Set `event.currentTarget` to a lazy getter resolving the app (used by
-/// app-only events like `window:open`).
-fn set_lazy_current_target_app(
-    event: &Object,
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
-    phase: u32,
-    env: &Env,
-) -> Result<()> {
-    let setter_ref = global::get_lazy_current_target_setter().ok_or_else(|| {
-        napi::Error::new(
-            Status::GenericFailure,
-            "lazy_current_target_setter not registered",
-        )
-    })?;
-    let setter = setter_ref.borrow_back(env)?;
-    let app_clone = app_ref.clone();
-    let getter: Function<(), Unknown> =
-        env.create_function_from_closure("shell_ct_app_getter", move |ctx| {
-            let env_raw = ctx.env.raw();
-            let obj = resolve_app(&app_clone, &ctx.env)
-                .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app"))?;
-            let raw = JsValue::raw(&obj);
-            unsafe { Unknown::from_napi_value(env_raw, raw) }
-        })?;
-    let event_ref = event.create_ref::<true>()?;
-    let getter_raw = JsValue::raw(&getter);
-    let getter_unknown = unsafe { Object::from_napi_value(env.raw(), getter_raw) }?;
-    let getter_ref = getter_unknown.create_ref::<true>()?;
-    setter.call(FnArgs {
-        data: (event_ref, getter_ref, phase),
-    })?;
+    let ct = Property::new()
+        .with_utf8_name("currentTarget")?
+        .with_value(target)
+        .with_property_attributes(PropertyAttributes::Configurable);
+    let ph = Property::new()
+        .with_utf8_name("eventPhase")?
+        .with_napi_value(env, phase)?
+        .with_property_attributes(PropertyAttributes::Configurable);
+    event.define_properties(&[ct, ph])?;
     Ok(())
 }
