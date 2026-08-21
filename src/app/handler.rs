@@ -10,6 +10,7 @@
 //! path that calls into JS.
 
 use blitz::shell::{BlitzShellEvent, View};
+use napi::Error;
 use std::{cell::RefCell, rc::Rc};
 use winit::{
     application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop,
@@ -31,17 +32,26 @@ impl AppHandler {
     /// Promote pending `WindowConfig`s into live `View`s. winit only
     /// fires `can_create_surfaces` on initial resume, so we must run
     /// this from every hook that has an `ActiveEventLoop`.
+    ///
+    /// For each pending open, the cancelable app-level `window:open`
+    /// event is dispatched *before* the window is promoted (and before
+    /// the `openWindow` promise resolves — JS has no Window object yet).
+    /// `preventDefault()` cancels the open: the fresh view is dropped
+    /// and the promise is rejected.
     fn drain_pending_windows(&mut self, event_loop: &dyn ActiveEventLoop) {
-        let mut state = self.state.borrow_mut();
-        if state.pending_requests.is_empty() {
-            return;
-        }
-        let proxy = state.proxy.clone();
-        let all = std::mem::take(&mut state.pending_requests);
-        let (opens, remaining): (Vec<_>, Vec<_>) = all
-            .into_iter()
-            .partition(|req| matches!(req, PendingRequest::Open { .. }));
-        state.pending_requests.extend(remaining);
+        let (proxy, opens) = {
+            let mut state = self.state.borrow_mut();
+            if state.pending_requests.is_empty() {
+                return;
+            }
+            let proxy = state.proxy.clone();
+            let all = std::mem::take(&mut state.pending_requests);
+            let (opens, remaining): (Vec<_>, Vec<_>) = all
+                .into_iter()
+                .partition(|req| matches!(req, PendingRequest::Open { .. }));
+            state.pending_requests.extend(remaining);
+            (proxy, opens)
+        };
 
         for req in opens {
             let PendingRequest::Open {
@@ -57,6 +67,32 @@ impl AppHandler {
             view.resume();
             let window_id = view.window_id();
 
+            // Open confirmation, dispatched to the app from Rust. Must not
+            // hold an AppState borrow: the dispatch re-enters JS and the
+            // listener may call back into `NativeApp`.
+            let js_app_ref = Rc::clone(&self.state.borrow().js_app_ref);
+            let allowed = match global::env() {
+                Ok(env) => JsShellEventHandler::new(js_app_ref).open_sequence(&env),
+                Err(e) => {
+                    eprintln!(
+                        "napi-blitz: drain_pending_windows: env not available, treating open as confirmed: {e}"
+                    );
+                    true
+                }
+            };
+            if !allowed {
+                drop(view);
+                // The open was cancelled: roll back the outstanding-window
+                // count so the synthetic-exit check can still fire once the
+                // other windows close.
+                {
+                    let mut state = self.state.borrow_mut();
+                    state.outstanding_windows = state.outstanding_windows.saturating_sub(1);
+                }
+                deferred.reject(Error::from_reason("window open prevented"));
+                continue;
+            }
+
             // Now that the OS window exists, the bare WindowState becomes
             // shared: wrap it and fill in the live OS window.
             let shared = Rc::new(RefCell::new(win_state));
@@ -70,7 +106,7 @@ impl AppHandler {
                 state: shared.clone(),
                 shared_doc,
             };
-            state.windows.insert(window_id, entry);
+            self.state.borrow_mut().windows.insert(window_id, entry);
 
             // Resolve outside the `state` borrow: the resolver constructs a
             // NativeWindow JS object, which is a pure napi operation.

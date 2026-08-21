@@ -321,9 +321,10 @@ impl NativeApp {
             (Rc::clone(&entry.shared_doc), Rc::clone(&state.js_app_ref))
         };
         let handler = JsShellEventHandler::new(app_ref);
-        if handler.dispatch_cancelable("close", &shared_doc, &env) {
-            // A listener prevented the close: the window stays open and the
-            // caller's promise rejects.
+        if !handler.close_request(&shared_doc, &env) {
+            // A `close` listener on the window or a `window:close`
+            // listener on the app prevented the close: the window stays
+            // open and the caller's promise rejects.
             let (deferred, promise_obj) = env
                 .create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
             let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
@@ -473,8 +474,10 @@ impl NativeApp {
                     }
                 };
                 let handler = JsShellEventHandler::new(app_ref);
+                // The cancelable close request (`close` / `window:close`)
+                // was already dispatched by `close_window`; here only the
+                // post-teardown notifications remain.
                 handler.dispatch_window_event("closed", &shared_doc, &env);
-                handler.dispatch_app_event("window:close", &env);
                 handler.dispatch_app_event("window:closed", &env);
             }
 

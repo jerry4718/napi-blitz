@@ -77,8 +77,8 @@ impl JsShellEventHandler {
         reset_dispatch_state(&mut event_obj, env);
     }
 
-    /// Dispatch a non-cancelable event to the app. Used for
-    /// `window:open`, `window:close`, `window:closed`.
+    /// Dispatch a non-cancelable event to the app. Used for the
+    /// post-teardown notification `window:closed`.
     pub fn dispatch_app_event(&self, event_type: &str, env: &Env) {
         let Some(app) = resolve_app(&self.app_ref, env) else {
             return;
@@ -94,18 +94,59 @@ impl JsShellEventHandler {
         reset_dispatch_state(&mut event_obj, env);
     }
 
-    /// Dispatch the full close sequence: `close` (cancelable) to the
-    /// window, and if not prevented, `closed` to the window plus
-    /// `window:close` + `window:closed` to the app. Returns `true` if
-    /// the close should proceed (not prevented).
+    /// Dispatch the cancelable `close` request as an event that
+    /// propagates from the window up to the app (bubble phase): the
+    /// window receives it as `close`, and the app — the window's
+    /// ancestor — receives the same request as `window:close`. A
+    /// listener at either level may call `preventDefault()` to veto
+    /// the close. Returns `true` if the close should proceed.
+    pub fn close_request(&self, doc: &Rc<SharedDoc>, env: &Env) -> bool {
+        let window_prevented = self.dispatch_cancelable("close", doc, env);
+        let app_prevented = self.dispatch_app_cancelable("window:close", env);
+        !window_prevented && !app_prevented
+    }
+
+    /// Dispatch the full close sequence: the cancelable close request
+    /// (window `close` bubbling up to the app's `window:close`), and — if
+    /// not prevented — the post-teardown notifications `closed` (window)
+    /// and `window:closed` (app). Returns `true` if the close should
+    /// proceed (not prevented).
     pub fn close_sequence(&self, doc: &Rc<SharedDoc>, env: &Env) -> bool {
-        if self.dispatch_cancelable("close", doc, env) {
+        if !self.close_request(doc, env) {
             return false;
         }
         self.dispatch_window_event("closed", doc, env);
-        self.dispatch_app_event("window:close", env);
         self.dispatch_app_event("window:closed", env);
         true
+    }
+
+    /// Dispatch the full open sequence: at window-creation time (before
+    /// `openWindow` resolves — JS does not yet hold a Window object), the
+    /// app-level `window:open` event is dispatched to the app as a
+    /// cancelable request. A listener's `preventDefault()` cancels the
+    /// open and rejects the `openWindow` promise. Returns `true` if the
+    /// open should proceed (not prevented).
+    pub fn open_sequence(&self, env: &Env) -> bool {
+        !self.dispatch_app_cancelable("window:open", env)
+    }
+
+    /// Dispatch a cancelable event to the app. Returns `true` if the
+    /// default was prevented.
+    fn dispatch_app_cancelable(&self, event_type: &str, env: &Env) -> bool {
+        let Some(app) = resolve_app(&self.app_ref, env) else {
+            return false;
+        };
+        let mut event_obj = match build_event(event_type, true, env) {
+            Ok(obj) => obj,
+            Err(e) => {
+                eprintln!("napi-blitz: shell event factory failed for {event_type}: {e}");
+                return false;
+            }
+        };
+        let _ = dispatch_to_target(&app, &event_obj, env);
+        let prevented = read_default_prevented(&event_obj, env);
+        reset_dispatch_state(&mut event_obj, env);
+        prevented
     }
 }
 

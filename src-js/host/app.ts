@@ -2,22 +2,31 @@
 // application. Each app owns one event loop and any number of windows.
 //
 // Lifecycle:
-//   1. `BlitzApp.create()` builds the loop and installs the
-//      app-event bridge with the native side.
+//   1. `BlitzApp.create()` builds the loop and registers a weak self-ref
+//      with the native side so Rust can dispatch lifecycle events here.
 //   2. `app.openWindow(document, options?)` attaches an existing
-//      `HTMLDocument` to a new native window. Returns a `Window`.
+//      `HTMLDocument` to a new native window. Returns a `Window`. While
+//      creating the window (before the promise resolves), Rust dispatches
+//      the cancelable app-level `window:open` event; `preventDefault()`
+//      rejects the `openWindow` promise and no Window is handed out.
 //   3. `app.pumpAppEvents(ms)` drives the loop. Call once per frame.
-//   4. `app.closeWindow(window)` (or `window.close()`) closes the
-//      window asynchronously. Both paths dispatch a cancelable `close`
-//      on the window first; if not prevented, native sets the closed
-//      flag immediately and tears the window down on the next pump,
-//      after which we dispatch `closed` on the window plus a
+//   4. `app.closeWindow(window)` (or `window.close()`) closes the window
+//      asynchronously. Rust dispatches a cancelable `close` on the window;
+//      if prevented the promise **rejects** and the window stays open.
+//      Otherwise native sets the closed flag immediately, tears the window
+//      down on the next pump, then dispatches `closed` on the window plus a
 //      `window:close` / `window:closed` pair on the app.
+//
+// All of these lifecycle events are dispatched from the Rust side
+// (`JsShellEventHandler`) — JS holds no parallel dispatch model.
 //
 // `BlitzApp` extends `EventTarget` so JS code can observe lifecycle
 // changes across all windows from a single place:
 //
-//   - `window:open`   (non-cancelable, `detail: { window }`)
+//   - `window:open`   (cancelable — a listener that does not call
+//                     `preventDefault()` confirms the open; fires before
+//                     `openWindow` resolves, so there is no
+//                     `detail.window` yet)
 //   - `window:close`  (non-cancelable; the window-level `close` already
 //                     gave anyone a chance to cancel)
 //   - `window:closed` (non-cancelable)
@@ -107,16 +116,16 @@ export class BlitzApp extends EventTarget {
    * recursively pumps the event loop.
    */
   async openWindow(document: HTMLDocument, options?: InstanceType<typeof WindowOptions>): Promise<Window> {
+    // Rust dispatches the cancelable app-level `window:open` event while
+    // creating the window, before this promise resolves. A listener's
+    // `preventDefault()` rejects `openWindow` (the native side drops the
+    // fresh view, so no Window is ever handed out).
     const nativeWindow: InstanceType<typeof NativeWindow> = await this._native.openWindow(
       pluckDoc(document)._native,
       options,
     );
     const window = new Window(this, nativeWindow, document);
     this._windows.set(nativeWindow.windowId, window);
-
-    this.dispatchEvent(
-      new CustomEvent("window:open", {detail: {window}}),
-    );
     return window;
   }
 
