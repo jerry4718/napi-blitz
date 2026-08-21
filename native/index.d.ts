@@ -89,15 +89,12 @@ export declare class NativeApp {
   /** Build the winit event loop. */
   static create(): NativeApp
   /**
-   * Install (or replace) the JS callback that receives app/window
-   * events. JS wires this in its `BlitzApp` constructor; calling
-   * again replaces the previous handler.
-   *
-   * The callback receives an `AppEventPayload` and must return an
-   * `AppDispatchResult` reporting whether the JS-side `Event` had
-   * `preventDefault()` called on it.
+   * Store a weak ref to the JS `BlitzApp` object so Rust can
+   * dispatch app-level lifecycle events (`window:open`,
+   * `window:close`, `window:closed`) to it. Mirrors
+   * `NativeDoc::set_window_ref`.
    */
-  setAppEventHandler(callback: (arg: AppEventPayload) => AppDispatchResult): void
+  setAppRef(app: object): void
   /**
    * Attach a new window to the given document handle. The same handle can
    * only be attached to one window. The JS DocHandle keeps working after
@@ -109,20 +106,35 @@ export declare class NativeApp {
    * title shortly after open; this is expected, with the document treated
    * as the source of truth for window-title content.
    *
-   * The returned `Window` carries the winit `WindowId` of the created
-   * window, which we use as the napi-side window identifier.
+   * Returns a `Promise<NativeWindow>`. This method never drives the event
+   * loop itself: it only queues the window request and returns a promise
+   * that resolves once a `pump_app_events` call promotes the pending config
+   * to a live window (see `AppHandler::drain_pending_windows`). That makes
+   * it safe to invoke from inside an event handler — the in-flight pump
+   * creates the window, with no nested event-loop recursion.
+   *
+   * Because creation is deferred to the caller's pump, the caller must
+   * ensure a pump is (or will be) running before `await`-ing the result;
+   * otherwise the promise never resolves. Typical setup drives at least one
+   * `pump_app_events` before awaiting.
    */
-  openWindow(doc: NativeDoc, options?: WindowOptions | undefined | null): NativeWindow
+  openWindow(doc: NativeDoc, options?: WindowOptions | undefined | null): Promise<NativeWindow>
   /**
-   * Synchronously close the given window. Removes it from the
-   * application's window map (or from our pending queue if it has not
-   * been initialised yet). The window stops painting and receiving
-   * events as soon as this call returns.
+   * Queue the given window for closure and return a promise that resolves
+   * once the native `View` has actually been torn down (during the next
+   * pump, in `flush_closing_windows`), or rejects if a `close` listener
+   * calls `preventDefault()`.
+   *
+   * The cancelable `close` event is dispatched here, from Rust, at the
+   * moment the close is requested. If a listener prevents the default,
+   * the window stays open and the promise rejects. Otherwise the JS-side
+   * `closed` flag is set immediately — only the physical teardown is
+   * async, mirroring `open_window`'s create-then-resolve.
    *
    * This is intentionally not GC-driven: dropping the JS `Window` object
    * does not close the OS window. Callers must invoke this explicitly.
    */
-  closeWindow(window: NativeWindow): void
+  closeWindow(window: NativeWindow): Promise<undefined>
   /**
    * List all available monitors with full metadata. Returns `[]` if
    * no windows have been created yet.
@@ -411,7 +423,7 @@ export declare class NativeNode {
 /**
  * Handle to an open window. Construct via `BlitzApp.openWindow`.
  *
- * Shares a `Rc<RefCell<WindowInner>>` with the `WindowEntry` stored in
+ * Shares a `Rc<RefCell<WindowState>>` with the `WindowEntry` stored in
  * `BlitzApp`. `close_window` takes the `Arc<dyn Window>` out of the inner
  * cell, which releases the OS window even if this JS handle is still alive.
  */
@@ -534,31 +546,6 @@ export declare class WindowOptions {
   parentWindow(handle: WindowHandle): this
 }
 
-/**
- * Result reported back from JS after dispatching an app event. A
- * missing call (handler not installed, or threw) acts as
- * `default_prevented = false`.
- */
-export interface AppDispatchResult {
-  defaultPrevented: boolean
-}
-
-/** Payload handed to the JS-side app-event handler. */
-export interface AppEventPayload {
-  /** `"close" | "closed"` for now. */
-  type: string
-  /**
-   * Opaque window identifier. JS uses this to look up the
-   * matching `Window` wrapper.
-   */
-  windowId: bigint
-  /**
-   * Whether the JS `Event` constructed from this payload should be
-   * cancelable. Only `close` is cancelable; `closed` is not.
-   */
-  cancelable: boolean
-}
-
 /** Plain attribute pair used by the create/insert APIs. */
 export interface AttrInit {
   name: string
@@ -631,10 +618,6 @@ export interface PumpResult {
   /** Exit code, if `exit`. */
   code?: number
 }
-
-export declare function registerCancelBubbleGetter(getter: (event: Event) => boolean): void
-
-export declare function registerDefaultPreventedGetter(getter: (event: Event) => boolean): void
 
 export declare function registerDispatchFn(dispatchFn: (target: EventTarget, event: Event) => unknown): void
 

@@ -1,5 +1,7 @@
 /.jcode
-/docs
+/.run
+/.pnpm-store
+/docs-dev
 
 ### Created by https://www.gitignore.io
 ### Rust ###

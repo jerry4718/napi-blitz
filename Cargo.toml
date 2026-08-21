@@ -2,7 +2,7 @@
 authors = ["ZhangChao <jerry4718@qq.com>"]
 edition = "2024"
 name = "napi_blitz"
-version = "0.1.217"
+version = "0.2.218"
 
 [lib]
 crate-type = ["cdylib"]
