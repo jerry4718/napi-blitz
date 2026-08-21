@@ -3,6 +3,8 @@
 // RustRover's Cargo debug session lands inside node with the .node
 // module loaded.
 //
+// unix-only: it exists for that debug workflow, which relies on exec.
+//
 // Options (consumed before node args):
 //   --cwd <dir>   working directory for the node process
 //

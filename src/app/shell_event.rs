@@ -30,10 +30,7 @@ use crate::{
         resolve_window,
     },
 };
-use napi::{
-    Env, Result, Status,
-    bindgen_prelude::Object,
-};
+use napi::{Env, Result, Status, bindgen_prelude::Object};
 
 /// Unified dispatcher for window/app lifecycle events.
 ///

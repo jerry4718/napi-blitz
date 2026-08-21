@@ -112,7 +112,7 @@ pub(crate) enum PendingRequest {
     /// a pump frame provides). Resolving `deferred` fulfils the JS-side
     /// `Promise` returned by `openWindow`.
     Open {
-        config: WindowConfig<CurrentRenderer>,
+        config: Box<WindowConfig<CurrentRenderer>>,
         /// Bare `WindowState` — while pending, this is the *only* owner (the
         /// `NativeWindow` can't be built until the OS window id exists). It's
         /// wrapped in `Rc<RefCell>` at promotion time, when it becomes shared
@@ -239,7 +239,7 @@ impl NativeApp {
         {
             let mut app_state = self.state.borrow_mut();
             app_state.pending_requests.push(PendingRequest::Open {
-                config,
+                config: Box::new(config),
                 state: win_state,
                 shared_doc,
                 deferred,

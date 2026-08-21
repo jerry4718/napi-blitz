@@ -60,7 +60,7 @@ impl AppHandler {
             else {
                 unreachable!()
             };
-            let mut view = View::init(config, event_loop, &proxy);
+            let mut view = View::init(*config, event_loop, &proxy);
             view.resume();
             let window_id = view.window_id();
 
@@ -69,15 +69,12 @@ impl AppHandler {
             // listener may call back into `NativeApp`.
             let js_app_ref = Rc::clone(&self.state.borrow().js_app_ref);
             let allowed = match global::env() {
-                Ok(env) => match JsShellEventHandler::new(js_app_ref).open_sequence(&env) {
-                    Ok(allowed) => allowed,
-                    Err(e) => {
-                        eprintln!(
-                            "napi-blitz: drain_pending_windows: open_sequence failed, treating open as confirmed: {e}"
-                        );
-                        true
-                    }
-                },
+                Ok(env) => JsShellEventHandler::new(js_app_ref).open_sequence(&env).unwrap_or_else(|e| {
+                    eprintln!(
+                        "napi-blitz: drain_pending_windows: open_sequence failed, treating open as confirmed: {e}"
+                    );
+                    true
+                }),
                 Err(e) => {
                     eprintln!(
                         "napi-blitz: drain_pending_windows: env not available, treating open as confirmed: {e}"

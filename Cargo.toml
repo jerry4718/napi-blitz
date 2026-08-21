@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [[bin]]
 name = "node"
 path = "src/debug-node.rs"
+required-features = ["debug-node"]
 
 [profile.release]
 lto = true
@@ -20,6 +21,9 @@ strip = "symbols"
 default = ["native-window", "vello-hybrid"]
 native-window = []
 buffer-surface = []
+# Gates the `node` proxy bin (src/debug-node.rs) so it is built only when
+# explicitly requested: cargo build --features debug-node
+debug-node = []
 
 # Renderer backends (pick one at build time)
 vello = ["dep:anyrender_vello"]
