@@ -20,15 +20,17 @@
 //!   resolves the promise. This is what makes opening a window from a click
 //!   handler safe — there is no nested event-loop recursion.
 
-mod bridge;
 mod handler;
+mod shell_event;
 
 use crate::{
     app::{
-        bridge::{APP_EVENT_CLOSED, AppDispatchResult, AppEventPayload, JsAppBridge},
         handler::AppHandler,
+        shell_event::JsShellEventHandler,
     },
-    dom::doc::NativeDoc,
+    dom::doc::{NativeDoc, SharedDoc},
+    global,
+    helpers::JsWeakRef,
     renderer::CurrentRenderer,
     window::{
         NativeWindow, WindowState, make_window_document,
@@ -54,7 +56,7 @@ use blitz::{
 };
 use napi::{
     Env, Error, JsDeferred, JsValue, Result,
-    bindgen_prelude::{BigInt, Function, FunctionRef, PromiseRaw},
+    bindgen_prelude::{Object, PromiseRaw, Undefined},
 };
 use winit::{
     event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus},
@@ -91,6 +93,9 @@ pub struct NativeApp {
 pub(crate) struct WindowEntry {
     pub(crate) view: Rc<RefCell<View<CurrentRenderer>>>,
     pub(crate) state: Rc<RefCell<WindowState>>,
+    /// Shared doc, for dispatching shell events without downcasting
+    /// `view.doc` (a `Box<dyn Document>`).
+    pub(crate) shared_doc: Rc<SharedDoc>,
 }
 
 impl WindowEntry {
@@ -107,35 +112,50 @@ impl WindowEntry {
     }
 }
 
-/// A window requested via `openWindow` that has not yet been promoted to a
-/// live `View`. Created inside `drain_pending_windows` during the next pump;
-/// resolving `deferred` is what fulfils the JS-side `Promise` returned by
-/// `openWindow`.
-pub(crate) struct PendingWindow {
-    pub(crate) config: WindowConfig<CurrentRenderer>,
-    /// Shared with the `NativeWindow` handed to JS; filled in once the OS
-    /// window exists.
-    pub(crate) state: Rc<RefCell<WindowState>>,
-    pub(crate) deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
+/// One deferred operation that runs at the next pump. `Open` and `Close`
+/// share a single queue keyed by *processing time* (next pump) rather than
+/// one queue per operation, keeping the request path uniform.
+pub(crate) enum PendingRequest {
+    /// Promote a window config to a live `View` (needs the `ActiveEventLoop`
+    /// a pump frame provides). Resolving `deferred` fulfils the JS-side
+    /// `Promise` returned by `openWindow`.
+    Open {
+        config: WindowConfig<CurrentRenderer>,
+        /// Bare `WindowState` — while pending, this is the *only* owner (the
+        /// `NativeWindow` can't be built until the OS window id exists). It's
+        /// wrapped in `Rc<RefCell>` at promotion time, when it becomes shared
+        /// between the `NativeWindow` and the `WindowEntry`.
+        state: WindowState,
+        /// Shared doc, so the promoted `WindowEntry` can dispatch shell
+        /// events to the JS `Window` object.
+        shared_doc: Rc<SharedDoc>,
+        deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
+    },
+    /// Tear down a requested closure (deferred past in-flight winit dispatch
+    /// so `window.close()` is safe from inside a click handler). Resolving
+    /// `deferred` fulfils the `Promise` `close_window` returned to JS.
+    Close {
+        window_id: WindowId,
+        deferred: JsDeferred<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>,
+    },
 }
 
 pub(crate) struct AppState {
     /// Live windows keyed by winit `WindowId`.
     pub(crate) windows: HashMap<WindowId, WindowEntry>,
-    /// Window configs requested via `openWindow` but not yet promoted to live `View`s.
-    pub(crate) pending_windows: Vec<PendingWindow>,
+    /// Requests queued for the next pump: promote a pending config to a live
+    /// `View` (`Open` — needs the `ActiveEventLoop` a pump frame provides) or
+    /// tear down a requested closure (`Close` — deferred past in-flight winit
+    /// dispatch so `window.close()` is safe from inside a click handler).
+    pub(crate) pending_requests: Vec<PendingRequest>,
     /// Proxy for sending events into the event loop (redraw, poll, etc.).
     pub(crate) proxy: BlitzShellProxy,
     /// Receiver for `BlitzShellEvent`s from the proxy channel.
     pub(crate) event_queue: Receiver<BlitzShellEvent>,
-    /// Window ids requested to close from JS. We intentionally defer live
-    /// `View` removal until after the current `pumpAppEvents` call has
-    /// returned from winit event dispatch. This makes `window.close()`
-    /// safe to call from within that same window's click handler.
-    pub(crate) closing_window_ids: Vec<WindowId>,
-    /// JS-side bridge for app/window events (close / closed). Set
-    /// lazily by `setAppEventHandler`; absent until JS opts in.
-    pub(crate) bridge: Option<JsAppBridge>,
+    /// Weak ref to the JS `BlitzApp` object, for dispatching app-level
+    /// lifecycle events (`window:open`, `window:close`, `window:closed`).
+    /// Set lazily by `set_app_ref`; absent until JS opts in.
+    pub(crate) js_app_ref: Rc<RefCell<Option<JsWeakRef>>>,
     /// Number of windows currently considered "alive". Incremented
     /// on `openWindow`, decremented in the `close_window` path when we
     /// successfully remove a window from `windows` and in the native
@@ -158,33 +178,23 @@ impl NativeApp {
             event_loop: RefCell::new(event_loop),
             state: Rc::new(RefCell::new(AppState {
                 windows: HashMap::new(),
-                pending_windows: Vec::new(),
+                pending_requests: Vec::new(),
                 proxy,
                 event_queue: receiver,
-                closing_window_ids: Vec::new(),
-                bridge: None,
+                js_app_ref: Rc::new(RefCell::new(None)),
                 outstanding_windows: 0,
                 has_opened_window: false,
             })),
         }
     }
 
-    /// Install (or replace) the JS callback that receives app/window
-    /// events. JS wires this in its `BlitzApp` constructor; calling
-    /// again replaces the previous handler.
-    ///
-    /// The callback receives an `AppEventPayload` and must return an
-    /// `AppDispatchResult` reporting whether the JS-side `Event` had
-    /// `preventDefault()` called on it.
+    /// Store a weak ref to the JS `BlitzApp` object so Rust can
+    /// dispatch app-level lifecycle events (`window:open`,
+    /// `window:close`, `window:closed`) to it. Mirrors
+    /// `NativeDoc::set_window_ref`.
     #[napi]
-    pub fn set_app_event_handler(
-        &self,
-        env: Env,
-        callback: Function<AppEventPayload, AppDispatchResult>,
-    ) -> Result<()> {
-        let callback_ref: FunctionRef<AppEventPayload, AppDispatchResult> =
-            callback.create_ref()?;
-        self.state.borrow_mut().bridge = Some(JsAppBridge::new(env, callback_ref));
+    pub fn set_app_ref(&self, env: Env, app: Object) -> Result<()> {
+        *self.state.borrow_mut().js_app_ref.borrow_mut() = Some(JsWeakRef::new(&app, &env)?);
         Ok(())
     }
 
@@ -221,25 +231,29 @@ impl NativeApp {
                 "DocHandle has already been attached to a window".to_string(),
             ));
         }
+        let shared_doc = doc.doc.clone();
         let window_doc = make_window_document(doc);
         let attributes = build_window_attributes(options)?;
         let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
 
-        let win_state = Rc::new(RefCell::new(WindowState {
+        let win_state = WindowState {
             window: None,
             closed: false,
-        }));
+        };
         let (deferred, promise_obj) = env
             .create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
         let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
 
         {
             let mut app_state = self.state.borrow_mut();
-            app_state.pending_windows.push(PendingWindow {
-                config,
-                state: win_state,
-                deferred,
-            });
+            app_state
+                .pending_requests
+                .push(PendingRequest::Open {
+                    config,
+                    state: win_state,
+                    shared_doc,
+                    deferred,
+                });
             app_state.has_opened_window = true;
             app_state.outstanding_windows += 1;
         }
@@ -247,45 +261,94 @@ impl NativeApp {
         Ok(promise)
     }
 
-    /// Synchronously close the given window. Removes it from the
-    /// application's window map (or from our pending queue if it has not
-    /// been initialised yet). The window stops painting and receiving
-    /// events as soon as this call returns.
+    /// Queue the given window for closure and return a promise that resolves
+    /// once the native `View` has actually been torn down (during the next
+    /// pump, in `flush_closing_windows`), or rejects if a `close` listener
+    /// calls `preventDefault()`.
+    ///
+    /// The cancelable `close` event is dispatched here, from Rust, at the
+    /// moment the close is requested. If a listener prevents the default,
+    /// the window stays open and the promise rejects. Otherwise the JS-side
+    /// `closed` flag is set immediately — only the physical teardown is
+    /// async, mirroring `open_window`'s create-then-resolve.
     ///
     /// This is intentionally not GC-driven: dropping the JS `Window` object
     /// does not close the OS window. Callers must invoke this explicitly.
     #[napi]
-    pub fn close_window(&self, window: &NativeWindow) {
+    pub fn close_window(
+        &self,
+        env: Env,
+        window: &NativeWindow,
+    ) -> Result<PromiseRaw<'_, Undefined>> {
         let window_id = window.window_id;
-        let mut state = window.state.borrow_mut();
 
         // Public JS API guarantee: close() is idempotent. Multiple calls are
         // common when listeners race with UI state updates, so only the first
-        // one has side effects.
-        let app_state = self.state.borrow();
-        if state.closed || app_state.closing_window_ids.contains(&window_id) {
-            state.closed = true;
-            return;
+        // one queues a teardown; later ones resolve immediately.
+        {
+            let state = window.state.borrow();
+            let app_state = self.state.borrow();
+            if state.closed
+                || app_state
+                    .pending_requests
+                    .iter()
+                    .any(|req| matches!(req, PendingRequest::Close { window_id: id, .. } if *id == window_id))
+            {
+                drop(state);
+                drop(app_state);
+                return PromiseRaw::resolve(&env, ());
+            }
         }
-        drop(app_state);
 
+        // Never became a live window (still pending): just mark closed and
+        // resolve immediately — there is no `View` to tear down and no
+        // window-level `close` event to dispatch.
         let was_initialised = self.state.borrow().windows.contains_key(&window_id);
-        if was_initialised {
-            self.state.borrow_mut().closing_window_ids.push(window_id);
+        if !was_initialised {
+            let mut state = window.state.borrow_mut();
+            state.closed = true;
+            state.window = None;
+            drop(state);
+            return PromiseRaw::resolve(&env, ());
         }
 
-        state.closed = true;
-        state.window = None;
-        drop(state);
+        // Dispatch the cancelable `close` event to the window from Rust.
+        // Clone the dispatch pieces first so no AppState borrow is held
+        // across the re-entrant JS call.
+        let (shared_doc, app_ref) = {
+            let state = self.state.borrow();
+            let entry = state.windows.get(&window_id).expect("checked above");
+            (Rc::clone(&entry.shared_doc), Rc::clone(&state.js_app_ref))
+        };
+        let handler = JsShellEventHandler::new(app_ref);
+        if handler.dispatch_cancelable("close", &shared_doc, &env) {
+            // A listener prevented the close: the window stays open and the
+            // caller's promise rejects.
+            let (deferred, promise_obj) = env
+                .create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
+            let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
+            deferred.reject(Error::from_reason("close prevented"));
+            return Ok(promise);
+        }
 
-        if was_initialised {
+        let (deferred, promise_obj) = env
+            .create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
+        let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
+
+        {
+            let mut state = window.state.borrow_mut();
+            state.closed = true;
+            state.window = None;
+        }
+        {
             let mut app_state = self.state.borrow_mut();
+            app_state
+                .pending_requests
+                .push(PendingRequest::Close { window_id, deferred });
             app_state.outstanding_windows = app_state.outstanding_windows.saturating_sub(1);
         }
 
-        // Live windows are notified from `flush_closing_windows`,
-        // after any in-progress winit/blitz document event dispatch has fully
-        // unwound.
+        Ok(promise)
     }
 
     // -- Per-window runtime configuration -----------------------------------
@@ -365,34 +428,59 @@ impl NativeApp {
     }
 
     fn flush_closing_windows(&self) {
-        let closing_window_ids = {
+        let closing = {
             let mut state = self.state.borrow_mut();
-            if state.closing_window_ids.is_empty() {
+            if state.pending_requests.is_empty() {
                 return;
             }
-            std::mem::take(&mut state.closing_window_ids)
+            let all = std::mem::take(&mut state.pending_requests);
+            let (closing, remaining): (Vec<_>, Vec<_>) = all
+                .into_iter()
+                .partition(|req| matches!(req, PendingRequest::Close { .. }));
+            state.pending_requests.extend(remaining);
+            closing
         };
 
-        for window_id in closing_window_ids {
-            // 1. Remove + close the entry (needs &mut AppState), then
-            //    release the borrow before dispatching to JS.
-            {
+        for req in closing {
+            let PendingRequest::Close { window_id, deferred } = req else {
+                unreachable!()
+            };
+
+            // 1. Remove + close the entry (needs &mut AppState), cloning the
+            //    dispatch pieces so no borrow is held across the JS dispatch.
+            let (shared_doc, app_ref) = {
                 let mut state = self.state.borrow_mut();
-                if let Some(mut entry) = state.windows.remove(&window_id) {
-                    entry.close();
+                match state.windows.remove(&window_id) {
+                    Some(mut entry) => {
+                        entry.close();
+                        let doc = Some(Rc::clone(&entry.shared_doc));
+                        drop(entry);
+                        (doc, Rc::clone(&state.js_app_ref))
+                    }
+                    None => (None, Rc::clone(&state.js_app_ref)),
                 }
+            };
+
+            // 2. Notify from Rust: `closed` on the window, `window:close` +
+            //    `window:closed` on the app. No outstanding AppState borrow,
+            //    so JS re-entry into `open_window` / `close_window` is safe.
+            if let Some(shared_doc) = shared_doc {
+                let env = match global::env() {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("napi-blitz: flush_closing_windows: env not available: {e}");
+                        return;
+                    }
+                };
+                let handler = JsShellEventHandler::new(app_ref);
+                handler.dispatch_window_event("closed", &shared_doc, &env);
+                handler.dispatch_app_event("window:close", &env);
+                handler.dispatch_app_event("window:closed", &env);
             }
 
-            // 2. Dispatch `closed` to JS. No outstanding AppState borrow, so
-            //    JS re-entry into `open_window` / `close_window` is safe.
-            let state = self.state.borrow();
-            if let Some(bridge) = state.bridge.as_ref() {
-                let _ = bridge.dispatch(AppEventPayload {
-                    event_type: APP_EVENT_CLOSED.to_string(),
-                    window_id: BigInt::from(window_id.into_raw() as u64),
-                    cancelable: false,
-                });
-            }
+            // 3. Fulfil the `close_window` promise after the notifications,
+            //    so JS-side await sees the teardown fully complete.
+            deferred.resolve(Box::new(move |_env| Ok(())));
         }
     }
 

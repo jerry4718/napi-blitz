@@ -7,15 +7,12 @@
 // events:
 //
 //   - `close`   (cancelable): fires before the window is torn down.
-//                Dispatched from two places:
+//                Dispatched from Rust (`JsShellEventHandler`), for both:
 //                  * The OS window manager's "close request" (user
-//                    clicked the X button or hit Cmd-W / Alt-F4),
-//                    routed via the native `setAppEventHandler` hook
-//                    on `BlitzApp`.
-//                  * `Window.close()` / `BlitzApp.closeWindow(w)`,
-//                    which dispatch the same event before delegating
-//                    to the native side.
-//                Calling `event.preventDefault()` cancels the close.
+//                    clicked the X button or hit Cmd-W / Alt-F4).
+//                  * `Window.close()` / `BlitzApp.closeWindow(w)`.
+//                Calling `event.preventDefault()` cancels the close;
+//                for `closeWindow` the returned promise rejects.
 //
 //   - `closed`  (non-cancelable): fires after the window has been
 //                removed from the application. This is the place to
@@ -25,7 +22,9 @@
 // We deliberately do NOT close the OS window in a `FinalizationRegistry`
 // callback. GC timing is unpredictable, and a user calling `close()`
 // expects the window to disappear immediately. The Rust side mirrors
-// this: `BlitzApp.close_window` runs synchronously.
+// this: `BlitzApp.close_window` sets the closed flag immediately and
+// queues the actual `View` teardown for the next pump, resolving the
+// promise it returns once the teardown is done.
 
 import type {BlitzApp} from "./app";
 import type {HTMLDocument} from "../document/html-document";
@@ -69,33 +68,21 @@ export class Window extends EventTarget {
   }
 
   /**
-   * Close the OS window synchronously. Equivalent to
-   * `app.closeWindow(window)`. Dispatches a cancelable `close` event
-   * first; if the listener calls `event.preventDefault()` the close
-   * is aborted and `closed` will not fire. Subsequent calls on an
+   * Close the OS window. Equivalent to `app.closeWindow(window)`.
+   * Dispatches a cancelable `close` event first; if the listener calls
+   * `event.preventDefault()` the close is aborted and the returned
+   * promise **rejects** (`closed` will not fire). Subsequent calls on an
    * already-closed window are no-ops.
+   *
+   * On success the promise resolves once the native `View` has actually
+   * been torn down (on the next pump); the JS-side `closed` flag flips
+   * immediately.
    */
-  close(): void {
-    this._app.closeWindow(this);
+  async close(): Promise<void> {
+    await this._app.closeWindow(this);
   }
 
   /**
-   * @internal Dispatch a cancelable `close` event on this window.
-   * Returns `true` if the close should proceed (default not
-   * prevented). Used by `BlitzApp` for both JS-initiated closes and
-   * OS-initiated closes routed through the native bridge.
-   */
-  _dispatchClose(): boolean {
-    const event = new Event("close", {cancelable: true});
-    this.dispatchEvent(event);
-    return !event.defaultPrevented;
-  }
-
-  /** @internal Dispatch the non-cancelable `closed` event. */
-  _dispatchClosed(): void {
-    this.dispatchEvent(new Event("closed"));
-  }
-
   /**
    * Current surface size in physical pixels, as `[width, height]`.
    * Returns `null` if the window has not been initialised yet (no

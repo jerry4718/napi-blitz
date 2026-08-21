@@ -10,7 +10,6 @@
 //! path that calls into JS.
 
 use blitz::shell::{BlitzShellEvent, View};
-use napi::bindgen_prelude::BigInt;
 use std::{cell::RefCell, rc::Rc};
 use winit::{
     application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop,
@@ -19,9 +18,9 @@ use winit::{
 
 use crate::{
     app::{
-        AppState, NativeWindow, WindowEntry,
-        bridge::{APP_EVENT_CLOSE, APP_EVENT_CLOSED, AppEventPayload},
+        AppState, NativeWindow, PendingRequest, WindowEntry, shell_event::JsShellEventHandler,
     },
+    global,
 };
 
 pub struct AppHandler {
@@ -34,35 +33,48 @@ impl AppHandler {
     /// this from every hook that has an `ActiveEventLoop`.
     fn drain_pending_windows(&mut self, event_loop: &dyn ActiveEventLoop) {
         let mut state = self.state.borrow_mut();
-        if state.pending_windows.is_empty() {
+        if state.pending_requests.is_empty() {
             return;
         }
         let proxy = state.proxy.clone();
-        let pending_windows = std::mem::take(&mut state.pending_windows);
-        for pending in pending_windows {
-            let mut view = View::init(pending.config, event_loop, &proxy);
+        let all = std::mem::take(&mut state.pending_requests);
+        let (opens, remaining): (Vec<_>, Vec<_>) = all
+            .into_iter()
+            .partition(|req| matches!(req, PendingRequest::Open { .. }));
+        state.pending_requests.extend(remaining);
+
+        for req in opens {
+            let PendingRequest::Open {
+                config,
+                state: win_state,
+                shared_doc,
+                deferred,
+            } = req
+            else {
+                unreachable!()
+            };
+            let mut view = View::init(config, event_loop, &proxy);
             view.resume();
             let window_id = view.window_id();
 
-            // Fill the shared WindowState so the JS-side NativeWindow sees a
-            // live OS window, then build the value that resolves the promise
-            // `open_window` handed back to JS.
-            pending.state.borrow_mut().window = Some(view.window.clone());
+            // Now that the OS window exists, the bare WindowState becomes
+            // shared: wrap it and fill in the live OS window.
+            let shared = Rc::new(RefCell::new(win_state));
+            shared.borrow_mut().window = Some(view.window.clone());
             let native = NativeWindow {
                 window_id,
-                state: pending.state,
+                state: shared.clone(),
             };
             let entry = WindowEntry {
                 view: Rc::new(RefCell::new(view)),
-                state: native.state.clone(),
+                state: shared.clone(),
+                shared_doc,
             };
             state.windows.insert(window_id, entry);
 
             // Resolve outside the `state` borrow: the resolver constructs a
             // NativeWindow JS object, which is a pure napi operation.
-            pending
-                .deferred
-                .resolve(Box::new(move |_env| Ok(native)));
+            deferred.resolve(Box::new(move |_env| Ok(native)));
         }
     }
 
@@ -134,36 +146,34 @@ impl ApplicationHandler for AppHandler {
         event: WindowEvent,
     ) {
         if matches!(event, WindowEvent::CloseRequested) {
-            // Phase 1: dispatch a cancelable `close` event to JS. We must not
-            // hold an AppState borrow across `bridge.dispatch` (it re-enters JS).
-            {
+            // Clone the shell-event dispatch pieces without holding an
+            // AppState borrow: `close_sequence` re-enters JS (dispatchEvent
+            // may call back into `NativeApp`), which must never see an
+            // outstanding borrow.
+            let (shared_doc, app_ref) = {
                 let state = self.state.borrow();
-                if !state.windows.contains_key(&window_id) {
+                let Some(entry) = state.windows.get(&window_id) else {
+                    return;
+                };
+                (Rc::clone(&entry.shared_doc), Rc::clone(&state.js_app_ref))
+            };
+            let env = match global::env() {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("napi-blitz: window_event CloseRequested: env not available: {e}");
                     return;
                 }
-            }
-
-            let wid = BigInt::from(window_id.into_raw() as u64);
-
-            let default_prevented = {
-                let state = self.state.borrow();
-                if let Some(bridge) = state.bridge.as_ref() {
-                    bridge
-                        .dispatch(AppEventPayload {
-                            event_type: APP_EVENT_CLOSE.to_string(),
-                            window_id: wid.clone(),
-                            cancelable: true,
-                        })
-                        .default_prevented
-                } else {
-                    false
-                }
             };
-            if default_prevented {
+            let handler = JsShellEventHandler::new(app_ref);
+
+            // Dispatch `close` (cancelable) -> `closed` (window) ->
+            // `window:close` + `window:closed` (app). If `close` was
+            // prevented, abort — the window stays open.
+            if !handler.close_sequence(&shared_doc, &env) {
                 return;
             }
 
-            // Phase 2: tear down the view.
+            // Tear down the view.
             {
                 let mut state = self.state.borrow_mut();
                 let Some(mut entry) = state.windows.remove(&window_id) else {
@@ -175,17 +185,6 @@ impl ApplicationHandler for AppHandler {
                     event_loop.exit();
                 }
                 state.outstanding_windows = state.outstanding_windows.saturating_sub(1);
-            }
-
-            // Phase 3: notify JS that the window is gone. No outstanding
-            // borrow, so JS re-entry is safe.
-            let state = self.state.borrow();
-            if let Some(bridge) = state.bridge.as_ref() {
-                let _ = bridge.dispatch(AppEventPayload {
-                    event_type: APP_EVENT_CLOSED.to_string(),
-                    window_id: wid,
-                    cancelable: false,
-                });
             }
             return;
         }

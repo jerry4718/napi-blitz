@@ -8,9 +8,10 @@
 //      `HTMLDocument` to a new native window. Returns a `Window`.
 //   3. `app.pumpAppEvents(ms)` drives the loop. Call once per frame.
 //   4. `app.closeWindow(window)` (or `window.close()`) closes the
-//      window synchronously. Both paths dispatch a cancelable `close`
-//      on the window first; if not prevented, native closes the
-//      window and we dispatch `closed` on the window plus a
+//      window asynchronously. Both paths dispatch a cancelable `close`
+//      on the window first; if not prevented, native sets the closed
+//      flag immediately and tears the window down on the next pump,
+//      after which we dispatch `closed` on the window plus a
 //      `window:close` / `window:closed` pair on the app.
 //
 // `BlitzApp` extends `EventTarget` so JS code can observe lifecycle
@@ -33,8 +34,6 @@
 // windows, call `openWindow` multiple times.
 
 import {
-  type AppDispatchResult,
-  type AppEventPayload,
   NativeApp,
   NativeDoc,
   NativeWindow,
@@ -87,12 +86,10 @@ export class BlitzApp extends EventTarget {
   private constructor(native: InstanceType<typeof NativeApp>) {
     super();
     this._native = native;
-    // Wire the native -> JS bridge so winit `CloseRequested` reaches
-    // us as a `close` event on the right window. The handler runs
-    // synchronously inside `pumpAppEvents`.
-    this._native.setAppEventHandler((payload: AppEventPayload) =>
-      this._dispatchFromNative(payload),
-    );
+    // Weak ref so Rust can dispatch app-level lifecycle events
+    // (`window:open`, `window:close`, `window:closed`) directly to this
+    // object from the native event loop.
+    this._native.setAppRef(this);
   }
 
   /** Build the underlying winit event loop and blitz application. */
@@ -124,43 +121,27 @@ export class BlitzApp extends EventTarget {
   }
 
   /**
-   * Close a window synchronously. After this call returns the window
-   * stops painting and receiving events; subsequent `closeWindow` calls
-   * for the same window are no-ops.
+   * Close a window asynchronously. The promise resolves once the native
+   * `View` has actually been torn down (on the next pump) and rejects if a
+   * `close` listener calls `preventDefault()`.
    *
-   * Dispatches `close` (cancelable) on the window first. If the
-   * default is prevented, this call returns without closing. On a
-   * successful close, dispatches `closed` on the window plus
-   * `window:close` and `window:closed` on this app.
+   * All lifecycle events (`close` on the window, then `closed` on the
+   * window plus `window:close` / `window:closed` on this app) are
+   * dispatched from the Rust side.
    */
-  closeWindow(window: Window): void {
+  async closeWindow(window: Window): Promise<void> {
     if (!this._windows.has(pluckWindow(window)._nativeWindow.windowId)) return;
     if (window.closed) {
       this._windows.delete(pluckWindow(window)._nativeWindow.windowId);
       return;
     }
-    if (!window._dispatchClose()) {
-      // Listener cancelled the close.
-      return;
-    }
-    // The native `closeWindow` will fire its own `closed` notification
-    // through the bridge — but only for windows the bridge knows
-    // about. We forward, then dispatch the JS-visible side-effects.
-    // To avoid a duplicate `closed` from the bridge, drop the window
-    // from our map *before* calling native: when the bridge fires we
-    // will not find a wrapper and skip the JS dispatch.
-    const windowId = pluckWindow(window)._nativeWindow.windowId;
-    this._windows.delete(windowId);
-
-    this._native.closeWindow(pluckWindow(window)._nativeWindow);
-
-    window._dispatchClosed();
-    this.dispatchEvent(
-      new CustomEvent("window:close", {detail: {window}}),
-    );
-    this.dispatchEvent(
-      new CustomEvent("window:closed", {detail: {window}}),
-    );
+    // Rust dispatches the cancelable `close` event at the moment of the
+    // request; `preventDefault()` rejects this promise and the window stays
+    // open (map kept — the delete below is skipped). On success Rust already
+    // dispatched `closed` + `window:close`/`window:closed`, so we only drop
+    // the map entry.
+    await this._native.closeWindow(pluckWindow(window)._nativeWindow);
+    this._windows.delete(pluckWindow(window)._nativeWindow.windowId);
   }
 
   /**
@@ -285,37 +266,5 @@ export class BlitzApp extends EventTarget {
   /** Get the current document zoom level for a window. */
   getZoom(window: Window): number {
     return this._native.getZoom(pluckWindow(window)._nativeWindow);
-  }
-
-  /**
-   * @internal Receive an app event the native side serialized while
-   * inside `pumpAppEvents`. Returns the dispatch result so native can
-   * decide whether to respect `preventDefault()`.
-   */
-  private _dispatchFromNative(payload: AppEventPayload): AppDispatchResult {
-    const window = this._windows.get(payload.windowId);
-    if (window === undefined) {
-      // Window already gone from our map — nothing to dispatch.
-      return {defaultPrevented: false};
-    }
-
-    if (payload.type === "close") {
-      const proceed = window._dispatchClose();
-      return {defaultPrevented: !proceed};
-    }
-    if (payload.type === "closed") {
-      // The window is gone on the native side. Mirror that on the JS
-      // side and dispatch the matching events.
-      this._windows.delete(payload.windowId);
-      window._dispatchClosed();
-      this.dispatchEvent(
-        new CustomEvent("window:close", {detail: {window}}),
-      );
-      this.dispatchEvent(
-        new CustomEvent("window:closed", {detail: {window}}),
-      );
-      return {defaultPrevented: false};
-    }
-    return {defaultPrevented: false};
   }
 }
