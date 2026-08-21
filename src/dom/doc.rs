@@ -3,7 +3,7 @@
 //! Per-document state lives in `Rc<SharedDoc>` and is shared between
 //! `DocHandle` (JS side) and `WindowDocument` (blitz window side).
 //! JS constructor refs, event factory, and napi env are global
-//! (`GlobalCreators` static), not per-document.
+//! (`GlobalRegistry` static), not per-document.
 //!
 //! The GC finalizer weak-references `SharedDoc`. When a JS Node is
 //! collected, the finalizer upgrades the weak ref, removes the NodeCache

@@ -127,11 +127,8 @@ impl Default for NodeCache {
 
 // ── Reference switching helpers ──────────────────────────────────────
 //
-// `is_in_document`, `make_subtree_strong`, `make_subtree_weak`,
-// `make_in_document_subtree_strong`, and `make_in_document_subtree_weak`
-// are implemented as methods on `SharedDoc` (see `doc.rs`) so they can
-// borrow `base` and `node_cache` together without callers having to
-// manage two separate borrows.
+// The subtree strong/weak switching helpers live on `SharedDoc` in
+// `doc.rs`.
 
 // ── Finalizer ────────────────────────────────────────────────────────
 

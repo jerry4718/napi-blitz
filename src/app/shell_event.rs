@@ -11,21 +11,15 @@
 //! app never mistakes it for its own close). Same moment, same capability
 //! — a `preventDefault()` at either level vetoes the close.
 //!
-//! The window → app **ancestor chain** (`dispatch_propagating`) is a
-//! reserved mechanism for future events that genuinely need to bubble: one
-//! event object, one type, target = window, walked window → app in bubble
-//! order. Nothing currently routes through it — it exists so later events
-//! (e.g. a window-level event that should also reach the app) can opt in.
-//!
 //! Both event systems share the same dispatch primitives:
 //! - `global::get_event_factory()` to build the JS `Event`
 //! - `global::get_dispatch_fn()` to call `dispatchEvent(target, event)`
 //! - `event.get_named_property::<bool>("defaultPrevented" | "cancelBubble")`
 //!   to read back dispatch flags
 //!
-//! They differ in how `target`/`currentTarget` are set: DOM events attach
-//! a getter that wraps the node on read; shell events attach the existing
-//! window/app object directly. Both go through `napi_define_properties`.
+//! DOM events set `target`/`currentTarget` via lazy getters in
+//! `dom/event.rs`; shell events dispatch to the window/app directly and
+//! let the JS `EventTarget.dispatchEvent` machinery set `target`.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -38,10 +32,8 @@ use crate::{
 };
 use napi::{
     Env, Result, Status,
-    bindgen_prelude::{JsObjectValue, Object, Property, PropertyAttributes},
+    bindgen_prelude::Object,
 };
-
-const BUBBLING_PHASE: u32 = 3;
 
 /// Unified dispatcher for window/app lifecycle events.
 ///
@@ -112,45 +104,6 @@ impl JsShellEventHandler {
             .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app to dispatch to"))?;
         let mut event_obj = build_event(event_type, true, false, env)?;
         dispatch_event(&app, &event_obj, env)?;
-        let prevented = read_event_flag(&event_obj, "defaultPrevented");
-        reset_dispatch_state(&mut event_obj, env);
-        Ok(prevented)
-    }
-
-    /// RESERVED ancestor-chain dispatch: one event object, one type,
-    /// target = window, walked window → app in bubble order (skipping the
-    /// app when a window listener called `stopPropagation()`). A listener
-    /// at either level may `preventDefault()`. Returns `Ok(true)` if the
-    /// default was prevented; any napi failure propagates.
-    ///
-    /// Nothing routes through this today — it is the infrastructure for
-    /// future events that should genuinely bubble to the app. The current
-    /// `close` request dispatches its two receivers independently (see the
-    /// module docs).
-    pub fn dispatch_propagating(
-        &self,
-        event_type: &str,
-        cancelable: bool,
-        doc: &Rc<SharedDoc>,
-        env: &Env,
-    ) -> Result<bool> {
-        let window = resolve_window(doc, env)
-            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no window to dispatch to"))?;
-        let app = resolve_app(&self.app_ref, env)
-            .ok_or_else(|| napi::Error::new(Status::GenericFailure, "no app to dispatch to"))?;
-        let mut event_obj = build_event(event_type, cancelable, true, env)?;
-        // target = the originating window, fixed across the chain.
-        set_target_value(&mut event_obj, &window)?;
-
-        set_current_target_value(&mut event_obj, &window, BUBBLING_PHASE, env)?;
-        dispatch_event(&window, &event_obj, env)?;
-        let stopped = read_event_flag(&event_obj, "cancelBubble");
-
-        if !stopped {
-            set_current_target_value(&mut event_obj, &app, BUBBLING_PHASE, env)?;
-            dispatch_event(&app, &event_obj, env)?;
-        }
-
         let prevented = read_event_flag(&event_obj, "defaultPrevented");
         reset_dispatch_state(&mut event_obj, env);
         Ok(prevented)
@@ -229,38 +182,4 @@ fn build_event<'a>(
         ime: None,
     };
     build_event_object(payload, env)
-}
-
-// ── target/currentTarget setters via `napi_define_properties` ─────────
-
-/// Set `event.target` to the given JS object. Equivalent to
-/// `Object.defineProperty(event, "target", { value, configurable: true })`.
-fn set_target_value(event: &mut Object, target: &Object) -> Result<()> {
-    let prop = Property::new()
-        .with_utf8_name("target")?
-        .with_value(target)
-        .with_property_attributes(PropertyAttributes::Configurable);
-    event.define_properties(&[prop])?;
-    Ok(())
-}
-
-/// Set `event.currentTarget` to the given JS object and `event.eventPhase`
-/// to the given phase. Equivalent to the corresponding
-/// `Object.defineProperty(event, ...)` calls.
-fn set_current_target_value(
-    event: &mut Object,
-    target: &Object,
-    phase: u32,
-    env: &Env,
-) -> Result<()> {
-    let ct = Property::new()
-        .with_utf8_name("currentTarget")?
-        .with_value(target)
-        .with_property_attributes(PropertyAttributes::Configurable);
-    let ph = Property::new()
-        .with_utf8_name("eventPhase")?
-        .with_napi_value(env, phase)?
-        .with_property_attributes(PropertyAttributes::Configurable);
-    event.define_properties(&[ct, ph])?;
-    Ok(())
 }

@@ -1,15 +1,12 @@
 // `Document` - abstract base class for any document type. Concrete
 // subclasses are `HTMLDocument`, `XMLDocument`, `SVGDocument`.
 //
-// In the new architecture:
-//   - Rust creates the `DocHandle` and injects it into the JS constructor.
-//   - JS never `new`s a Document directly (except via app.openWindow).
-//   - JS constructor only stores the handle and sets the doc_js ref.
-//   - Node constructors and event factory are registered globally via
-//     `Document.init()`, called once at addon init.
-//   - All node wrapping is done by Rust (NodeCache + wrap_node).
-//   - JS methods forward to the native handle, which returns already-wrapped
-//     JS Node objects.
+// Rust creates the native document handle and injects it into the JS
+// constructor. The JS constructor stores the handle and sets the
+// document ref on it. Node constructors and the event factory are
+// registered globally in `register.ts`. All node wrapping is done by
+// Rust (NodeCache + wrap_node); JS methods forward to the native
+// handle, which returns already-wrapped JS Node objects.
 
 import {NativeDoc, NativeNode} from "../native";
 import {Node} from "../base/node";
@@ -36,9 +33,8 @@ export abstract class Document extends Node implements DocumentInternals {
   private _fontsSet: FontFaceSet | null = null;
 
   /**
-   * @internal Constructed by Rust via `registerNodeConstructor`. The
-   * `handle` is a `DocHandle` (which is also a `NodeHandle` superset).
-   * JS never calls `new Document(...)` directly.
+   * @internal Constructed by Rust via `registerNodeConstructor` or by
+   * `HTMLDocument.create()`. The `handle` is the native document handle.
    */
   constructor(handle: InstanceType<typeof NativeDoc>) {
     super(handle as unknown as InstanceType<typeof NativeNode>, handle as unknown as Document);

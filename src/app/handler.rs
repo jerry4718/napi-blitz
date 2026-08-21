@@ -1,6 +1,5 @@
 //! `AppHandler`: our own `winit::ApplicationHandler` that manages
-//! `View` lifecycle and event dispatch directly, without going through
-//! blitz-shell's `BlitzApplication`.
+//! `View` lifecycle and event dispatch directly.
 //!
 //! Shares ownership of `AppState` via `Rc<RefCell<...>>` rather than borrowing
 //! `&mut AppState`. This decouples the handler's lifetime from a single

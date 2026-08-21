@@ -6,9 +6,10 @@
 //! `WindowId` (winit only assigns one inside `can_create_surfaces`, which runs
 //! during the next `pump_app_events`).
 //!
-//! Closing is synchronous: `BlitzApp.close_window` mutates the application's
-//! `windows` map directly. We do NOT rely on JS GC to drop windows - the JS
-//! side must call `window.close()` (or `app.closeWindow(window)`) explicitly.
+//! Closing is async: `BlitzApp.close_window` marks the window closed
+//! immediately and queues the `View` teardown for the next pump. The JS
+//! side must call `window.close()` (or `app.closeWindow(window)`)
+//! explicitly.
 //!
 //! Runtime configuration (size, resizable, ...) lives on `BlitzApp` rather
 //! than `Window` itself, because the napi `Window` handle does not own a

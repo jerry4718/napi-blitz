@@ -26,9 +26,8 @@ export interface FontFaceDescriptors {
   weight?: string;
   /** CSS `font-stretch`, e.g. `"normal"`, `"condensed"`, `"75%"`. */
   stretch?: string;
-  // Reserved for future extension: unicodeRange, variant,
-  // featureSettings, display. They round-trip on the FontFace but are
-  // not yet wired into the underlying font cache.
+  // unicodeRange, variant, featureSettings, display round-trip on the
+  // FontFace but are not passed to the font cache.
   unicodeRange?: string;
   variant?: string;
   featureSettings?: string;

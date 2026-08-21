@@ -12,10 +12,6 @@
 //!    and invokes `node.dispatchEvent(event)`.
 //! 4. Reads back `event.defaultPrevented` / `event.cancelBubble` and
 //!    writes them to blitz's `EventState`.
-//!
-//! This replaces the old `JsBridge` per-step callback model: instead of
-//! serializing an `EventPayload` and calling into JS for every receiver,
-//! we build the Event once and call `dispatchEvent` directly.
 
 use crate::{
     dom::{

@@ -644,7 +644,7 @@ impl NativeDoc {
     pub fn set_text_content(&mut self, node_id: BigInt, text: String, env: &Env) {
         let nid = js_to_node_id(&node_id);
         let mut state = self.doc.base.borrow_mut();
-        // For text/comment nodes we update the existing data.
+        // For text nodes we update the existing data.
         let is_text = state
             .get_node(nid)
             .map(|n| n.is_text_node())

@@ -2,14 +2,12 @@
 // subclasses are `Element` (with `HTMLElement` etc. on top), `Text`,
 // `Comment`, and `Document`.
 //
-// In the new architecture:
-//   - JS Node only holds a `NodeHandle` (native handle). No nodeId.
-//   - nodeId lives inside the Rust `NodeHandle` struct, invisible to JS.
-//   - JS constructor only stores handle + doc reference. No data creation.
-//   - All getters forward to the native handle.
-//   - Tree relationship getters return already-wrapped JS Node objects
-//     (Rust does the wrapping via NodeCache).
-//   - EventTarget is fully inherited from Node.js built-in — no override.
+// JS `Node` holds a native `NodeHandle`; the blitz nodeId lives inside
+// the Rust handle, invisible to JS. The constructor stores the handle
+// and doc reference; all getters forward to the native handle. Tree
+// relationship getters return already-wrapped JS Node objects (Rust
+// wraps via NodeCache). `EventTarget` is inherited from the Node.js
+// built-in.
 
 import {NativeNode} from "../native";
 import type {DocumentInternals, NodeInternals} from "../internal/internal";
@@ -50,7 +48,7 @@ export abstract class Node extends EventTarget {
   }
 
   // ---- Tree relationships -------------------------------------------------
-  // All return already-wrapped JS Node objects from Rust (NodeCache).
+  // All return already-wrapped JS Node objects from Rust.
 
   get parentNode(): Node | null {
     return this._handle.parentNode() as Node | null;

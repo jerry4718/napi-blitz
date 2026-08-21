@@ -4,9 +4,6 @@
 // canonical "friend" hatch here. Every class that needs to peek at
 // another class's underscore-prefixed fields uses `pluck()` rather
 // than asserting `as unknown as Internals` inline.
-//
-// Keeping this in one module also makes it easy to grep for who
-// depends on internals when we tighten encapsulation later.
 
 import {NativeDoc, NativeNode} from "../native";
 

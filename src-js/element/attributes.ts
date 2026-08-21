@@ -12,9 +12,6 @@
 //   Object.keys(el.attributes)    -> attribute names
 //   for (const k in el.attributes) ...
 //   JSON.stringify(el.attributes) -> { name: value, ... }
-//
-// `length`, indexed access, and `getNamedItem` will land when we add a
-// proper `Attr` wrapper.
 
 import type {AttrInit} from "../native";
 import {NativeNode} from "../native";

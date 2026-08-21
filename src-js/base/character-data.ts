@@ -3,11 +3,6 @@
 //
 // Mirrors the web spec. We delegate to `textContent` on the native side
 // since blitz doesn't distinguish a separate `data` slot.
-//
-// Caveat: blitz currently models `NodeData::Comment` as a unit variant
-// (no payload). Reads return "" and writes are silently dropped for
-// Comment nodes until blitz grows a string payload. Text nodes work as
-// expected.
 
 import {Node} from "./node";
 

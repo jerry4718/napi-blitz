@@ -2,6 +2,6 @@ export function dispatchEvent(target: EventTarget, event: Event): boolean | unde
   try {
     return target.dispatchEvent(event);
   } catch (e) {
-    console.error(e)
+    console.error(e);
   }
 }

@@ -11,13 +11,12 @@ export class Element extends Node {
 
   /** Element local tag name, lowercased (e.g. "div"). */
   get tagName(): string {
-    // Spec returns uppercase for HTML; blitz hands us lowercase. We
-    // return what blitz says for now; HTMLElement layers on the
-    // HTML-uppercasing nuance later if needed.
+    // The web spec returns uppercase for HTML; blitz hands us lowercase,
+    // which we return as-is.
     return this._handle.tagName() ?? "";
   }
 
-  /** Same as `tagName` for now; mirrors web `Element.localName`. */
+  /** Mirrors web `Element.localName` (the lowercase tag name). */
   get localName(): string {
     return this.tagName;
   }

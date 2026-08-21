@@ -498,7 +498,7 @@ impl NativeApp {
         self.poll_live_views();
 
         // Pending windows are promoted to live Views by `AppHandler::drain_pending_windows`
-        // during the pump. No need to hand them to an intermediate application layer.
+        // during the pump.
 
         // A caller may invoke `window.close()` between pump ticks. In that
         // case no winit/blitz document dispatch is active, so it is safe and

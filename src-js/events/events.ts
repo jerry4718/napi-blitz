@@ -8,11 +8,6 @@
 // PointerEvent / WheelEvent chain and the KeyboardEvent, InputEvent,
 // CompositionEvent, FocusEvent subclasses.
 
-// We deliberately do NOT expose the underlying nodeId or chain on the
-// event. `event.target` is set automatically by the EventTarget machinery
-// when Document dispatches along the chain (target first), and consumers
-// who need ancestors can walk up via `Document.parentOf(...)`.
-
 import type {EventPayload, ImeData, InputData, KeyData, PointerData, WheelData,} from "../native";
 
 /**

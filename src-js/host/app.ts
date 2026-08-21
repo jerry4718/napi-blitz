@@ -74,7 +74,7 @@ export interface PumpOptions {
   timeout?: number;
   /**
    * Optional stop signal. When aborted, the loop exits after the current
-   * pump returns and `pumpend` fires with `reason: 'aborted'`.
+   * pump returns and `pump:end` fires with `reason: 'aborted'`.
    */
   signal?: AbortSignal;
 }

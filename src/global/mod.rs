@@ -114,7 +114,7 @@ pub fn get_dispatch_fn() -> Option<Rc<DispatchFn>> {
     GLOBAL_REGISTRY.with(|g| g.dispatch_fn_ref.borrow().as_ref().cloned())
 }
 
-// ── Global registration functions (no DocHandle instance needed) ──────
+// ── Global registration functions ─────────────────────────────────────
 
 /// One-time env injection. JS calls this during addon init (before any
 /// register_* calls) so that `global::env()` works in callbacks that don't

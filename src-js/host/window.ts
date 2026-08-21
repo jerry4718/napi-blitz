@@ -21,12 +21,10 @@
 //                drop references and let the GC reclaim the
 //                associated document tree. The app gets `window:closed`.
 //
-// We deliberately do NOT close the OS window in a `FinalizationRegistry`
-// callback. GC timing is unpredictable, and a user calling `close()`
-// expects the window to disappear immediately. The Rust side mirrors
-// this: `BlitzApp.close_window` sets the closed flag immediately and
-// queues the actual `View` teardown for the next pump, resolving the
-// promise it returns once the teardown is done.
+// Closing is explicit, not GC-driven: a user calling `close()` expects
+// the window to disappear immediately. The Rust side sets the closed
+// flag immediately and queues the actual `View` teardown for the next
+// pump, resolving the promise it returns once the teardown is done.
 
 import type {BlitzApp} from "./app";
 import type {HTMLDocument} from "../document/html-document";
