@@ -1,14 +1,5 @@
 {
   "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "outDir": "lib",
-    "allowImportingTsExtensions": true,
-    "declaration": false,
-    "declarationMap": false,
-    "sourceMap": false
-  },
-  "include": ["."],
+  "include": ["./src/*.ts"],
   "exclude": ["lib"]
 }

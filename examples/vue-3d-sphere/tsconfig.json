@@ -1,13 +1,9 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "outDir": "lib",
     "jsx": "preserve",
-    "jsxImportSource": "vue",
-    "allowImportingTsExtensions": true
+    "jsxImportSource": "vue"
   },
-  "include": ["."],
+  "include": ["./src/*.tsx", "./src/*.ts"],
   "exclude": ["lib"]
 }
