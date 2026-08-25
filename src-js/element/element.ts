@@ -5,8 +5,10 @@
 import {Node} from "../base/node";
 import type {AttrInit, DomRect} from "../native";
 import {type AttributesMap, makeAttributesProxy} from "./attributes";
+import {TypedEventTarget} from "../helpers/events";
+import type {ElementEventMap} from "../events/event-maps";
 
-export class Element extends Node {
+export class Element extends TypedEventTarget<ElementEventMap, typeof Node>(Node) {
   private _attributesProxy: AttributesMap | null = null;
 
   /** Element local tag name, lowercased (e.g. "div"). */

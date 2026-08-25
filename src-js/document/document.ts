@@ -15,6 +15,8 @@ import {Text} from "../base/text";
 import {Comment} from "../base/comment";
 import {FontFaceSet} from "../fonts/font-face-set";
 import type {DocumentInternals} from "../internal/internal";
+import {TypedEventTarget} from "../helpers/events";
+import type {DocumentEventMap} from "../events/event-maps";
 
 export interface DocumentInit {
   uaStylesheets?: string[];
@@ -26,7 +28,7 @@ export interface DocumentInit {
  * (e.g. `HTMLDocument`); this base class is exported mainly for
  * `instanceof` checks and shared code.
  */
-export abstract class Document extends Node implements DocumentInternals {
+export abstract class Document extends TypedEventTarget<DocumentEventMap, typeof Node>(Node) implements DocumentInternals {
   readonly _native: InstanceType<typeof NativeDoc>;
 
   /** Lazily-built `FontFaceSet` exposed via `document.fonts`. */

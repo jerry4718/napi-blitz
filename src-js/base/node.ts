@@ -11,6 +11,8 @@
 
 import {NativeNode} from "../native";
 import type {DocumentInternals, NodeInternals} from "../internal/internal";
+import {TypedEventTarget} from "../helpers/events";
+import type {NodeEventMap} from "../events/event-maps";
 
 /** DOM nodeType constants. Mirrors the web spec. */
 export const NodeTypes = {
@@ -20,7 +22,7 @@ export const NodeTypes = {
   DOCUMENT_NODE: 9,
 } as const;
 
-export abstract class Node extends EventTarget {
+export abstract class Node extends TypedEventTarget<NodeEventMap>(EventTarget) {
   protected readonly _handle: InstanceType<typeof NativeNode>;
   protected readonly _doc: DocumentInternals;
 
