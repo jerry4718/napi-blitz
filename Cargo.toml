@@ -37,16 +37,16 @@ skia-pixels = ["dep:anyrender_skia", "anyrender_skia/pixels_window_renderer"]
 skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_renderer"]
 
 [dependencies]
-napi = { version = "3.12.1", features = ["napi6", "async"] }
+napi = { version = "3.12.2", features = ["napi6", "async"] }
 napi-derive = "3.6.3"
 winit = "=0.31.0-beta.2"
 
-blitz = { version = "=0.3.0-beta.1", default-features = false, features = ["net"] }
+blitz = { version = "=0.3.0-beta.2", default-features = false, features = ["net"] }
 # Depend on blitz-dom directly with `system_fonts` enabled. Cargo unifies
 # features across all dependents, so the `blitz` crate's internal
 # `blitz-dom` dependency picks up `system_fonts` too. Without this,
 # fontique does not register system fonts and text renders as empty boxes.
-blitz-dom = { version = "=0.3.0-beta.1", default-features = false, features = ["system-fonts"] }
+blitz-dom = { version = "=0.3.0-beta.2", default-features = false, features = ["system-fonts"] }
 # Stylo / selectors, pinned to the same versions blitz uses so the
 # trait impls in blitz-dom's private `stylo` module (which are written
 # against `&Node`) line up with the crates we call directly. The stylo
@@ -55,10 +55,11 @@ blitz-dom = { version = "=0.3.0-beta.1", default-features = false, features = ["
 style = { version = "0.20.0", package = "stylo" }
 selectors = { version = "0.40.0" }
 
-anyrender_vello = { version = "0.14.0", optional = true }
-anyrender_vello_hybrid = { version = "0.10.0", optional = true }
-anyrender_vello_cpu = { version = "0.16.0", optional = true }
+anyrender = { version = "0.13.0" }
 anyrender_skia = { version = "0.11.0", optional = true }
+anyrender_vello = { version = "0.14.0", optional = true }
+anyrender_vello_cpu = { version = "0.17.0", optional = true }
+anyrender_vello_hybrid = { version = "0.10.0", optional = true }
 
 parley = { version = "0.11.1", default-features = false, features = ["std"] }
 # Avoid pkg-config for cross-compiled Linux/FreeBSD builds. fontique's
@@ -68,7 +69,7 @@ fontique = { version = "0.11.1", features = ["fontconfig-dlopen"] }
 
 # Force icu_provider to use the `log` framework instead of bare `eprintln!`
 # in debug builds, so ICU4X data errors can be filtered.
-icu_provider = { version = "2.1.1", features = ["logging"] }
+icu_provider = { version = "2.2.0", features = ["logging"] }
 
 rfd = { version = "0.17.1" }
 log = "0.4"
@@ -88,14 +89,14 @@ napi-build = "2.4.1"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 [patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "95326154499c824bd02138f906d3d12b723a88f3" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "83e780fe50a34e92314ad96992d29b5fe9bad7f5" }
 #taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "4ae4219b34e0ad22fd907cb1a7fa9a68c1ea1621" }
 
 #[patch.crates-io]
