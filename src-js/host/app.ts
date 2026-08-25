@@ -28,6 +28,8 @@
 //                     resolves, so JS does not hold a Window object yet.
 //                     A listener that does not call `preventDefault()`
 //                     confirms the open.)
+//   - `window:opened` (non-cancelable — after the window is created and
+//                     `openWindow` has resolved)
 //   - `window:close`  (cancelable — the app-level echo of the window's
 //                     `close`, same moment; may preventDefault() to veto)
 //   - `window:closed` (non-cancelable — after teardown)
@@ -35,9 +37,9 @@
 // Pump-loop lifecycle (`pumpLoop` / `pumpStart`):
 //
 //   - `pump:start` (non-cancelable)
-//   - `pump`       (non-cancelable, `detail: { result }`)
-//   - `pump:end`   (non-cancelable, `detail: { reason: 'exit' | 'aborted' }`)
-//   - `pump:error` (non-cancelable, `detail: { error }`) — loop threw
+//   - `pump`       (non-cancelable, `PumpEvent.result`)
+//   - `pump:end`   (non-cancelable, `PumpEndEvent.end`)
+//   - `pump:error` (non-cancelable, `PumpErrorEvent.error`) — loop threw
 //
 // JS Document objects are private to their Window: a single Document is
 // only ever attached to one Window in this design. If you need multiple
@@ -51,6 +53,8 @@ import {
   WindowOptions,
 } from "../native";
 import {HTMLDocument} from "../document/html-document";
+import {TypedEventTarget} from "../helpers/events";
+import type {UIEvent} from "../events/events";
 import {pluckWindow, Window} from "./window";
 
 /** `Document`'s package-private fields, viewed by `BlitzApp`. */
@@ -74,16 +78,105 @@ export interface PumpOptions {
   timeout?: number;
   /**
    * Optional stop signal. When aborted, the loop exits after the current
-   * pump returns and `pump:end` fires with `reason: 'aborted'`.
+   * pump returns and `pump:end` fires with `end.kind === "abort"`, the abort
+   * reason carried on the `PumpEnd`. The handle-side counterpart
+   * `PumpHandle.stop()` reports `end.kind === "stop"`.
    */
   signal?: AbortSignal;
+}
+
+/**
+ * Carried on the internal controller's abort reason by `stop()`, so
+ * `_pumpLoop` can tell a stop request from an external abort.
+ */
+class PumpStopRequest {
+  constructor(readonly reason?: unknown) {
+  }
+
+  toPumpEnd(): PumpEnd {
+    return this.reason === undefined
+      ? {kind: "stop"}
+      : {kind: "stop", reason: this.reason};
+  }
+}
+
+/**
+ * How a `pumpLoop` loop ended:
+ *   - `{ kind: "exit" }`    — the native side reported exit (all windows closed)
+ *   - `{ kind: "stop" }`    — `PumpHandle.stop()` was called; `reason` carries
+ *                             the optional stop reason passed to it
+ *   - `{ kind: "abort" }`   — an external `AbortSignal` was aborted; `reason`
+ *                             carries the signal's abort reason
+ */
+export type PumpEnd =
+  | { kind: "exit" }
+  | { kind: "stop"; reason?: unknown }
+  | { kind: "abort"; reason: unknown };
+
+/** `pump:start` event carrying the loop start. */
+export class PumpStartEvent extends Event {
+  constructor() {
+    super("pump:start");
+  }
+}
+
+/** `pump` event carrying each iteration's result. */
+export class PumpEvent extends Event {
+  constructor(readonly result: PumpResult) {
+    super("pump");
+  }
+}
+
+/** `pump:end` event carrying how the loop ended. */
+export class PumpEndEvent extends Event {
+  constructor(readonly end: PumpEnd) {
+    super("pump:end");
+  }
+}
+
+/** `pump:error` event carrying the thrown error. */
+export class PumpErrorEvent extends Event {
+  constructor(readonly error: unknown) {
+    super("pump:error");
+  }
+}
+
+/** Event map for `BlitzApp`, typing its `addEventListener`/`removeEventListener`. */
+interface BlitzAppEventMap {
+  "window:open": UIEvent;
+  "window:opened": UIEvent;
+  "window:close": UIEvent;
+  "window:closed": UIEvent;
+  "pump:start": PumpStartEvent;
+  pump: PumpEvent;
+  "pump:end": PumpEndEvent;
+  "pump:error": PumpErrorEvent;
+}
+
+/** Handle to a running pump loop: the completion signal plus a stop request. */
+export interface PumpHandle {
+  /**
+   * Completion signal for the loop. Resolves with a `PumpEnd` describing
+   * how it ended; rejects with the thrown error if the loop crashed (also
+   * broadcast as `pump:error`). The rejection is always consumed internally,
+   * so ignoring `done` never surfaces an unhandled rejection.
+   */
+  readonly done: Promise<PumpEnd>;
+
+  /**
+   * Request the loop to stop, taking effect at the next iteration (like an
+   * `AbortSignal` abort); the loop ends with `{ kind: "stop" }` (and `reason`
+   * when provided) in both `done` and `pump:end`. Idempotent; no-op once
+   * the loop has ended.
+   */
+  stop(reason?: unknown): void;
 }
 
 function pluckDoc(doc: HTMLDocument): DocumentInternalsForApp {
   return doc as unknown as DocumentInternalsForApp;
 }
 
-export class BlitzApp extends EventTarget {
+export class BlitzApp extends TypedEventTarget<BlitzAppEventMap>(EventTarget) {
   /** @internal Used by `Window.close()` to delegate back to us. */
   readonly _native: InstanceType<typeof NativeApp>;
 
@@ -173,7 +266,8 @@ export class BlitzApp extends EventTarget {
 
   /**
    * Start a background pump loop that keeps driving the event loop until
-   * the native side reports exit (all windows closed) or `signal` aborts.
+   * the native side reports exit (all windows closed), `signal` aborts, or
+   * `handle.stop()` is called.
    *
    * The loop targets a stable cadence of `targetPeriod` ms per iteration,
    * anchored to an absolute `performance.now()` timeline: each pump may
@@ -185,25 +279,21 @@ export class BlitzApp extends EventTarget {
    *
    * Events dispatched on this app:
    *   - `pump:start` (non-cancelable) — loop started.
-   *   - `pump`       (non-cancelable, `detail.result`) — after each pump.
-   *   - `pump:end`   (non-cancelable, `detail.reason: 'exit' | 'aborted'`)
-   *                  — loop finished.
-   *   - `pump:error` (non-cancelable, `detail.error`) — the loop threw.
+   *   - `pump`       (non-cancelable, `PumpEvent.result`) — after each pump.
+   *   - `pump:end`   (non-cancelable, `PumpEndEvent.end`) — loop finished.
+   *   - `pump:error` (non-cancelable, `PumpErrorEvent.error`) — the loop threw.
    *
-   * The `join` option controls how the loop's completion is exposed:
-   *   - `join: true` — returns a `Promise<void>` that resolves when the
-   *     loop ends.
-   *   - omitted or `join: false` — returns `undefined`: the loop runs in
-   *     the background, and a thrown error is surfaced as `pump:error`
-   *     instead of an unhandled rejection.
+   * Returns a `PumpHandle`: `done` settles when the loop ends — it resolves
+   * with a `PumpEnd` describing how it ended, or rejects with the thrown
+   * error (also broadcast as `pump:error`). The rejection is consumed
+   * internally, so awaiting it from top-level setup and ignoring it
+   * fire-and-forget are both safe — no unhandled rejection either way.
    *
    * Only one pump loop may run per app; calling again while one is active
    * throws. Start the loop from top-level setup, not from inside an event
    * handler — pumping from within a pump re-enters the native loop.
    */
-  pumpLoop(options?: PumpOptions & { join?: false }): undefined
-  pumpLoop(options?: PumpOptions & { join: true }): Promise<void>
-  pumpLoop(options: PumpOptions & { join?: boolean } = {}): Promise<void> | undefined {
+  pumpLoop(options: PumpOptions = {}): PumpHandle {
     if (this._pumping) {
       throw new Error("pumpLoop: a pump loop is already running");
     }
@@ -211,30 +301,41 @@ export class BlitzApp extends EventTarget {
       targetPeriod = 16.67,
       timeout = targetPeriod,
       signal,
-      join,
     } = options;
 
+    // Single stop source: an external `signal` and `handle.stop()` both
+    // converge on this controller, the only signal `_pumpLoop` checks.
+    const controller = new AbortController();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", () => controller.abort(signal.reason), {once: true});
+    }
+
     this._pumping = true;
-    this.dispatchEvent(new CustomEvent("pump:start"));
+    this.dispatchEvent(new PumpStartEvent());
 
-    const looping = this._pumpLoop(targetPeriod, timeout, signal);
+    const done = this._pumpLoop(targetPeriod, timeout, controller.signal);
 
-    if (join) return looping;
+    // Consume the rejection so a fire-and-forget caller never hits an
+    // unhandled rejection; the rejection itself is preserved for awaiters,
+    // and the error is broadcast as `pump:error`.
+    done.catch((error) => {
+      this.dispatchEvent(new PumpErrorEvent(error));
+    });
 
-    looping.catch((error) => {
-      this.dispatchEvent(
-        new CustomEvent("pump:error", {detail: {error}}),
-      );
-    })
+    return {
+      done,
+      stop: (reason?: unknown) => controller.abort(new PumpStopRequest(reason)),
+    };
   }
 
   private async _pumpLoop(
     targetPeriod: number,
     timeout: number,
-    signal?: AbortSignal,
-  ): Promise<void> {
+    signal: AbortSignal,
+  ): Promise<PumpEnd> {
     const native = this._native;
-    let reason: "exit" | "aborted" = "exit";
+    let end: PumpEnd = {kind: "exit"};
     try {
       // Absolute target tick on the `performance.now()` timeline. Each
       // iteration takes exactly one `now` sample, sleeps until the target
@@ -243,16 +344,21 @@ export class BlitzApp extends EventTarget {
       // never accumulates into cadence drift.
       let next = performance.now() + targetPeriod;
       while (true) {
-        if (signal?.aborted) {
-          reason = "aborted";
+        if (signal.aborted) {
+          // `stop()` aborts the controller with a `PumpStopRequest`; any
+          // other abort is external and its reason is carried through.
+          const abortReason = signal.reason;
+          if (abortReason instanceof PumpStopRequest) {
+            end = abortReason.toPumpEnd();
+          } else {
+            end = {kind: "abort", reason: abortReason};
+          }
           break;
         }
         const result = native.pumpAppEvents(timeout);
-        this.dispatchEvent(
-          new CustomEvent("pump", {detail: {result}}),
-        );
+        this.dispatchEvent(new PumpEvent(result));
         if (result.exit) {
-          reason = "exit";
+          end = {kind: "exit"};
           break;
         }
         const now = performance.now();
@@ -262,10 +368,9 @@ export class BlitzApp extends EventTarget {
       }
     } finally {
       this._pumping = false;
-      this.dispatchEvent(
-        new CustomEvent("pump:end", {detail: {reason}}),
-      );
+      this.dispatchEvent(new PumpEndEvent(end));
     }
+    return end;
   }
 
   /** Set the document zoom level for a window. `1.0` is unzoomed. */

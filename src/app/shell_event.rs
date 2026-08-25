@@ -139,6 +139,12 @@ impl JsShellEventHandler {
         Ok(())
     }
 
+    /// Dispatch the non-cancelable `window:opened` notification to the app
+    /// after the window has been created and `openWindow` resolved.
+    pub fn notify_opened(&self, env: &Env) -> Result<()> {
+        self.dispatch_app_event("window:opened", env)
+    }
+
     /// Dispatch the full open sequence: at window-creation time (before
     /// `openWindow` resolves — JS does not yet hold a Window object), the
     /// app-level `window:open` event is dispatched to the app as a

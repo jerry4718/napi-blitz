@@ -69,7 +69,7 @@ impl AppHandler {
             // listener may call back into `NativeApp`.
             let js_app_ref = Rc::clone(&self.state.borrow().js_app_ref);
             let allowed = match global::env() {
-                Ok(env) => JsShellEventHandler::new(js_app_ref).open_sequence(&env).unwrap_or_else(|e| {
+                Ok(env) => JsShellEventHandler::new(Rc::clone(&js_app_ref)).open_sequence(&env).unwrap_or_else(|e| {
                     eprintln!(
                         "napi-blitz: drain_pending_windows: open_sequence failed, treating open as confirmed: {e}"
                     );
@@ -113,6 +113,22 @@ impl AppHandler {
             // Resolve outside the `state` borrow: the resolver constructs a
             // NativeWindow JS object, which is a pure napi operation.
             deferred.resolve(Box::new(move |_env| Ok(native)));
+
+            // Post-open notification after the `openWindow` promise resolves,
+            // dispatched to the app from Rust. Mirrors `notify_closed` on the
+            // close side. No outstanding AppState borrow: JS re-entry into
+            // `open_window` / `close_window` is safe.
+            let env = match global::env() {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("napi-blitz: drain_pending_windows: env not available, skipping window:opened: {e}");
+                    continue;
+                }
+            };
+            let handler = JsShellEventHandler::new(js_app_ref);
+            if let Err(e) = handler.notify_opened(&env) {
+                eprintln!("napi-blitz: drain_pending_windows: notify_opened failed: {e}");
+            }
         }
     }
 
