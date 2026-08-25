@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref } from 'vue'
-import { randomColor } from './utils/color.ts'
-import { Counter } from './components/Counter.tsx'
+import { randomColor } from './color.ts'
+import { Counter } from './Counter.tsx'
 
 export const App = defineComponent({
   setup() {

@@ -108,8 +108,8 @@ const { createApp } = createRenderer<Node, Node>({
     // Event listeners: `onClick` -> `click`.
     if (/^on[A-Z]/.test(key)) {
       const event = key.replace(/^on/, '').toLowerCase()
-      if (prevValue) el.removeEventListener(event, prevValue as EventListener)
-      if (nextValue) el.addEventListener(event, nextValue as EventListener)
+      if (prevValue) el.removeEventListener(event, prevValue)
+      if (nextValue) el.addEventListener(event, nextValue)
       return
     }
 
@@ -168,4 +168,6 @@ export async function bootstrap() {
   vueApp.provide(DOCUMENT_KEY, document)
   vueApp.provide(WINDOW_KEY, window)
   vueApp.mount(mountEl)
+
+  window.addEventListener("closed", () => vueApp.unmount())
 }

@@ -106,8 +106,8 @@ const { createApp } = createRenderer<Node, Node>({
     // Event listeners: `onClick` -> `click`.
     if (/^on[A-Z]/.test(key)) {
       const event = key.replace(/^on/, '').toLowerCase()
-      if (prevValue) el.removeEventListener(event, prevValue as EventListener)
-      if (nextValue) el.addEventListener(event, nextValue as EventListener)
+      if (prevValue) el.removeEventListener(event, prevValue)
+      if (nextValue) el.addEventListener(event, nextValue)
       return
     }
 
@@ -182,7 +182,7 @@ export async function bootstrap() {
     let target = ev.target as HTMLElement | null
     while (target && target !== body) {
       if (target.getAttribute('id') === 'app') return
-      target = target.parentElement
+      target = target.parentElement as HTMLElement
     }
 
     const hex = randomHex()

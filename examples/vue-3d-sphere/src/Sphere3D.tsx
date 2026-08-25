@@ -7,8 +7,9 @@
  * Rotation is driven by a requestAnimationFrame loop, not CSS animation,
  * so we can swap the full face set on-the-fly when the level changes.
  */
-import { computed, defineComponent, onMounted, onUnmounted, PropType, ref, shallowRef } from 'vue'
-import { TriangleFace } from '../utils/sphere.ts'
+import {computed, defineComponent, onMounted, onUnmounted, PropType, ref} from 'vue'
+import { TriangleFace } from './sphere.ts'
+import {HTMLElement} from "@ylcc/napi-blitz";
 
 const SPHERE_RADIUS_PX = 240
 const PERSPECTIVE = 800

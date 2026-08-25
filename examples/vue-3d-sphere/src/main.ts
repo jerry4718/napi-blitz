@@ -97,8 +97,8 @@ const { createApp } = createRenderer<Node, Node>({
 
     if (/^on[A-Z]/.test(key)) {
       const event = key.replace(/^on/, '').toLowerCase()
-      if (prevValue) el.removeEventListener(event, prevValue as EventListener)
-      if (nextValue) el.addEventListener(event, nextValue as EventListener)
+      if (prevValue) el.removeEventListener(event, prevValue)
+      if (nextValue) el.addEventListener(event, nextValue)
       return
     }
 
@@ -144,7 +144,7 @@ export async function bootstrap() {
   const document = HTMLDocument.create({ baseHtml: BASE_HTML })
   const options = WindowOptions.builder()
   options.title('3D Sphere Demo')
-  await app.openWindow(document, options)
+  const window = await app.openWindow(document, options)
   nodeGlobalDoc = document
 
   const body = document.body!
@@ -152,6 +152,10 @@ export async function bootstrap() {
   mountEl.setAttribute('id', 'app')
   body.appendChild(mountEl)
 
-  createApp(App).mount(mountEl)
+  const vueApp = createApp(App);
+
+  vueApp.mount(mountEl)
+
+  window.addEventListener("close", () => vueApp.unmount())
 }
 

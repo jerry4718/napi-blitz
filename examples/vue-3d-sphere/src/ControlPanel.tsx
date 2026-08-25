@@ -3,6 +3,7 @@
  * and reading the live face count.
  */
 import { defineComponent, PropType } from 'vue'
+import {HTMLInputElement} from "@ylcc/napi-blitz";
 
 export const ControlPanel = defineComponent({
   props: {
@@ -84,7 +85,7 @@ export const ControlPanel = defineComponent({
   },
 })
 
-const btnStyle: Record<string, string> = {
+const btnStyle: Record<string, string | number> = {
   flex: 1,
   padding: '6px 0',
   fontSize: '18px',

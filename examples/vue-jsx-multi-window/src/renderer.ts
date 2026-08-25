@@ -105,8 +105,8 @@ export function createRendererFor(document: HTMLDocument): AppCreator {
             // Vue passes event listeners as `onClick`, `onMousemove`, etc.
             if (/^on[A-Z]/.test(key)) {
                 const event = key.replace(/^on/, '').toLowerCase()
-                if (prevValue) el.removeEventListener(event, prevValue as EventListener)
-                if (nextValue) el.addEventListener(event, nextValue as EventListener)
+                if (prevValue) el.removeEventListener(event, prevValue)
+                if (nextValue) el.addEventListener(event, nextValue)
                 return
             }
 

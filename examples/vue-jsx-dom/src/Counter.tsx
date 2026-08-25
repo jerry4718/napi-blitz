@@ -1,6 +1,6 @@
 import { defineComponent, ref } from 'vue'
 import { Btn } from './Btn.tsx'
-import { randomColor } from '../utils/color.ts'
+import { randomColor } from './color.ts'
 
 export const Counter = defineComponent(() => {
   const count = ref(0)

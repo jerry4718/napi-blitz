@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref } from 'vue'
-import { Sphere3D } from './components/Sphere3D.tsx'
-import { ControlPanel } from './components/ControlPanel.tsx'
-import { generateIcosaSphere, type TriangleFace } from './utils/sphere.ts'
+import { Sphere3D } from './Sphere3D.tsx'
+import { ControlPanel } from './ControlPanel.tsx'
+import { generateIcosaSphere, type TriangleFace } from './sphere.ts'
 
 export const App = defineComponent({
   setup() {
