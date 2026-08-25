@@ -1,4 +1,3 @@
-#![deny(clippy::all)]
 //! napi-blitz / wasm-blitz shared Rust backend around the [`blitz`] HTML/CSS engine.
 //!
 //! Architecture boundaries:

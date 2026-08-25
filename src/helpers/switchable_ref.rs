@@ -9,9 +9,8 @@
 
 use std::{ffi::c_void, ptr};
 
-use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
-
 use crate::helpers::{Finalize, finalize_trampoline};
+use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 /// A reference to a JS object whose strength can be switched at runtime.
 ///

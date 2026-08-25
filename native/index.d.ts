@@ -96,43 +96,38 @@ export declare class NativeApp {
    */
   setAppRef(app: object): void
   /**
-   * Attach a new window to the given document handle. The same handle can
-   * only be attached to one window. The JS DocHandle keeps working after
-   * this call (it shares state with the window via Rc<RefCell<...>>), so
-   * JS can keep mutating the DOM after `openWindow`.
+   * Attach a new window to the given document handle. The same handle
+   * can only be attached to one window. The JS DocHandle keeps working
+   * after this call (it shares state with the window via Rc<RefCell<...>>),
+   * so JS can keep mutating the DOM after `openWindow`.
    *
-   * `options` maps directly to a winit `WindowAttributes`. If the document
-   * carries a `<title>` element, blitz's mutator-flush will overwrite the
-   * title shortly after open; this is expected, with the document treated
-   * as the source of truth for window-title content.
+   * `options` maps directly to a winit `WindowAttributes`. If the
+   * document carries a `<title>` element, blitz's mutator-flush will
+   * overwrite the title shortly after open; this is expected, with
+   * the document treated as the source of truth for window-title
+   * content.
    *
-   * Returns a `Promise<NativeWindow>`. This method never drives the event
-   * loop itself: it only queues the window request and returns a promise
-   * that resolves once a `pump_app_events` call promotes the pending config
-   * to a live window (see `AppHandler::drain_pending_windows`). That makes
-   * it safe to invoke from inside an event handler — the in-flight pump
-   * creates the window, with no nested event-loop recursion.
-   *
-   * Because creation is deferred to the caller's pump, the caller must
-   * ensure a pump is (or will be) running before `await`-ing the result;
-   * otherwise the promise never resolves. Typical setup drives at least one
-   * `pump_app_events` before awaiting.
+   * Returns a `Promise<NativeWindow>` that resolves once a
+   * `pump_app_events` call promotes the request to a live window.
+   * This method never drives the event loop itself, which makes it
+   * safe to invoke from inside an event handler; because creation is
+   * deferred to the caller's pump, the caller must ensure a pump is
+   * (or will be) running before `await`-ing the result - otherwise
+   * the promise never resolves.
    */
   openWindow(doc: NativeDoc, options?: WindowOptions | undefined | null): Promise<NativeWindow>
   /**
-   * Queue the given window for closure and return a promise that resolves
-   * once the native `View` has actually been torn down (during the next
-   * pump, in `flush_closing_windows`), or rejects if a `close` listener
-   * calls `preventDefault()`.
+   * Queue the given window for closure and return a promise that
+   * resolves once the native `View` has actually been torn down
+   * (during the next pump), or rejects if a `close` listener calls
+   * `preventDefault()`. The cancelable `close` event is dispatched
+   * at the moment the close is requested; if not prevented, the
+   * JS-side `closed` flag is set immediately and only the physical
+   * teardown is async. `close()` is idempotent.
    *
-   * The cancelable `close` event is dispatched here, from Rust, at the
-   * moment the close is requested. If a listener prevents the default,
-   * the window stays open and the promise rejects. Otherwise the JS-side
-   * `closed` flag is set immediately — only the physical teardown is
-   * async, mirroring `open_window`'s create-then-resolve.
-   *
-   * This is intentionally not GC-driven: dropping the JS `Window` object
-   * does not close the OS window. Callers must invoke this explicitly.
+   * This is intentionally not GC-driven: dropping the JS `Window`
+   * object does not close the OS window. Callers must invoke this
+   * explicitly.
    */
   closeWindow(window: NativeWindow): Promise<undefined>
   /**
