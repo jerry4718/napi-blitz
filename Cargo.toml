@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/napi-inherit"]
+members = [
+    "crates/napi-inherit",
+    "crates/napi-inherit-proc"
+]
 resolver = "2"
 
 [package]

@@ -1,0 +1,1095 @@
+//! `#[layer]` procedural macro.
+//!
+//! Declares one layer of a napi inheritance chain. On expansion it emits the
+//! layer's TypeScript type definitions into the napi-rs type-def JSONL file
+//! that `@napi-rs/cli` renders into `index.d.ts`:
+//!
+//! - a class declaration (`NapiStruct`, kind `struct`) - getters come from the
+//!   layer struct's public fields;
+//! - the impl block (`NapiImpl`, kind `impl`) - constructor / getter / method /
+//!   static members annotated with `#[layer(...)]`; the CLI merges this into
+//!   the class declaration;
+//! - an `extends` link (`TypeDef` kind `extends`) pointing at the parent
+//!   layer's JS name, when `parent = "..."` is given.
+//!
+//! The item itself is passed through unchanged (minus the `#[layer]` attribute).
+
+use std::{
+    collections::HashMap,
+    env, fs,
+    io::Write,
+    path::PathBuf,
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+use napi_derive_backend::{
+    FnKind, FnSelf, NapiClass, NapiFn, NapiFnArg, NapiFnArgKind, NapiImpl, NapiStruct,
+    NapiStructField, NapiStructKind, ToTypeDef, TypeDef,
+};
+use proc_macro::TokenStream;
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
+use quote::{ToTokens, format_ident, quote};
+use syn::{
+    Attribute, FnArg, ImplItem, ItemImpl, ItemStruct, Lit, Meta, ReturnType, Type, Visibility,
+    parse::Parser,
+};
+
+// ── type-def file output (mirrors napi-derive's private output_type_def) ──
+
+static BUILT_FLAG: AtomicBool = AtomicBool::new(false);
+
+fn type_def_file() -> Option<PathBuf> {
+    let folder = env::var("NAPI_TYPE_DEF_TMP_FOLDER").ok()?;
+    let pkg = env::var("CARGO_PKG_NAME").ok()?;
+    // Independent JSONL so napi-derive's own file (same `CARGO_PKG_NAME`)
+    // and this macro's "clear on first expansion" never clobber each other.
+    Some(PathBuf::from(folder).join(format!("{pkg}.layer")))
+}
+
+/// Append one serialized `TypeDef` to the CLI's intermediate JSONL file.
+/// The first expansion of a build clears the stale file.
+fn output_type_def(def: &TypeDef) {
+    let Some(file) = type_def_file() else { return };
+    if BUILT_FLAG
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+    {
+        let _ = fs::remove_file(&file);
+    }
+    if let Ok(mut f) = fs::OpenOptions::new().append(true).create(true).open(&file) {
+        let _ = writeln!(f, "{}", def);
+    }
+}
+
+// ── layer registry: rust ident -> compile-time layer metadata ────────────
+
+/// One public field of a layer struct and whether it is exposed to JS as a
+/// getter and/or setter (both `false` = not exposed at all). Defaults to
+/// nothing; the user opts in per-field with `#[layer(getter)]` /
+/// `#[layer(setter)]` / `#[layer(getter, setter)]`.
+#[derive(Clone)]
+struct FieldMeta {
+    name: String,
+    ty: String,
+    getter: bool,
+    setter: bool,
+}
+
+/// A layer struct field rebuilt from `FieldMeta` for codegen.
+struct FieldMember {
+    ident: Ident,
+    ty: Type,
+    getter: bool,
+    setter: bool,
+}
+
+/// Everything the macro learns about one layer across its two expansions
+/// (struct first, then impl): the JS class name, the parent layer's Rust
+/// type, and the public fields. Types are stored as strings (`syn` items
+/// are not `Send` and cannot live in a `static`).
+#[derive(Clone)]
+struct LayerMeta {
+    js_name: String,
+    parent_ty: Option<String>,
+    fields: Vec<FieldMeta>,
+    /// Constructor parameters of this layer, in declaration order. Filled in
+    /// by the impl expansion so later layers can concatenate the chain's
+    /// full TypeScript constructor signature and compute their own parameter
+    /// offset into the JS argument list.
+    ctor_params: Vec<(String, String)>,
+}
+
+static LAYER_REGISTRY: OnceLock<Mutex<HashMap<String, LayerMeta>>> = OnceLock::new();
+
+fn layer_registry() -> &'static Mutex<HashMap<String, LayerMeta>> {
+    LAYER_REGISTRY.get_or_init(Default::default)
+}
+
+/// Resolve a layer reference written as a Rust ident (or already a JS name)
+/// to its JS class name through the registry.
+fn resolve_js_name(rust_or_js: &str) -> String {
+    layer_registry()
+        .lock()
+        .unwrap()
+        .get(rust_or_js)
+        .map(|m| m.js_name.clone())
+        .unwrap_or_else(|| rust_or_js.to_owned())
+}
+
+fn type_last_ident(ty: &Type) -> Option<Ident> {
+    let mut ty = ty;
+    while let Type::Reference(r) = ty {
+        ty = &r.elem;
+    }
+    let Type::Path(p) = ty else { return None };
+    p.path.segments.last().map(|s| s.ident.clone())
+}
+
+// ── attribute parsing ────────────────────────────────────────────────────
+
+#[derive(Default)]
+struct LayerAttrs {
+    js_name: Option<String>,
+    parent: Option<Type>,
+}
+
+impl LayerAttrs {
+    fn parse(ts: TokenStream2) -> syn::Result<Self> {
+        let mut out = Self::default();
+        if ts.is_empty() {
+            return Ok(out);
+        }
+        let metas =
+            syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated.parse2(ts)?;
+        for meta in metas {
+            let Meta::NameValue(nv) = meta else { continue };
+            let Some(name) = nv.path.get_ident().map(|i| i.to_string()) else {
+                continue;
+            };
+            match name.as_str() {
+                "js_name" => {
+                    if let syn::Expr::Lit(expr) = &nv.value {
+                        if let Lit::Str(s) = &expr.lit {
+                            out.js_name = Some(s.value());
+                        }
+                    }
+                }
+                "parent" => match &nv.value {
+                    syn::Expr::Path(p) => {
+                        out.parent = Some(syn::Type::Path(syn::TypePath {
+                            qself: None,
+                            path: p.path.clone(),
+                        }));
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "`parent` must be a layer struct type path, e.g. `parent = MidLayer`",
+                        ));
+                    }
+                },
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MemberKind {
+    Constructor,
+    Getter,
+    Setter,
+    Method,
+}
+
+/// Parse a field's `#[layer(getter)]` / `#[layer(setter)]` /
+/// `#[layer(getter, setter)]` attribute and remove it (an unparsed
+/// `#[layer(...)]` would otherwise be an unknown attribute on the field).
+/// Absent `#[layer(...)]` means the field is not exposed at all.
+fn field_flags(attrs: &mut Vec<Attribute>) -> (bool, bool) {
+    let mut getter = false;
+    let mut setter = false;
+    attrs.retain(|a| {
+        if !a.path().is_ident("layer") {
+            return true;
+        }
+        if let Meta::List(list) = &a.meta {
+            if let Ok(nested) =
+                syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
+                    .parse2(list.tokens.clone())
+            {
+                for meta in nested {
+                    if let Meta::Path(p) = meta {
+                        if let Some(i) = p.get_ident() {
+                            match i.to_string().as_str() {
+                                "getter" => getter = true,
+                                "setter" => setter = true,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    });
+    (getter, setter)
+}
+
+/// A `#[layer(...)]`-annotated impl member.
+struct MemberInfo {
+    kind: MemberKind,
+}
+
+impl MemberKind {
+    /// Look for a `#[layer(...)]` attribute on a method, record its kind, and
+    /// remove the attribute so the item passes through cleanly.
+    fn parse(attrs: &mut Vec<Attribute>) -> Option<MemberInfo> {
+        let mut out = None;
+        attrs.retain(|a| {
+            if !a.path().is_ident("layer") {
+                return true;
+            }
+            let mut kind = MemberKind::Method;
+            if let Meta::List(list) = &a.meta {
+                if let Ok(nested) =
+                    syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
+                        .parse2(list.tokens.clone())
+                {
+                    for meta in nested {
+                        if let Meta::Path(p) = meta {
+                            if let Some(i) = p.get_ident() {
+                                kind = match i.to_string().as_str() {
+                                    "constructor" => MemberKind::Constructor,
+                                    "getter" => MemberKind::Getter,
+                                    "setter" => MemberKind::Setter,
+                                    _ => kind,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            out = Some(MemberInfo { kind });
+            false
+        });
+        out
+    }
+}
+
+// ── small helpers ────────────────────────────────────────────────────────
+
+fn to_camel(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut upper = false;
+    for c in s.chars() {
+        if c == '_' {
+            upper = true;
+        } else if upper {
+            out.push(c.to_ascii_uppercase());
+            upper = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The JS property name of a setter: the `set_` prefix (if any) is dropped
+/// so the setter lands on the same property as its getter (named after the
+/// property itself, e.g. `counter` / `set_counter`).
+fn setter_js_name(name: &Ident) -> String {
+    let n = name.to_string();
+    to_camel(n.strip_prefix("set_").unwrap_or(&n))
+}
+
+fn extract_doc(attrs: &[Attribute]) -> Vec<String> {
+    attrs
+        .iter()
+        .filter_map(|a| {
+            let Meta::NameValue(nv) = &a.meta else {
+                return None;
+            };
+            let name = nv.path.get_ident()?.to_string();
+            if name != "doc" {
+                return None;
+            }
+            let syn::Expr::Lit(expr) = &nv.value else {
+                return None;
+            };
+            let Lit::Str(s) = &expr.lit else { return None };
+            Some(s.value())
+        })
+        .collect()
+}
+
+fn self_ident(ty: &Type) -> syn::Result<Ident> {
+    let Type::Path(p) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "#[layer] impl must have a simple self type",
+        ));
+    };
+    p.path
+        .segments
+        .last()
+        .map(|s| s.ident.clone())
+        .ok_or_else(|| syn::Error::new_spanned(ty, "#[layer] impl must name a layer struct"))
+}
+
+// ── type def construction ────────────────────────────────────────────────
+
+fn build_class_def(s: &ItemStruct, js_name: &str, fields: &[FieldMeta]) -> NapiStruct {
+    let fields = fields
+        .iter()
+        .map(|fm| {
+            let field_ident = Ident::new(&fm.name, Span::call_site());
+            NapiStructField {
+                name: syn::Member::Named(field_ident.clone()),
+                js_name: to_camel(&fm.name),
+                ty: syn::parse_str(&fm.ty).expect("invalid field type"),
+                getter: fm.getter,
+                setter: fm.setter,
+                writable: false,
+                enumerable: false,
+                configurable: false,
+                comments: vec![],
+                skip_typescript: false,
+                ts_type: None,
+                has_lifetime: false,
+            }
+        })
+        .collect();
+    NapiStruct {
+        // `name` feeds `original_name` in the backend's `to_type_def`; if it
+        // differs from `js_name` the CLI also exports the Rust alias, which
+        // has no runtime binding (`module.exports.BaseLayer` would be
+        // `undefined`). Using the JS name keeps `original_name == name` so no
+        // alias export is emitted.
+        name: format_ident!("{}", js_name),
+        js_name: js_name.to_owned(),
+        comments: extract_doc(&s.attrs),
+        js_mod: None,
+        use_nullable: false,
+        register_name: format_ident!("__layer_placeholder"),
+        kind: NapiStructKind::Class(NapiClass {
+            fields,
+            ctor: false,
+            implement_iterator: false,
+            implement_async_iterator: false,
+            is_tuple: false,
+            use_custom_finalize: false,
+        }),
+        has_lifetime: false,
+        is_generator: false,
+        is_async_generator: false,
+        type_tag: None,
+    }
+}
+
+/// The constructor's declared signature. `&Env` and `&Object` parameters are
+/// bound as the optional `env` and `this` (the instance, which may be a JS
+/// subclass instance); the remaining parameters are this layer's constructor
+/// args - typed.
+struct BuildParams {
+    has_env: bool,
+    has_this: bool,
+    params: Vec<(Ident, Type)>,
+}
+
+fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
+    let mut out = BuildParams {
+        has_env: false,
+        has_this: false,
+        params: vec![],
+    };
+    for a in &f.sig.inputs {
+        let FnArg::Typed(pat) = a else { continue };
+        let is = |expected: &str| {
+            type_last_ident(&pat.ty)
+                .map(|i| i.to_string() == expected)
+                .unwrap_or(false)
+        };
+        if is("Env") {
+            out.has_env = true;
+        } else if is("Object") {
+            out.has_this = true;
+        } else {
+            let name = match &*pat.pat {
+                syn::Pat::Ident(pi) => pi.ident.clone(),
+                _ => format_ident!("p{}", out.params.len()),
+            };
+            out.params.push((name, (*pat.ty).clone()));
+        }
+    }
+    out
+}
+
+fn member_napi_fn(
+    f: &syn::ImplItemFn,
+    kind: MemberKind,
+    ts_params: &[(Ident, Type)],
+    parent: &Ident,
+    parent_js: &str,
+) -> NapiFn {
+    let name = f.sig.ident.clone();
+    let args = if kind == MemberKind::Constructor {
+        ts_params
+            .iter()
+            .map(|(pname, ty)| NapiFnArg {
+                kind: NapiFnArgKind::PatType(Box::new(syn::PatType {
+                    attrs: vec![],
+                    pat: Box::new(syn::Pat::Ident(syn::PatIdent {
+                        attrs: vec![],
+                        by_ref: None,
+                        mutability: None,
+                        ident: pname.clone(),
+                        subpat: None,
+                    })),
+                    colon_token: Default::default(),
+                    ty: Box::new(ty.clone()),
+                })),
+                ts_arg_type: None,
+            })
+            .collect()
+    } else {
+        f.sig
+            .inputs
+            .iter()
+            .filter_map(|a| match a {
+                FnArg::Typed(pat) => Some(NapiFnArg {
+                    kind: NapiFnArgKind::PatType(Box::new(pat.clone())),
+                    ts_arg_type: None,
+                }),
+                FnArg::Receiver(_) => None,
+            })
+            .collect()
+    };
+    let ret = match &f.sig.output {
+        ReturnType::Default => None,
+        ReturnType::Type(_, ty) => Some((**ty).clone()),
+    };
+    let (kind_, js_name) = match kind {
+        MemberKind::Constructor => (FnKind::Constructor, "constructor".to_owned()),
+        MemberKind::Getter => (FnKind::Getter, to_camel(&name.to_string())),
+        MemberKind::Setter => (FnKind::Setter, setter_js_name(&name)),
+        MemberKind::Method => (FnKind::Normal, to_camel(&name.to_string())),
+    };
+    // Instance vs static is derived from the signature: `&self`/`&mut self`
+    // receiver means an instance member, no receiver means a static one.
+    let fn_self = f.sig.receiver().map(|recv| {
+        if recv.reference.is_some() {
+            if recv.mutability.is_some() {
+                FnSelf::MutRef
+            } else {
+                FnSelf::Ref
+            }
+        } else {
+            FnSelf::Value
+        }
+    });
+    NapiFn {
+        name,
+        js_name,
+        module_exports: false,
+        attrs: vec![],
+        args,
+        ret,
+        is_ret_result: false,
+        is_async: false,
+        within_async_runtime: false,
+        fn_self,
+        kind: kind_,
+        vis: f.vis.clone(),
+        parent: Some(parent.clone()),
+        parent_js_name: Some(parent_js.to_owned()),
+        strict: false,
+        return_if_invalid: false,
+        js_mod: None,
+        ts_generic_types: None,
+        ts_type: None,
+        ts_args_type: None,
+        ts_return_type: None,
+        skip_typescript: false,
+        comments: extract_doc(&f.attrs),
+        parent_is_generator: false,
+        parent_is_async_generator: false,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+        catch_unwind: false,
+        unsafe_: false,
+        register_name: format_ident!("__layer_placeholder"),
+        no_export: false,
+    }
+}
+
+// ── expansion ────────────────────────────────────────────────────────────
+
+fn expand_struct(s: &ItemStruct, attrs: &LayerAttrs) -> syn::Result<TokenStream2> {
+    let js_name = attrs.js_name.clone().unwrap_or_else(|| s.ident.to_string());
+    let parent_js = attrs
+        .parent
+        .as_ref()
+        .and_then(type_last_ident)
+        .map(|id| resolve_js_name(&id.to_string()));
+    let mut s = s.clone();
+    let fields: Vec<FieldMeta> = s
+        .fields
+        .iter_mut()
+        .filter(|f| matches!(f.vis, Visibility::Public(_)))
+        .map(|f| {
+            let id = f.ident.clone().expect("named field");
+            let (getter, setter) = field_flags(&mut f.attrs);
+            FieldMeta {
+                name: id.to_string(),
+                ty: f.ty.to_token_stream().to_string(),
+                getter,
+                setter,
+            }
+        })
+        .collect();
+    if let Some(def) = build_class_def(&s, &js_name, &fields).to_type_def() {
+        output_type_def(&def);
+    }
+    layer_registry().lock().unwrap().insert(
+        s.ident.to_string(),
+        LayerMeta {
+            js_name: js_name.clone(),
+            parent_ty: attrs
+                .parent
+                .as_ref()
+                .map(|t| t.to_token_stream().to_string()),
+            fields,
+            ctor_params: vec![],
+        },
+    );
+    if let Some(parent) = &parent_js {
+        output_type_def(&TypeDef {
+            kind: "extends".to_owned(),
+            name: js_name,
+            def: parent.clone(),
+            ..Default::default()
+        });
+    }
+    Ok(quote! { #s })
+}
+
+// ── runtime codegen ──────────────────────────────────────────────────────
+
+/// One member's define_members call. Instance members read their layer data
+/// through `with_own`; static members (no receiver) call the implementation
+/// directly.
+fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) -> TokenStream2 {
+    let name = f.sig.ident.clone();
+    let js = to_camel(&name.to_string());
+    // Split the signature into JS args and the injected receiver. A parameter
+    // named `this` of type `Object` is filled by the runtime with the instance
+    // object, so the body can reach any layer's own slot through
+    // `with_own`/`with_own_mut` (the current layer's data is already handed to
+    // the method as `&self`). `this` never participates in the JS args.
+    let mut normal: Vec<(usize, Type)> = vec![];
+    let mut call: Vec<TokenStream2> = vec![];
+    let mut has_this = false;
+    for a in &f.sig.inputs {
+        let FnArg::Typed(pat) = a else { continue };
+        let is_this = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
+            && type_last_ident(&pat.ty)
+                .map(|i| i.to_string() == "Object")
+                .unwrap_or(false);
+        if is_this {
+            has_this = true;
+            call.push(quote! { &this });
+        } else {
+            let i = normal.len();
+            normal.push((i, (*pat.ty).clone()));
+            let bind = format_ident!("a{}", i);
+            call.push(quote! { #bind });
+        }
+    }
+    let arg_binds = normal
+        .iter()
+        .map(|(i, ty)| {
+            let bind = format_ident!("a{}", i);
+            quote! { let #bind: #ty = ctx.get(#i)?; }
+        })
+        .collect::<Vec<_>>();
+
+    let ret_is_result = match &f.sig.output {
+        ReturnType::Type(_, ty) => type_last_ident(ty)
+            .map(|i| i.to_string() == "Result")
+            .unwrap_or(false),
+        ReturnType::Default => false,
+    };
+    let result_tail = if ret_is_result {
+        quote! { ? }
+    } else {
+        quote! {}
+    };
+
+    match kind {
+        MemberKind::Getter => {
+            if f.sig.receiver().is_some() {
+                quote! {
+                    napi_inherit::class::define_getter(proto, #js, |_env, this| {
+                        napi_inherit::own::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
+                    })?;
+                }
+            } else if !has_this {
+                let static_call = if ret_is_result {
+                    quote! { #self_ty::#name(#(#call),*) }
+                } else {
+                    quote! { Ok(#self_ty::#name(#(#call),*)) }
+                };
+                quote! {
+                    napi_inherit::class::define_static_getter(ctor, #js, |_env| {
+                        #static_call
+                    })?;
+                }
+            } else {
+                quote! {
+                    napi_inherit::class::define_getter(proto, #js, |_env, this| {
+                        #self_ty::#name(#(#call),*)
+                    })?;
+                }
+            }
+        }
+        MemberKind::Setter => {
+            let js = setter_js_name(&name);
+            let Some(value_ty) = normal.first().map(|(_, ty)| ty.clone()) else {
+                return syn::Error::new_spanned(
+                    f,
+                    "a #[layer(setter)] method needs exactly one value parameter",
+                )
+                .into_compile_error();
+            };
+            if f.sig.receiver().is_some() {
+                quote! {
+                    napi_inherit::class::define_setter(proto, #js, |_env, this, value: #value_ty| {
+                        napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, value))#result_tail
+                    })?;
+                }
+            } else if !has_this {
+                // A setter's method already returns `Result<()>`; the static
+                // closure returns it as-is (no `?` - that would unwrap to
+                // `()` and break the closure's `Result<()>` type).
+                let static_call = if ret_is_result {
+                    quote! { #self_ty::#name(value) }
+                } else {
+                    quote! { Ok(#self_ty::#name(value)) }
+                };
+                quote! {
+                    napi_inherit::class::define_static_setter(ctor, #js, |_env, value: #value_ty| {
+                        #static_call
+                    })?;
+                }
+            } else {
+                let call = if ret_is_result {
+                    quote! { #self_ty::#name(&this, value) }
+                } else {
+                    quote! { Ok(#self_ty::#name(&this, value)) }
+                };
+                quote! {
+                    napi_inherit::class::define_setter(proto, #js, |_env, this, value: #value_ty| {
+                        #call
+                    })?;
+                }
+            }
+        }
+        MemberKind::Constructor => unreachable!("constructor handled separately"),
+        MemberKind::Method => {
+            if f.sig.receiver().is_none() && !has_this {
+                let static_call = if ret_is_result {
+                    quote! { #self_ty::#name(#(#call),*) }
+                } else {
+                    quote! { Ok(#self_ty::#name(#(#call),*)) }
+                };
+                quote! {
+                    napi_inherit::class::define_static_method(env, ctor, #js, |ctx| {
+                        #(#arg_binds)*
+                        #static_call
+                    })?;
+                }
+            } else if f.sig.receiver().is_some() {
+                let takes_mut = f.sig.receiver().map(|r| r.mutability.is_some()).unwrap_or(false);
+                let slot = if takes_mut {
+                    quote! { napi_inherit::own::with_own_mut::<#self_ty, _> }
+                } else {
+                    quote! { napi_inherit::own::with_own::<#self_ty, _> }
+                };
+                quote! {
+                    napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                        let this: napi::bindgen_prelude::Object = ctx.this()?;
+                        #(#arg_binds)*
+                        #slot(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
+                    })?;
+                }
+            } else {
+                // `this`-injected instance method: no receiver, the instance
+                // object is handed over and the body reaches any layer's slot
+                // through `with_own`/`with_own_mut` itself. No outer borrow,
+                // so same-slot mutable access is fine.
+                quote! {
+                    napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                        let this: napi::bindgen_prelude::Object = ctx.this()?;
+                        #(#arg_binds)*
+                        #self_ty::#name(#(#call),*)
+                    })?;
+                }
+            }
+        }
+    }
+}
+
+fn gen_extend_layer_impl(
+    self_ty: &Ident,
+    js_name: &str,
+    parent_ty: &Option<Type>,
+    ctor_name: &Ident,
+    build: &BuildParams,
+    arg_offset: usize,
+    fields: &[FieldMember],
+    members: &[MemberFn],
+    consts: &[(String, syn::Expr)],
+    ctor_ret_is_result: bool,
+) -> TokenStream2 {
+    let parent_tokens = match parent_ty {
+        Some(ty) => quote! { #ty },
+        None => quote! { napi_inherit::layer::RootLayer },
+    };
+    let field_getters = fields
+        .iter()
+        .filter(|f| f.getter)
+        .map(|f| {
+            let ident = &f.ident;
+            let field_js = to_camel(&ident.to_string());
+            quote! {
+                napi_inherit::class::define_getter(proto, #field_js, |_ctx, this| {
+                    napi_inherit::own::with_own::<#self_ty, _>(&this, |d| d.#ident)
+                })?;
+            }
+        });
+    let field_setters = fields
+        .iter()
+        .filter(|f| f.setter)
+        .map(|f| {
+            let ident = &f.ident;
+            let ty = &f.ty;
+            let field_js = to_camel(&ident.to_string());
+            quote! {
+                napi_inherit::class::define_setter(proto, #field_js, |_env, this, value: #ty| {
+                    napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
+                })?;
+            }
+        });
+    let member_tokens = members
+        .iter()
+        .map(|m| member_define_tokens(self_ty, &m.f, m.kind));
+    let const_tokens = consts.iter().map(|(cname, cexpr)| {
+        quote! {
+            napi_inherit::class::define_static_value(env, ctor, #cname, #cexpr)?;
+        }
+    });
+    // This layer's typed parameters are the `args[arg_offset..]` slice of the
+    // JS argument list; the ancestors (already built via `sup.call`) resolve
+    // their own prefix. `env` / `this` are forwarded only if the user's build
+    // declared them.
+    let arg_parses = build.params.iter().enumerate().map(|(i, (_, ty))| {
+        let bind = format_ident!("p{}", i);
+        let idx = arg_offset + i;
+        quote! { let #bind: #ty = napi_inherit::own::arg_from_napi(env, args, #idx)?; }
+    });
+    let mut user_args: Vec<TokenStream2> = vec![];
+    if build.has_env {
+        user_args.push(quote! { env });
+    }
+    if build.has_this {
+        user_args.push(quote! { this });
+    }
+    for i in 0..build.params.len() {
+        let bind = format_ident!("p{}", i);
+        user_args.push(quote! { #bind });
+    }
+    let ctor_call = if ctor_ret_is_result {
+        quote! { #self_ty::#ctor_name(#(#user_args),*)? }
+    } else {
+        quote! { #self_ty::#ctor_name(#(#user_args),*) }
+    };
+    quote! {
+        impl napi_inherit::layer::LayerDef for #self_ty {
+            type Parent = #parent_tokens;
+            const CLASS_NAME: &'static str = #js_name;
+
+            fn define_members(
+                env: &napi::Env,
+                proto: &mut napi::bindgen_prelude::Object,
+                ctor: &mut napi::bindgen_prelude::Object,
+            ) -> napi::Result<()> {
+                #(#field_getters)*
+                #(#field_setters)*
+                #(#member_tokens)*
+                #(#const_tokens)*
+                Ok(())
+            }
+        }
+
+        impl napi_inherit::layer::LayerBuild for #self_ty {
+            fn build<'env>(
+                env: &'env napi::Env,
+                args: &[napi::bindgen_prelude::Unknown<'env>],
+                sup: napi_inherit::layer::Super<'_, 'env, Self::Parent>,
+            ) -> napi::Result<napi_inherit::layer::Constructed<Self>> {
+                #(#arg_parses)*
+                let done = sup.call(args)?;
+                let this = done.this();
+                Ok(napi_inherit::layer::Constructed::new(
+                    done,
+                    #ctor_call,
+                ))
+            }
+        }
+    }
+}
+
+/// Mount the built class onto `module.exports` (the replacement for the old
+/// `build_inherit_test_classes`-style object return). `build_class` is
+/// idempotent, and `link_prototype` resolves the parent's handles at build
+/// time, so every ancestor is built first - `.init_array` ctor order is not
+/// guaranteed to follow declaration order.
+fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStream2 {
+    let lower = self_ty.to_string().to_lowercase();
+    let register_fn = format_ident!("__layer_register_{lower}");
+    let export_fn = format_ident!("__layer_export_{lower}");
+    let ancestor_builds = ancestors.iter().map(|ty| {
+        quote! {
+            napi_inherit::class::build_class::<#ty>(&env)?;
+        }
+    });
+    quote! {
+        #[cfg(all(not(test), not(target_family = "wasm")))]
+        napi::ctor::declarative::ctor! {
+            #[doc(hidden)]
+            #[allow(clippy::all)]
+            #[allow(non_snake_case)]
+            #[ctor(unsafe)]
+            fn #register_fn() {
+                // The name must be NUL-terminated: napi parses it with
+                // `CStr::from_bytes_with_nul_unchecked`.
+                napi::bindgen_prelude::register_module_export(None, concat!(#js_name, "\0"), #export_fn);
+            }
+        }
+
+        #[doc(hidden)]
+        #[allow(clippy::all)]
+        #[allow(non_snake_case)]
+        unsafe fn #export_fn(
+            env: napi::bindgen_prelude::sys::napi_env,
+        ) -> napi::bindgen_prelude::Result<napi::bindgen_prelude::sys::napi_value> {
+            let env = napi::Env::from(env);
+            #(#ancestor_builds)*
+            napi_inherit::class::build_class::<#self_ty>(&env)?;
+            let (ctor, _) = napi_inherit::registry::require(&env, std::any::TypeId::of::<#self_ty>())?;
+            Ok(napi::bindgen_prelude::JsValue::raw(&ctor))
+        }
+    }
+}
+
+struct MemberFn {
+    kind: MemberKind,
+    f: syn::ImplItemFn,
+}
+
+/// Walk the parent chain of `meta` up to the root, returning per-ancestor
+/// (Rust type, constructor params) ordered from root to parent (self
+/// excluded).
+fn ancestor_chain(meta: &LayerMeta) -> Vec<(Type, Vec<(Ident, Type)>)> {
+    let reg = layer_registry().lock().unwrap();
+    let mut out = vec![];
+    let mut cur = meta.parent_ty.clone();
+    while let Some(ty_str) = cur {
+        let ty: Type = syn::parse_str(&ty_str).expect("invalid parent type");
+        let last = type_last_ident(&ty).expect("parent ident").to_string();
+        let pm = reg.get(&last).expect("parent layer not registered");
+        let params = pm
+            .ctor_params
+            .iter()
+            .map(|(n, t)| {
+                (
+                    Ident::new(n, Span::call_site()),
+                    syn::parse_str(t).expect("invalid ctor param type"),
+                )
+            })
+            .collect();
+        out.push((ty, params));
+        cur = pm.parent_ty.clone();
+    }
+    out.reverse();
+    out
+}
+
+fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
+    let self_ty = self_ident(&i.self_ty)?;
+    let meta = layer_registry()
+        .lock()
+        .unwrap()
+        .get(&self_ty.to_string())
+        .cloned()
+        .ok_or_else(|| {
+            syn::Error::new_spanned(
+                &i.self_ty,
+                "#[layer] impl must follow the #[layer] struct it implements",
+            )
+        })?;
+
+    let mut i = i.clone();
+    let mut napi_fns = vec![];
+    let mut members: Vec<MemberFn> = vec![];
+    let mut consts: Vec<(String, syn::Expr)> = vec![];
+    let mut ctor: Option<(syn::ImplItemFn, BuildParams)> = None;
+    for item in &mut i.items {
+        match item {
+            ImplItem::Fn(f) => {
+                let Some(info) = MemberKind::parse(&mut f.attrs) else {
+                    continue;
+                };
+                if info.kind == MemberKind::Constructor {
+                    ctor = Some((f.clone(), analyze_build(f)));
+                } else {
+                    napi_fns.push(member_napi_fn(f, info.kind, &[], &self_ty, &meta.js_name));
+                    members.push(MemberFn {
+                        kind: info.kind,
+                        f: f.clone(),
+                    });
+                }
+            }
+            ImplItem::Const(c) => {
+                if c.attrs.iter().any(|a| a.path().is_ident("layer")) {
+                    // The const is emitted as a JS static value, so the Rust
+                    // impl never reads it; keep the item (callers may still
+                    // reference it in Rust) but silence the dead_code lint.
+                    c.attrs.retain(|a| !a.path().is_ident("layer"));
+                    c.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
+                    // Static constants keep their Rust name verbatim: JS
+                    // convention is already UPPER_SNAKE (to_camel would mangle
+                    // `BASE_CONST` into `BASECONST`).
+                    consts.push((c.ident.to_string(), c.expr.clone()));
+                }
+            }
+            _ => {}
+        }
+    }
+    let (ctor_f, ctor_build) = ctor.ok_or_else(|| {
+        syn::Error::new_spanned(
+            &i.self_ty,
+            "#[layer] impl must declare a constructor with #[layer(constructor)]",
+        )
+    })?;
+
+    // Publish this layer's constructor params so child layers can build the
+    // concatenated chain signature and compute their argument offset.
+    {
+        let mut reg = layer_registry().lock().unwrap();
+        if let Some(m) = reg.get_mut(&self_ty.to_string()) {
+            m.ctor_params = ctor_build
+                .params
+                .iter()
+                .map(|(n, t)| (n.to_string(), t.to_token_stream().to_string()))
+                .collect();
+        }
+    }
+
+    let ancestors_data = ancestor_chain(&meta);
+    let ancestors: Vec<Type> = ancestors_data.iter().map(|(t, _)| t.clone()).collect();
+    let ancestor_params: Vec<(Ident, Type)> = ancestors_data
+        .iter()
+        .flat_map(|(_, p)| p.iter().cloned())
+        .collect();
+    // The TypeScript constructor signature is the whole chain's params,
+    // root-first; the JS argument list has the same layout, so this layer's
+    // own params start at `ancestor_params.len()`.
+    let ts_params: Vec<(Ident, Type)> = ancestor_params
+        .iter()
+        .cloned()
+        .chain(ctor_build.params.clone())
+        .collect();
+    let arg_offset = ancestor_params.len();
+    napi_fns.push(member_napi_fn(
+        &ctor_f,
+        MemberKind::Constructor,
+        &ts_params,
+        &self_ty,
+        &meta.js_name,
+    ));
+
+    let impl_def = NapiImpl {
+        name: self_ty.clone(),
+        js_name: meta.js_name.clone(),
+        has_lifetime: false,
+        items: napi_fns,
+        task_output_type: None,
+        iterator_yield_type: None,
+        iterator_next_type: None,
+        iterator_return_type: None,
+        async_iterator_yield_type: None,
+        async_iterator_next_type: None,
+        async_iterator_return_type: None,
+        js_mod: None,
+        comments: vec![],
+        register_name: format_ident!("__layer_placeholder"),
+    };
+    if let Some(def) = impl_def.to_type_def() {
+        output_type_def(&def);
+    }
+
+    // Rebuild the parent type and public fields from their string form.
+    let parent_ty: Option<Type> = meta
+        .parent_ty
+        .as_ref()
+        .map(|s| syn::parse_str(s).expect("invalid parent type"));
+    let fields: Vec<FieldMember> = meta
+        .fields
+        .iter()
+        .map(|fm| FieldMember {
+            ident: Ident::new(&fm.name, Span::call_site()),
+            ty: syn::parse_str(&fm.ty).expect("invalid field type"),
+            getter: fm.getter,
+            setter: fm.setter,
+        })
+        .collect();
+
+    let ctor_ret_is_result = match &ctor_f.sig.output {
+        ReturnType::Type(_, ty) => type_last_ident(ty)
+            .map(|i| i.to_string() == "Result")
+            .unwrap_or(false),
+        ReturnType::Default => false,
+    };
+    let extend_layer = gen_extend_layer_impl(
+        &self_ty,
+        &meta.js_name,
+        &parent_ty,
+        &ctor_name_of(&ctor_f),
+        &ctor_build,
+        arg_offset,
+        &fields,
+        &members,
+        &consts,
+        ctor_ret_is_result,
+    );
+    let register = gen_register(&self_ty, &meta.js_name, &ancestors);
+    Ok(quote! { #i #extend_layer #register })
+}
+
+fn ctor_name_of(f: &syn::ImplItemFn) -> Ident {
+    f.sig.ident.clone()
+}
+
+fn expand(attr: TokenStream2, input: TokenStream2) -> syn::Result<TokenStream2> {
+    let attrs = LayerAttrs::parse(attr)?;
+    let item: syn::Item = syn::parse2(input)?;
+    match item {
+        syn::Item::Struct(mut s) => {
+            s.attrs.retain(|a| !a.path().is_ident("layer"));
+            expand_struct(&s, &attrs)
+        }
+        syn::Item::Impl(mut i) => {
+            i.attrs.retain(|a| !a.path().is_ident("layer"));
+            expand_impl(&i)
+        }
+        other => Err(syn::Error::new_spanned(
+            other,
+            "#[layer] can only be applied to a struct or an impl block",
+        )),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn layer(attr: TokenStream, input: TokenStream) -> TokenStream {
+    match expand(attr.into(), input.into()) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.into_compile_error().into(),
+    }
+}
