@@ -4,35 +4,83 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@napi-rs/cli':
+      specifier: ^3.8.6
+      version: 3.8.6
+    '@oxc-node/core':
+      specifier: ^0.1.0
+      version: 0.1.0
+    '@types/node':
+      specifier: ^22.20.1
+      version: 22.20.1
+    ava:
+      specifier: ^8.0.1
+      version: 8.0.1
+    cross-env:
+      specifier: ^10.1.0
+      version: 10.1.0
+    tsdown:
+      specifier: ^0.22.14
+      version: 0.22.14
+    typescript:
+      specifier: ^6.0.3
+      version: 6.0.3
+
 importers:
 
   .:
     devDependencies:
       '@napi-rs/cli':
-        specifier: ^3.8.6
+        specifier: 'catalog:'
         version: 3.8.6(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.20.1)
       '@oxc-node/core':
-        specifier: ^0.1.0
+        specifier: 'catalog:'
         version: 0.1.0
       '@types/node':
-        specifier: ^22.20.1
+        specifier: 'catalog:'
         version: 22.20.1
       ava:
-        specifier: ^8.0.1
+        specifier: 'catalog:'
         version: 8.0.1
       cross-env:
-        specifier: ^10.1.0
+        specifier: 'catalog:'
         version: 10.1.0
       tsdown:
-        specifier: ^0.22.14
+        specifier: 'catalog:'
         version: 0.22.14(typescript@6.0.3)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
   __test__: {}
 
   benchmark: {}
+
+  crates/napi-inherit-test:
+    dependencies:
+      '@napi-rs/cli':
+        specifier: 'catalog:'
+        version: 3.8.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@22.20.1)
+      '@oxc-node/core':
+        specifier: 'catalog:'
+        version: 0.1.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.1
+      ava:
+        specifier: 'catalog:'
+        version: 8.0.1
+      cross-env:
+        specifier: 'catalog:'
+        version: 10.1.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.14(typescript@6.0.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
 
   examples/html-3d-sphere:
     dependencies:
@@ -2279,6 +2327,37 @@ snapshots:
       tar: 7.5.22
     transitivePeerDependencies:
       - encoding
+      - supports-color
+
+  '@napi-rs/cli@3.8.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@22.20.1)':
+    dependencies:
+      '@inquirer/prompts': 8.6.0(@types/node@22.20.1)
+      '@napi-rs/cross-toolchain': 1.0.3
+      '@napi-rs/wasm-tools': 1.1.0
+      '@octokit/rest': 22.0.1
+      clipanion: 4.0.0-rc.4(typanion@3.14.0)
+      colorette: 2.0.20
+      es-toolkit: 1.51.0
+      js-yaml: 4.3.1
+      obug: 2.1.4
+      semver: 7.8.5
+      typanion: 3.14.0
+      typescript: 6.0.3
+    optionalDependencies:
+      '@emnapi/core': 1.11.2
+      '@emnapi/runtime': 1.11.2
+    transitivePeerDependencies:
+      - '@napi-rs/cross-toolchain-arm64-target-aarch64'
+      - '@napi-rs/cross-toolchain-arm64-target-armv7'
+      - '@napi-rs/cross-toolchain-arm64-target-ppc64le'
+      - '@napi-rs/cross-toolchain-arm64-target-s390x'
+      - '@napi-rs/cross-toolchain-arm64-target-x86_64'
+      - '@napi-rs/cross-toolchain-x64-target-aarch64'
+      - '@napi-rs/cross-toolchain-x64-target-armv7'
+      - '@napi-rs/cross-toolchain-x64-target-ppc64le'
+      - '@napi-rs/cross-toolchain-x64-target-s390x'
+      - '@napi-rs/cross-toolchain-x64-target-x86_64'
+      - '@types/node'
       - supports-color
 
   '@napi-rs/cli@3.8.6(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.20.1)':

@@ -1,0 +1,19 @@
+[package]
+name = "napi-inherit-test"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { workspace = true, features = ["napi6"] }
+# The `@napi-rs/cli` only enables type-def generation when it sees a
+# `napi-derive` dependency with the `type-def` feature, so the layer macro's
+# intermediate JSONL gets rendered into `index.d.ts`.
+napi-derive = { workspace = true, features = ["type-def"] }
+napi-inherit = { workspace = true }
+napi-inherit-proc = { workspace = true }
+
+[build-dependencies]
+napi-build = "2"

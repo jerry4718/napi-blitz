@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "crates/napi-inherit",
-    "crates/napi-inherit-proc"
+    "crates/napi-inherit-proc",
+    "crates/napi-inherit-test"
 ]
 resolver = "2"
 
@@ -65,6 +66,9 @@ log = { workspace = true }
 [workspace.dependencies]
 napi = { version = "3.12.2", features = ["napi6", "async"] }
 napi-derive = "3.6.3"
+napi-inherit = { path = "crates/napi-inherit" }
+napi-inherit-proc = { path = "crates/napi-inherit-proc" }
+
 winit = "=0.31.0-beta.2"
 
 blitz = { version = "=0.3.0-beta.2", default-features = false, features = ["net"] }

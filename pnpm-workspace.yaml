@@ -2,6 +2,7 @@ packages:
   - packages/*
   - examples/*
   - benchmark
+  - crates/napi-inherit-test
   - __test__
 allowBuilds:
   esbuild: true
@@ -15,3 +16,12 @@ minimumReleaseAgeExclude:
   - '@ylcc/napi-blitz-linux-x64-musl@0.2.219'
   - '@ylcc/napi-blitz-win32-arm64-msvc@0.2.219'
   - '@ylcc/napi-blitz-win32-x64-msvc@0.2.219'
+
+catalog:
+  "@napi-rs/cli": ^3.8.6
+  "@oxc-node/core": ^0.1.0
+  "@types/node": ^22.20.1
+  "ava": ^8.0.1
+  "cross-env": ^10.1.0
+  "tsdown": ^0.22.14
+  "typescript": ^6.0.3

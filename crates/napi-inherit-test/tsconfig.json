@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2022"
+  },
+  "include": ["test/**/*.ts", "index.d.ts"]
+}
