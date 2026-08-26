@@ -1,0 +1,8 @@
+[package]
+name = "napi-inherit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+napi = { workspace = true, features = ["napi6"] }
+napi-derive = { workspace = true }
