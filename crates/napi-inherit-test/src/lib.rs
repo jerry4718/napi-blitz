@@ -1,6 +1,6 @@
 //! End-to-end verification of `#[layer]`: a three-layer chain
 //! `InheritBase -> InheritMid -> InheritLeaf`. The macro generates the
-//! `LayerDef` + `LayerBridge` impls (the bridge dispatches the typed
+//! `LayerMembers` + `LayerBuild` impls (the bridge dispatches the typed
 //! constructor params and calls the user's pure-data `#[layer(constructor)]`
 //! method) and mounts each class onto `module.exports` via
 //! `register_module_export`, so a `napi build` produces both `index.d.ts`

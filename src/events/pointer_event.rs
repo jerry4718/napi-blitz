@@ -8,7 +8,7 @@ use wintertc_events::event::EventInit;
 use crate::events::mouse_event::MouseEventLayer;
 
 /// Own block of the `PointerEvent` class (pointer-specific fields).
-#[layer(js_name = "PointerEvent", parent = MouseEventLayer)]
+#[layer(js_name = "PointerEvent")]
 pub struct PointerEventLayer {
     #[layer(getter)]
     pub pointer_id: i32,
@@ -77,6 +77,9 @@ impl PointerEventLayer {
 
 #[layer]
 impl PointerEventLayer {
+    #[layer(parent)]
+    type Parent = MouseEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

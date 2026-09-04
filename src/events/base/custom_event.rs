@@ -11,7 +11,7 @@ use napi_helpers::{
     inherits::{Constructed, Super, proc::layer},
 };
 
-use crate::event::EventInit;
+use crate::event::{EventInit, EventLayer};
 
 /// `dictionary CustomEventInit : EventInit { any detail = null; }`
 #[napi(object)]
@@ -24,20 +24,23 @@ pub struct CustomEventInit {
 }
 
 /// Own block of the `CustomEvent` class.
-#[layer(js_name = "CustomEvent", parent = super::EventLayer)]
+#[layer(js_name = "CustomEvent")]
 pub struct CustomEventLayer {
     detail: Anything,
 }
 
 #[layer]
 impl CustomEventLayer {
+    #[layer(parent)]
+    type Parent = EventLayer;
+
     /// `new CustomEvent(type, init?)` — `init` follows
     /// `dictionary CustomEventInit`.
     #[layer(constructor)]
     fn build(
         type_: String,
         init: Option<CustomEventInit>,
-        sup: Super<crate::event::EventLayer>,
+        sup: Super<EventLayer>,
     ) -> Result<Constructed<Self>> {
         let CustomEventInit {
             detail,

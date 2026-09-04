@@ -17,14 +17,14 @@ use napi::{
 };
 
 use crate::{
-    layer::{EmitOwn, ExtendLayer, LayerArgs, LayerBuild, LayerChain},
+    layer::{EmitOwn, ExtendLayer, LayerAccessors, LayerArgs, LayerBuild, LayerChain},
     own::attach_registry,
     registry,
 };
 
 /// Build and register a layer's JS class. Idempotent: repeated calls for an
 /// already-registered class are no-ops.
-pub fn build_class<T: ExtendLayer>(env: &Env) -> Result<()>
+pub fn build_class<T: ExtendLayer + LayerAccessors>(env: &Env) -> Result<()>
 where
     <T as LayerBuild>::Args: FromNapiValue,
 {
@@ -33,6 +33,7 @@ where
     }
     let mut proto = Object::new(env)?;
     let mut ctor = create_constructor::<T>(env)?;
+    T::define_accessors(env, &mut proto)?;
     T::define_members(env, &mut proto, &mut ctor)?;
     define_constructor_props(&mut ctor, &mut proto)?;
     registry::insert(env, TypeId::of::<T>(), &ctor, &proto)?;

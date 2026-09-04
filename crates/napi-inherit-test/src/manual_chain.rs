@@ -17,9 +17,9 @@ use std::{
 };
 
 use napi_helpers::inherits::{
-    Constructed, LayerChain, LayerComposed, RootLayer, Super, build_class, define_getter,
-    define_method, define_setter, define_static_getter, define_static_method, define_static_setter,
-    define_static_value, new_from_chain, require, with_own, with_own_mut,
+    Constructed, LayerAccessors, LayerChain, LayerComposed, RootLayer, Super, build_class,
+    define_getter, define_method, define_setter, define_static_getter, define_static_method,
+    define_static_setter, define_static_value, new_from_chain, require, with_own, with_own_mut,
 };
 
 /// Backing store for the static `counter` accessor pair.
@@ -31,48 +31,15 @@ pub struct BaseLayer {
     pub base_value: u32,
 }
 
-impl LayerComposed for BaseLayer {
-    type Parent = RootLayer;
-    const CLASS_NAME: &'static str = "InheritBase";
-    type Args = (u32,);
+// ── InheritBase accessors ─────────────────────────────────────────────────
 
-    fn build<'env>(
-        _env: &'env Env,
-        args: FnArgs<(u32,)>,
-        sup: Super<'_, 'env, RootLayer>,
-    ) -> Result<Constructed<Self>> {
-        let (base_value,) = args.data;
-        let done = sup.call(FnArgs::from(()))?;
-        Ok(Constructed::new(done, Self { base_value }))
-    }
-
-    fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
+impl LayerAccessors for BaseLayer {
+    fn define_accessors(_env: &Env, proto: &mut Object) -> Result<()> {
         define_getter(proto, "baseValue", |_ctx, this| {
             with_own::<BaseLayer, _>(&this, |d| d.base_value)
         })?;
-        define_method(env, proto, "baseGreet", |ctx| {
-            let this: Object = ctx.this()?;
-            let v = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
-            Ok(format!("base:{v}"))
-        })?;
-        define_method(env, proto, "bumpBase", |ctx| {
-            let this: Object = ctx.this()?;
-            let delta: f64 = ctx.get(0)?;
-            with_own_mut::<BaseLayer, _>(&this, |d| {
-                d.base_value += delta as u32;
-                d.base_value
-            })
-        })?;
-        define_static_value(env, ctor, "BASE_CONST", 1u32)?;
         define_setter(proto, "baseValue", |_env, this, value: u32| {
             with_own_mut::<BaseLayer, _>(&this, |d| d.base_value = value)
-        })?;
-        define_static_getter(ctor, "counter", |_env| {
-            Ok(SHARED_COUNTER.load(Ordering::Relaxed))
-        })?;
-        define_static_setter(ctor, "counter", |_env, value: u32| {
-            SHARED_COUNTER.store(value, Ordering::Relaxed);
-            Ok(())
         })?;
         define_getter(proto, "checkedValue", |_env, this| {
             with_own::<BaseLayer, _>(&this, |d| {
@@ -91,6 +58,47 @@ impl LayerComposed for BaseLayer {
                 d.base_value = value;
                 Ok(())
             })?
+        })?;
+        Ok(())
+    }
+}
+
+impl LayerComposed for BaseLayer {
+    type Parent = RootLayer;
+    const CLASS_NAME: &'static str = "InheritBase";
+    type Args = (u32,);
+
+    fn build<'env>(
+        _env: &'env Env,
+        args: FnArgs<(u32,)>,
+        sup: Super<'_, 'env, RootLayer>,
+    ) -> Result<Constructed<Self>> {
+        let (base_value,) = args.data;
+        let done = sup.call(FnArgs::from(()))?;
+        Ok(Constructed::new(done, Self { base_value }))
+    }
+
+    fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
+        define_method(env, proto, "baseGreet", |ctx| {
+            let this: Object = ctx.this()?;
+            let v = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
+            Ok(format!("base:{v}"))
+        })?;
+        define_method(env, proto, "bumpBase", |ctx| {
+            let this: Object = ctx.this()?;
+            let delta: f64 = ctx.get(0)?;
+            with_own_mut::<BaseLayer, _>(&this, |d| {
+                d.base_value += delta as u32;
+                d.base_value
+            })
+        })?;
+        define_static_value(env, ctor, "BASE_CONST", 1u32)?;
+        define_static_getter(ctor, "counter", |_env| {
+            Ok(SHARED_COUNTER.load(Ordering::Relaxed))
+        })?;
+        define_static_setter(ctor, "counter", |_env, value: u32| {
+            SHARED_COUNTER.store(value, Ordering::Relaxed);
+            Ok(())
         })?;
         define_static_getter(ctor, "checkedCounter", |_env| {
             let v = SHARED_COUNTER.load(Ordering::Relaxed);
@@ -175,12 +183,6 @@ impl LayerComposed for MidLayer {
     }
 
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
-        define_getter(proto, "midValue", |_ctx, this| {
-            with_own::<MidLayer, _>(&this, |d| d.mid_value)
-        })?;
-        define_getter(proto, "baseSeenAfterSuper", |_ctx, this| {
-            with_own::<MidLayer, _>(&this, |d| d.base_seen_after_super)
-        })?;
         define_method(env, proto, "midDescribe", |ctx| {
             let this: Object = ctx.this()?;
             let mid = with_own::<MidLayer, _>(&this, |d| d.mid_value)?;
@@ -188,6 +190,20 @@ impl LayerComposed for MidLayer {
             Ok(format!("mid:{mid}/base:{base}"))
         })?;
         define_static_value(env, ctor, "MID_CONST", 2u32)?;
+        Ok(())
+    }
+}
+
+// ── InheritMid accessors ─────────────────────────────────────────────────
+
+impl LayerAccessors for MidLayer {
+    fn define_accessors(_env: &Env, proto: &mut Object) -> Result<()> {
+        define_getter(proto, "midValue", |_ctx, this| {
+            with_own::<MidLayer, _>(&this, |d| d.mid_value)
+        })?;
+        define_getter(proto, "baseSeenAfterSuper", |_ctx, this| {
+            with_own::<MidLayer, _>(&this, |d| d.base_seen_after_super)
+        })?;
         Ok(())
     }
 }
@@ -226,12 +242,6 @@ impl LayerComposed for LeafLayer {
     }
 
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
-        define_getter(proto, "leafValue", |_ctx, this| {
-            with_own::<LeafLayer, _>(&this, |d| d.leaf_value)
-        })?;
-        define_getter(proto, "midSeenAfterSuper", |_ctx, this| {
-            with_own::<LeafLayer, _>(&this, |d| d.mid_seen_after_super)
-        })?;
         define_method(env, proto, "leafShout", |ctx| {
             let this: Object = ctx.this()?;
             let leaf = with_own::<LeafLayer, _>(&this, |d| d.leaf_value)?;
@@ -240,6 +250,20 @@ impl LayerComposed for LeafLayer {
             Ok(format!("leaf:{leaf}+mid:{mid}+base:{base}"))
         })?;
         define_static_value(env, ctor, "LEAF_CONST", 3u32)?;
+        Ok(())
+    }
+}
+
+// ── InheritLeaf accessors ────────────────────────────────────────────────
+
+impl LayerAccessors for LeafLayer {
+    fn define_accessors(_env: &Env, proto: &mut Object) -> Result<()> {
+        define_getter(proto, "leafValue", |_ctx, this| {
+            with_own::<LeafLayer, _>(&this, |d| d.leaf_value)
+        })?;
+        define_getter(proto, "midSeenAfterSuper", |_ctx, this| {
+            with_own::<LeafLayer, _>(&this, |d| d.mid_seen_after_super)
+        })?;
         Ok(())
     }
 }

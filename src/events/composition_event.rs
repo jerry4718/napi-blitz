@@ -7,13 +7,16 @@ use wintertc_events::event::EventInit;
 use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `CompositionEvent` class.
-#[layer(js_name = "CompositionEvent", parent = UiEventLayer)]
+#[layer(js_name = "CompositionEvent")]
 pub struct CompositionEventLayer {
     pub(crate) data: String,
 }
 
 #[layer]
 impl CompositionEventLayer {
+    #[layer(parent)]
+    type Parent = UiEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

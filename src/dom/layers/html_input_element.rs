@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Own block of the `HTMLInputElement` class.
-#[layer(js_name = "HTMLInputElement", parent = HTMLElementLayer)]
+#[layer(js_name = "HTMLInputElement")]
 pub struct HTMLInputElementLayer {
     pub(crate) node_id: NodeId,
     pub(crate) doc: Rc<SharedDoc>,
@@ -102,6 +102,9 @@ impl HTMLInputElementLayer {
 
 #[layer]
 impl HTMLInputElementLayer {
+    #[layer(parent)]
+    type Parent = HTMLElementLayer;
+
     #[layer(constructor)]
     fn build(_sup: Super<HTMLElementLayer>) -> Result<Constructed<Self>> {
         Err(Error::from_reason(

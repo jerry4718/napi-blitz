@@ -133,7 +133,7 @@ impl BaseLayer {
 
 // ── InheritMid ───────────────────────────────────────────────────────────
 
-#[layer(js_name = "InheritMid", parent = BaseLayer)]
+#[layer(js_name = "InheritMid")]
 pub struct MidLayer {
     #[layer(getter)]
     pub mid_value: u32,
@@ -144,6 +144,9 @@ pub struct MidLayer {
 
 #[layer]
 impl MidLayer {
+    #[layer(parent)]
+    type Parent = BaseLayer;
+
     #[layer]
     const MID_CONST: u32 = 2;
 
@@ -171,7 +174,7 @@ impl MidLayer {
 
 // ── InheritLeaf ──────────────────────────────────────────────────────────
 
-#[layer(js_name = "InheritLeaf", parent = MidLayer)]
+#[layer(js_name = "InheritLeaf")]
 pub struct LeafLayer {
     #[layer(getter)]
     pub leaf_value: u32,
@@ -181,6 +184,9 @@ pub struct LeafLayer {
 
 #[layer]
 impl LeafLayer {
+    #[layer(parent)]
+    type Parent = MidLayer;
+
     #[layer]
     const LEAF_CONST: u32 = 3;
 

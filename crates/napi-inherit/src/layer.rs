@@ -1,7 +1,9 @@
 //! The layer trait system.
 //!
-//! [`LayerDef`] describes one level of an inheritance chain: its parent
+//! [`LayerMembers`] describes one level of an inheritance chain: its parent
 //! layer, its class name, and which members live on its prototype.
+//! [`LayerAccessors`] splits the instance getter/setter pairs out of
+//! `define_members`, defining them on top of the layer's own data.
 //! [`LayerBuild`] builds this layer's own data from constructor arguments,
 //! enforcing the ES super-before-return rule through [`Super`]. [`ExtendLayer`]
 //! aggregates the two and is implemented automatically for any type that has
@@ -33,15 +35,33 @@ pub trait OwnBlock: 'static {
 
 /// One level of an inheritance chain: its parent layer, class name, and the
 /// members it registers on its prototype and constructor.
-pub trait LayerDef: Sized + 'static {
+pub trait LayerMembers: Sized + 'static {
     /// The parent layer. `RootLayer` terminates the chain.
-    type Parent: EmitOwn + HasClassRef + OwnBlock;
+    type Parent: OwnBlock + EmitOwn + HasClassRef;
 
     const CLASS_NAME: &'static str;
 
-    /// Register this layer's members (getters, methods on `proto`; static
-    /// constants on `ctor`).
+    /// Register this layer's members (methods on `proto`; static getters,
+    /// constants, methods on `ctor`). Instance getter/setter pairs live in
+    /// [`LayerAccessors::define_accessors`] instead.
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()>;
+}
+
+impl<T: LayerMembers> OwnBlock for T {
+    const DEPTH: usize = <T::Parent as OwnBlock>::DEPTH + 1;
+}
+
+/// A layer's instance accessor definitions: the getter/setter property
+/// pairs on the prototype, built on top of the layer's own data through
+/// `with_own` / `with_own_mut`. `build_class` calls `define_accessors`
+/// before `define_members`, so a layer never wires the two together by
+/// hand - the members side only defines methods and static members. The
+/// `#[layer]` macro generates this impl for field accessors and instance
+/// `#[layer(getter)]` / `#[layer(setter)]` methods; hand-written layers
+/// implement it next to `LayerComposed`.
+pub trait LayerAccessors: Sized + 'static {
+    /// Define this layer's instance getters and setters on `proto`.
+    fn define_accessors(env: &Env, proto: &mut Object) -> Result<()>;
 }
 
 /// Constructor argument tuple for a layer chain. `ARITY` is the compile-time
@@ -87,7 +107,7 @@ impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 /// unreachable before super. Generated from a `#[layer(constructor)]`
 /// method, it dispatches the typed arguments, calls `sup`, and hands `env` /
 /// `sup` / `this` to the method (which may be a JS subclass instance).
-pub trait LayerBuild: LayerDef + Sized + 'static {
+pub trait LayerBuild: LayerMembers + Sized + 'static {
     type Args: LayerArgs;
 
     fn build<'env>(
@@ -99,7 +119,7 @@ pub trait LayerBuild: LayerDef + Sized + 'static {
 
 pub trait LayerComposed: Sized + 'static {
     /// The parent layer. `RootLayer` terminates the chain.
-    type Parent: EmitOwn + HasClassRef + OwnBlock;
+    type Parent: OwnBlock + EmitOwn + HasClassRef;
 
     const CLASS_NAME: &'static str;
 
@@ -111,20 +131,22 @@ pub trait LayerComposed: Sized + 'static {
         sup: Super<'_, 'env, Self::Parent>,
     ) -> Result<Constructed<Self>>;
 
-    /// Register this layer's members (getters, methods on `proto`; static
-    /// constants on `ctor`).
+    /// Register this layer's members (methods on `proto`; static getters,
+    /// constants, methods on `ctor`). Instance getter/setter pairs live in
+    /// [`LayerAccessors::define_accessors`] instead.
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()>;
 }
 
 /// The composed path: a hand-written layer implements this single trait
-/// (description + constructor bridge) instead of `LayerDef` + `LayerBuild`
+/// (description + constructor bridge) plus [`LayerAccessors`] for its
+/// instance getter/setter pairs, instead of `LayerMembers` + `LayerBuild`
 /// separately; the blanket impls below split it back into the two focused
 /// traits, which is what the rest of the runtime consumes.
-pub trait ExtendLayer: LayerDef + LayerBuild {}
+pub trait ExtendLayer: LayerMembers + LayerBuild {}
 
-impl<T: LayerDef + LayerBuild> ExtendLayer for T {}
+impl<T: LayerMembers + LayerBuild> ExtendLayer for T {}
 
-impl<T: LayerComposed> LayerDef for T {
+impl<T: LayerComposed> LayerMembers for T {
     type Parent = <T as LayerComposed>::Parent;
     const CLASS_NAME: &'static str = <T as LayerComposed>::CLASS_NAME;
 
@@ -192,7 +214,7 @@ pub struct LayerChain<T: ExtendLayer> {
     pub own: T,
 }
 
-impl<T: LayerDef + LayerBuild> EmitOwn for T {
+impl<T: LayerMembers + LayerBuild> EmitOwn for T {
     type Chain = LayerChain<T>;
     type Args = <T as LayerBuild>::Args;
 
@@ -259,8 +281,4 @@ impl<T> Constructed<T> {
     pub fn new(_done: SuperDone<'_, '_>, own: T) -> Self {
         Self { own }
     }
-}
-
-impl<T: LayerDef> OwnBlock for T {
-    const DEPTH: usize = <T::Parent as OwnBlock>::DEPTH + 1;
 }

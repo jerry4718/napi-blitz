@@ -11,7 +11,7 @@ use wintertc_events::event::{DispatchTarget, EventInit};
 use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `MouseEvent` class.
-#[layer(js_name = "MouseEvent", parent = UiEventLayer)]
+#[layer(js_name = "MouseEvent")]
 pub struct MouseEventLayer {
     #[layer(getter)]
     pub screen_x: i32,
@@ -97,6 +97,9 @@ impl MouseEventLayer {
 
 #[layer]
 impl MouseEventLayer {
+    #[layer(parent)]
+    type Parent = UiEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

@@ -9,7 +9,7 @@ use wintertc_events::event::EventInit;
 use crate::events::mouse_event::MouseEventLayer;
 
 /// Own block of the `WheelEvent` class.
-#[layer(js_name = "WheelEvent", parent = MouseEventLayer)]
+#[layer(js_name = "WheelEvent")]
 pub struct WheelEventLayer {
     #[layer(getter)]
     pub delta_x: f64,
@@ -39,6 +39,9 @@ impl WheelEventLayer {
 
 #[layer]
 impl WheelEventLayer {
+    #[layer(parent)]
+    type Parent = MouseEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

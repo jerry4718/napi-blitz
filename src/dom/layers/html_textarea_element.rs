@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Own block of the `HTMLTextAreaElement` class.
-#[layer(js_name = "HTMLTextAreaElement", parent = HTMLElementLayer)]
+#[layer(js_name = "HTMLTextAreaElement")]
 pub struct HTMLTextAreaElementLayer {
     pub(crate) node_id: NodeId,
     pub(crate) doc: Rc<SharedDoc>,
@@ -66,6 +66,9 @@ impl HTMLTextAreaElementLayer {
 
 #[layer]
 impl HTMLTextAreaElementLayer {
+    #[layer(parent)]
+    type Parent = HTMLElementLayer;
+
     #[layer(constructor)]
     fn build(_sup: Super<HTMLElementLayer>) -> Result<Constructed<Self>> {
         Err(Error::from_reason(

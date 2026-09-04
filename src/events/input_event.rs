@@ -6,13 +6,16 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use wintertc_events::event::EventInit;
 
 /// Own block of the `InputEvent` class.
-#[layer(js_name = "InputEvent", parent = UiEventLayer)]
+#[layer(js_name = "InputEvent")]
 pub struct InputEventLayer {
     pub(crate) data: String,
 }
 
 #[layer]
 impl InputEventLayer {
+    #[layer(parent)]
+    type Parent = UiEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

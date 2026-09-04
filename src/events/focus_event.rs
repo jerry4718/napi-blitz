@@ -10,13 +10,16 @@ use wintertc_events::event::{DispatchTarget, EventInit};
 use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `FocusEvent` class.
-#[layer(js_name = "FocusEvent", parent = UiEventLayer)]
+#[layer(js_name = "FocusEvent")]
 pub struct FocusEventLayer {
     pub related_target: DispatchTarget,
 }
 
 #[layer]
 impl FocusEventLayer {
+    #[layer(parent)]
+    type Parent = UiEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

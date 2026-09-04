@@ -31,7 +31,7 @@ const NODE_TYPE_OTHER: u32 = 0;
 pub struct NodeState {}
 
 /// Own block of the `Node` class.
-#[layer(js_name = "Node", parent = EventTargetLayer)]
+#[layer(js_name = "Node")]
 pub struct NodeLayer {
     pub(crate) node_id: NodeId,
     pub(crate) doc: Rc<SharedDoc>,
@@ -40,6 +40,9 @@ pub struct NodeLayer {
 
 #[layer]
 impl NodeLayer {
+    #[layer(parent)]
+    type Parent = EventTargetLayer;
+
     #[layer(constructor)]
     fn build(_sup: Super<EventTargetLayer>) -> Result<Constructed<Self>> {
         Err(Error::from_reason(

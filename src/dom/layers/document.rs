@@ -20,7 +20,7 @@ use crate::{
 /// Own block of the `Document` class. The blitz document node is always
 /// the root node, so the members here work off `doc` alone (the parent
 /// `NodeLayer` slot carries the `node_id`).
-#[layer(js_name = "Document", parent = NodeLayer)]
+#[layer(js_name = "Document")]
 pub struct DocumentLayer {
     pub(crate) doc: Rc<SharedDoc>,
 }
@@ -73,6 +73,9 @@ fn is_element_with_tag(node: &blitz::dom::Node, name: &str) -> bool {
 
 #[layer]
 impl DocumentLayer {
+    #[layer(parent)]
+    type Parent = NodeLayer;
+
     #[layer(constructor)]
     fn build(_sup: Super<NodeLayer>) -> Result<Constructed<Self>> {
         Err(Error::from_reason(

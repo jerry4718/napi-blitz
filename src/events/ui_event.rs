@@ -5,7 +5,7 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use wintertc_events::event::{EventInit, EventLayer};
 
 /// Own block of the `UiEvent` class.
-#[layer(js_name = "UiEvent", parent = EventLayer)]
+#[layer(js_name = "UiEvent")]
 pub struct UiEventLayer {
     #[layer(getter)]
     pub detail: i32,
@@ -13,6 +13,9 @@ pub struct UiEventLayer {
 
 #[layer]
 impl UiEventLayer {
+    #[layer(parent)]
+    type Parent = EventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,

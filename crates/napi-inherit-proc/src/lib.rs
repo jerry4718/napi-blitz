@@ -78,14 +78,6 @@ struct FieldMeta {
     setter: bool,
 }
 
-/// A layer struct field rebuilt from `FieldMeta` for codegen.
-struct FieldMember {
-    ident: Ident,
-    ty: Type,
-    getter: bool,
-    setter: bool,
-}
-
 /// Everything the macro learns about one layer across its two expansions
 /// (struct first, then impl): the JS class name, the parent layer's Rust
 /// type, and the public fields. Types are stored as strings (`syn` items
@@ -94,7 +86,6 @@ struct FieldMember {
 struct LayerMeta {
     js_name: String,
     parent_ty: Option<String>,
-    fields: Vec<FieldMeta>,
 }
 
 static LAYER_REGISTRY: OnceLock<Mutex<HashMap<String, LayerMeta>>> = OnceLock::new();
@@ -128,7 +119,6 @@ fn type_last_ident(ty: &Type) -> Option<Ident> {
 #[derive(Default)]
 struct LayerAttrs {
     js_name: Option<String>,
-    parent: Option<Type>,
 }
 
 impl LayerAttrs {
@@ -144,29 +134,11 @@ impl LayerAttrs {
             let Some(name) = nv.path.get_ident().map(|i| i.to_string()) else {
                 continue;
             };
-            match name.as_str() {
-                "js_name" => {
-                    if let syn::Expr::Lit(expr) = &nv.value
-                        && let Lit::Str(s) = &expr.lit
-                    {
-                        out.js_name = Some(s.value());
-                    }
-                }
-                "parent" => match &nv.value {
-                    syn::Expr::Path(p) => {
-                        out.parent = Some(syn::Type::Path(syn::TypePath {
-                            qself: None,
-                            path: p.path.clone(),
-                        }));
-                    }
-                    other => {
-                        return Err(syn::Error::new_spanned(
-                            other,
-                            "`parent` must be a layer struct type path, e.g. `parent = MidLayer`",
-                        ));
-                    }
-                },
-                _ => {}
+            if name == "js_name"
+                && let syn::Expr::Lit(expr) = &nv.value
+                && let Lit::Str(s) = &expr.lit
+            {
+                out.js_name = Some(s.value());
             }
         }
         Ok(out)
@@ -212,6 +184,24 @@ fn field_flags(attrs: &mut Vec<Attribute>) -> (bool, bool) {
         false
     });
     (getter, setter)
+}
+
+/// Whether an attribute is `#[layer(flag)]` with the given flag ident.
+fn layer_attr_has_flag(attr: &Attribute, flag: &str) -> bool {
+    if !attr.path().is_ident("layer") {
+        return false;
+    }
+    let Meta::List(list) = &attr.meta else {
+        return false;
+    };
+    syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
+        .parse2(list.tokens.clone())
+        .map(|metas| {
+            metas.iter().any(
+                |m| matches!(m, Meta::Path(p) if p.get_ident().map(|i| i == flag).unwrap_or(false)),
+            )
+        })
+        .unwrap_or(false)
 }
 
 /// A `#[layer(...)]`-annotated impl member.
@@ -522,11 +512,6 @@ fn member_napi_fn(
 
 fn expand_struct(s: &ItemStruct, attrs: &LayerAttrs) -> syn::Result<TokenStream2> {
     let js_name = attrs.js_name.clone().unwrap_or_else(|| s.ident.to_string());
-    let parent_js = attrs
-        .parent
-        .as_ref()
-        .and_then(type_last_ident)
-        .map(|id| resolve_js_name(&id.to_string()));
     let mut s = s.clone();
     let fields: Vec<FieldMeta> = s
         .fields
@@ -546,33 +531,58 @@ fn expand_struct(s: &ItemStruct, attrs: &LayerAttrs) -> syn::Result<TokenStream2
     if let Some(def) = build_class_def(&s, &js_name, &fields).to_type_def() {
         output_type_def(&def);
     }
+    // The struct block self-sufficiently generates the LayerAccessors
+    // implementation: field getter/setter pairs are decided solely by the
+    // fields and their `#[layer(getter)]` / `#[layer(setter)]` flags here,
+    // so the impl block's expansion never has to read the field list.
+    let self_ty = s.ident.clone();
+    let field_getters = fields.iter().filter(|f| f.getter).map(|f| {
+        let ident = Ident::new(&f.name, Span::call_site());
+        let field_js = to_camel(&f.name);
+        quote! {
+            napi_helpers::inherits::define_getter(proto, #field_js, |_ctx, this| {
+                napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| d.#ident)
+            })?;
+        }
+    });
+    let field_setters = fields.iter().filter(|f| f.setter).map(|f| {
+        let ident = Ident::new(&f.name, Span::call_site());
+        let field_js = to_camel(&f.name);
+        let ty: Type = syn::parse_str(&f.ty).expect("invalid field type");
+        quote! {
+            napi_helpers::inherits::define_setter(proto, #field_js, |_env, this, value: #ty| {
+                napi_helpers::inherits::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
+            })?;
+        }
+    });
+    let accessors = quote! {
+        impl napi_helpers::inherits::LayerAccessors for #self_ty {
+            fn define_accessors(
+                _env: &napi::Env,
+                proto: &mut napi::bindgen_prelude::Object,
+            ) -> napi::Result<()> {
+                #(#field_getters)*
+                #(#field_setters)*
+                Ok(())
+            }
+        }
+    };
     layer_registry().lock().unwrap().insert(
         s.ident.to_string(),
         LayerMeta {
             js_name: js_name.clone(),
-            parent_ty: attrs
-                .parent
-                .as_ref()
-                .map(|t| t.to_token_stream().to_string()),
-            fields,
+            parent_ty: None,
         },
     );
-    if let Some(parent) = &parent_js {
-        output_type_def(&TypeDef {
-            kind: "extends".to_owned(),
-            name: js_name,
-            def: parent.clone(),
-            ..Default::default()
-        });
-    }
-    Ok(quote! { #s })
+    Ok(quote! { #s #accessors })
 }
 
 // ── runtime codegen ──────────────────────────────────────────────────────
 
 /// One member's define_members call. Instance members read their layer data
 /// through `with_own`; static members (no receiver) call the implementation
-/// directly.
+/// directly. Everything here lands in `LayerMembers::define_members` - the
+/// `LayerAccessors` side is generated by the struct block alone.
 fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) -> TokenStream2 {
     let name = f.sig.ident.clone();
     let js = to_camel(&name.to_string());
@@ -777,7 +787,6 @@ fn gen_extend_layer_impl(
     ctor_name: &Ident,
     build: &BuildParams,
     full_params_ty: &Vec<Box<Type>>,
-    fields: &[FieldMember],
     members: &[MemberFn],
     consts: &[(String, syn::Expr)],
     ctor_ret_is_result: bool,
@@ -786,25 +795,6 @@ fn gen_extend_layer_impl(
         Some(ty) => quote! { #ty },
         None => quote! { napi_helpers::inherits::RootLayer },
     };
-    let field_getters = fields.iter().filter(|f| f.getter).map(|f| {
-        let ident = &f.ident;
-        let field_js = to_camel(&ident.to_string());
-        quote! {
-            napi_helpers::inherits::define_getter(proto, #field_js, |_ctx, this| {
-                napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| d.#ident)
-            })?;
-        }
-    });
-    let field_setters = fields.iter().filter(|f| f.setter).map(|f| {
-        let ident = &f.ident;
-        let ty = &f.ty;
-        let field_js = to_camel(&ident.to_string());
-        quote! {
-            napi_helpers::inherits::define_setter(proto, #field_js, |_env, this, value: #ty| {
-                napi_helpers::inherits::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
-            })?;
-        }
-    });
     let member_tokens = members
         .iter()
         .map(|m| member_define_tokens(self_ty, &m.f, m.kind));
@@ -860,7 +850,7 @@ fn gen_extend_layer_impl(
         quote! { Ok(#self_ty::#ctor_name(#(#forward),*)) }
     };
     quote! {
-        impl napi_helpers::inherits::LayerDef for #self_ty {
+        impl napi_helpers::inherits::LayerMembers for #self_ty {
             type Parent = #parent_tokens;
             const CLASS_NAME: &'static str = #js_name;
 
@@ -869,8 +859,6 @@ fn gen_extend_layer_impl(
                 proto: &mut napi::bindgen_prelude::Object,
                 ctor: &mut napi::bindgen_prelude::Object,
             ) -> napi::Result<()> {
-                #(#field_getters)*
-                #(#field_setters)*
                 #(#member_tokens)*
                 #(#const_tokens)*
                 Ok(())
@@ -972,7 +960,7 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     // rustc expands structs before impls, so a real build always finds the
     // registered struct; the fallback only serves the IDE's on-demand
     // expansion of an impl in isolation (diagnostic-only, never compiled).
-    let meta = layer_registry()
+    let mut meta = layer_registry()
         .lock()
         .unwrap()
         .get(&self_ty.to_string())
@@ -980,10 +968,28 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         .unwrap_or_else(|| LayerMeta {
             js_name: self_ty.to_string(),
             parent_ty: None,
-            fields: vec![],
         });
 
     let mut i = i.clone();
+    // The parent layer is declared inside the impl block as
+    // `#[layer(parent)] type Parent = X;`. It is consumed here (and the
+    // item removed - an inherent `type Parent` would collide with the
+    // generated `LayerMembers::Parent`), so the struct block carries only
+    // the class name and the fields.
+    let mut parent_ann: Option<Type> = None;
+    i.items.retain(|item| {
+        let ImplItem::Type(t) = item else { return true };
+        let is_parent = t.attrs.iter().any(|a| layer_attr_has_flag(a, "parent"));
+        if is_parent {
+            parent_ann = Some(t.ty.clone());
+        }
+        !is_parent
+    });
+    meta.parent_ty = parent_ann.as_ref().map(|t| t.to_token_stream().to_string());
+    layer_registry()
+        .lock()
+        .unwrap()
+        .insert(self_ty.to_string(), meta.clone());
     let mut napi_fns = vec![];
     let mut members: Vec<MemberFn> = vec![];
     let mut consts: Vec<(String, syn::Expr)> = vec![];
@@ -1059,21 +1065,22 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         output_type_def(&def);
     }
 
-    // Rebuild the parent type and public fields from their string form.
-    let parent_ty: Option<Type> = meta
-        .parent_ty
+    // The TS `extends` link is emitted right next to the parent declaration
+    // that lives in the impl block.
+    let parent_js = parent_ann
         .as_ref()
-        .map(|s| syn::parse_str(s).expect("invalid parent type"));
-    let fields: Vec<FieldMember> = meta
-        .fields
-        .iter()
-        .map(|fm| FieldMember {
-            ident: Ident::new(&fm.name, Span::call_site()),
-            ty: syn::parse_str(&fm.ty).expect("invalid field type"),
-            getter: fm.getter,
-            setter: fm.setter,
-        })
-        .collect();
+        .and_then(type_last_ident)
+        .map(|id| resolve_js_name(&id.to_string()));
+    if let Some(parent) = &parent_js {
+        output_type_def(&TypeDef {
+            kind: "extends".to_owned(),
+            name: meta.js_name.clone(),
+            def: parent.clone(),
+            ..Default::default()
+        });
+    }
+
+    let parent_ty = parent_ann;
 
     let ctor_ret_is_result = match &ctor_f.sig.output {
         ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
@@ -1086,7 +1093,6 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         &ctor_name_of(&ctor_f),
         &ctor_build,
         &full_params_ty,
-        &fields,
         &members,
         &consts,
         ctor_ret_is_result,

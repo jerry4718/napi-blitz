@@ -8,7 +8,7 @@ use napi_helpers::{
     inherits::{Constructed, Super, proc::layer},
 };
 
-use crate::event::EventInit;
+use crate::event::{EventInit, EventLayer};
 
 /// `dictionary MessageEventInit : EventInit`.
 /// `source` and `ports` are not implemented yet.
@@ -24,7 +24,7 @@ pub struct MessageEventInit {
 }
 
 /// Own block of the `MessageEvent` class.
-#[layer(js_name = "MessageEvent", parent = super::EventLayer)]
+#[layer(js_name = "MessageEvent")]
 pub struct MessageEventLayer {
     data: Anything,
     origin: String,
@@ -33,13 +33,16 @@ pub struct MessageEventLayer {
 
 #[layer]
 impl MessageEventLayer {
+    #[layer(parent)]
+    type Parent = EventLayer;
+
     /// `new MessageEvent(type, init?)` — `init` follows
     /// `dictionary MessageEventInit`.
     #[layer(constructor)]
     fn build(
         type_: String,
         init: Option<MessageEventInit>,
-        sup: Super<crate::event::EventLayer>,
+        sup: Super<EventLayer>,
     ) -> Result<Constructed<Self>> {
         let MessageEventInit {
             data,

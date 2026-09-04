@@ -8,7 +8,7 @@ use wintertc_events::event::EventInit;
 use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `KeyboardEvent` class.
-#[layer(js_name = "KeyboardEvent", parent = UiEventLayer)]
+#[layer(js_name = "KeyboardEvent")]
 pub struct KeyboardEventLayer {
     pub(crate) key: String,
     pub(crate) code: String,
@@ -46,6 +46,9 @@ impl KeyboardEventLayer {
 
 #[layer]
 impl KeyboardEventLayer {
+    #[layer(parent)]
+    type Parent = UiEventLayer;
+
     #[layer(constructor)]
     fn build(
         type_: String,
