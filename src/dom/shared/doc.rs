@@ -14,31 +14,38 @@ use std::{
     task::Context as TaskContext,
 };
 
-use crate::dispatch::JsEventHandler;
-use crate::layers::comment::CommentLayer;
-use crate::layers::document::DocumentLayer;
-use crate::layers::element::ElementLayer;
-use crate::layers::html_document::HTMLDocumentLayer;
-use crate::layers::html_element::HTMLElementLayer;
-use crate::layers::html_input_element::HTMLInputElementLayer;
-use crate::layers::html_textarea_element::HTMLTextAreaElementLayer;
-use crate::layers::node::{NodeLayer, NodeState};
-use crate::layers::text::TextLayer;
-use crate::shared::node_cache::NodeCache;
+use crate::{
+    dispatch::JsEventHandler,
+    layers::{
+        comment::CommentLayer,
+        document::DocumentLayer,
+        element::ElementLayer,
+        html_document::HTMLDocumentLayer,
+        html_element::HTMLElementLayer,
+        html_input_element::HTMLInputElementLayer,
+        html_textarea_element::HTMLTextAreaElementLayer,
+        node::{NodeLayer, NodeState},
+        text::TextLayer,
+    },
+    shared::node_cache::NodeCache,
+};
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
-        DocumentConfig, EventDriver, FontContext, NodeData, NodeId,
+        DocumentConfig, EventDriver, FontContext, NodeData, NodeId, local_name, node::NodeKind,
     },
     html::{DocumentHtmlParser, HtmlProvider},
     traits::events::UiEvent,
 };
-use blitz_dom::local_name;
-use blitz_dom::node::NodeKind;
 use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{JsWeakRef, inherit as napi_inherit};
+// 4. Build the node chain by blitz node type + tag name.
+use napi_helpers::{
+    JsWeakRef,
+    inherits::{layer_chain, new_from_chain},
+};
 use parley::fontique::Blob;
+use wintertc_events::event_target::EventTargetLayer;
 
 const DEFAULT_HTML: &str = "<!DOCTYPE html><html><head></head><body></body></html>";
 
@@ -249,7 +256,7 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, env: &'a Env, node_id: NodeId) -> Resu
             )?;
             return Ok(existing);
         }
-        let chain = napi_helpers::inherit::layer_chain!(
+        let chain = layer_chain!(
             wintertc_events::event_target::EventTargetLayer::fresh(),
             NodeLayer {
                 node_id,
@@ -259,18 +266,13 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, env: &'a Env, node_id: NodeId) -> Resu
             DocumentLayer { doc: doc.clone() },
             HTMLDocumentLayer {},
         );
-        let document =
-            napi_helpers::inherit::class::new_from_chain::<HTMLDocumentLayer>(env, chain)?;
+        let document = new_from_chain::<HTMLDocumentLayer>(env, chain)?;
         doc.set_document_ref(env, &document)?;
         doc.node_cache
             .borrow_mut()
             .insert(node_id, &document, env, true, Rc::downgrade(doc))?;
         return Ok(document);
     }
-
-    // 4. Build the node chain by blitz node type + tag name.
-    use napi_helpers::inherit::{class::new_from_chain, layer_chain};
-    use wintertc_events::event_target::EventTargetLayer;
 
     let js_node = match node_kind {
         NodeKind::Element => match qual_name.map(|qn| qn.local) {

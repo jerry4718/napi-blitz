@@ -7,12 +7,16 @@ use std::rc::Rc;
 
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer, with_own},
+};
 use wintertc_events::event_target::EventTargetLayer;
 
-use crate::shared::doc::{SharedDoc, wrap_node};
+use crate::shared::{
+    doc::{SharedDoc, wrap_node},
+    ops::to_anything,
+};
 
 const NODE_TYPE_ELEMENT: u32 = 1;
 const NODE_TYPE_TEXT: u32 = 3;
@@ -59,62 +63,80 @@ impl NodeLayer {
     }
 
     #[layer]
-    fn parent_node<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let parent_id = self
+    fn parent_node(&self, env: &Env) -> Result<Option<Anything>> {
+        let Some(parent_id) = self
             .doc
             .base
             .borrow()
             .get_node(self.node_id)
-            .and_then(|n| n.parent)?;
-        wrap_node(&self.doc, env, parent_id).ok()
+            .and_then(|n| n.parent)
+        else {
+            return Ok(None);
+        };
+        let node = wrap_node(&self.doc, env, parent_id)?;
+        Ok(Some(to_anything(node, env)?))
     }
 
     #[layer]
-    fn first_child<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let child_id = self
+    fn first_child(&self, env: &Env) -> Result<Option<Anything>> {
+        let Some(child_id) = self
             .doc
             .base
             .borrow()
             .get_node(self.node_id)
-            .and_then(|n| n.children.first().copied())?;
-        wrap_node(&self.doc, env, child_id).ok()
+            .and_then(|n| n.children.first().copied())
+        else {
+            return Ok(None);
+        };
+        let node = wrap_node(&self.doc, env, child_id)?;
+        Ok(Some(to_anything(node, env)?))
     }
 
     #[layer]
-    fn last_child<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let child_id = self
+    fn last_child(&self, env: &Env) -> Result<Option<Anything>> {
+        let Some(child_id) = self
             .doc
             .base
             .borrow()
             .get_node(self.node_id)
-            .and_then(|n| n.children.last().copied())?;
-        wrap_node(&self.doc, env, child_id).ok()
+            .and_then(|n| n.children.last().copied())
+        else {
+            return Ok(None);
+        };
+        let node = wrap_node(&self.doc, env, child_id)?;
+        Ok(Some(to_anything(node, env)?))
     }
 
     #[layer]
-    fn next_sibling<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let sibling_id = {
+    fn next_sibling(&self, env: &Env) -> Result<Option<Anything>> {
+        let Some(sibling_id) = ({
             let base = self.doc.base.borrow();
             base.get_node(self.node_id)
                 .and_then(|n| n.forward(1))
                 .map(|n| n.id)
-        }?;
-        wrap_node(&self.doc, env, sibling_id).ok()
+        }) else {
+            return Ok(None);
+        };
+        let node = wrap_node(&self.doc, env, sibling_id)?;
+        Ok(Some(to_anything(node, env)?))
     }
 
     #[layer]
-    fn previous_sibling<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
-        let sibling_id = {
+    fn previous_sibling(&self, env: &Env) -> Result<Option<Anything>> {
+        let Some(sibling_id) = ({
             let base = self.doc.base.borrow();
             base.get_node(self.node_id)
                 .and_then(|n| n.backward(1))
                 .map(|n| n.id)
-        }?;
-        wrap_node(&self.doc, env, sibling_id).ok()
+        }) else {
+            return Ok(None);
+        };
+        let node = wrap_node(&self.doc, env, sibling_id)?;
+        Ok(Some(to_anything(node, env)?))
     }
 
     #[layer]
-    fn child_nodes<'a>(&self, env: &'a Env) -> Vec<Object<'a>> {
+    fn child_nodes(&self, env: &Env) -> Result<Vec<Anything>> {
         let children: Vec<NodeId> = self
             .doc
             .base
@@ -122,10 +144,11 @@ impl NodeLayer {
             .get_node(self.node_id)
             .map(|n| n.children.iter().copied().collect())
             .unwrap_or_default();
-        children
-            .into_iter()
-            .filter_map(|id| wrap_node(&self.doc, env, id).ok())
-            .collect()
+        let mut out = Vec::with_capacity(children.len());
+        for id in children {
+            out.push(to_anything(wrap_node(&self.doc, env, id)?, env)?);
+        }
+        Ok(out)
     }
 
     #[layer(getter)]
@@ -162,8 +185,8 @@ impl NodeLayer {
     }
 
     #[layer]
-    fn append_child<'a>(&mut self, env: &'a Env, child: Object) -> Result<Object<'a>> {
-        let child_id = napi_inherit::own::with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
+    fn append_child(&mut self, env: &Env, child: Object) -> Result<Anything> {
+        let child_id = with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
         let mut base = self.doc.base.borrow_mut();
         let mut mutator = base.mutate();
         mutator.append_children(self.node_id, &[child_id]);
@@ -172,21 +195,19 @@ impl NodeLayer {
         self.doc.mark_host_dirty();
         self.doc
             .make_in_document_subtree_strong(self.node_id, child_id, env)?;
-        wrap_node(&self.doc, env, child_id)
+        Ok(to_anything(wrap_node(&self.doc, env, child_id)?, env)?)
     }
 
     #[layer]
-    fn insert_before<'a>(
+    fn insert_before(
         &mut self,
-        env: &'a Env,
+        env: &Env,
         node: Object,
         anchor: Option<Object>,
-    ) -> Result<Object<'a>> {
-        let node_id = napi_inherit::own::with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
+    ) -> Result<Anything> {
+        let node_id = with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
         let anchor_id = match &anchor {
-            Some(a) => Some(napi_inherit::own::with_own::<NodeLayer, _>(a, |d| {
-                d.node_id
-            })?),
+            Some(a) => Some(with_own::<NodeLayer, _>(a, |d| d.node_id)?),
             None => None,
         };
         let mut base = self.doc.base.borrow_mut();
@@ -204,7 +225,7 @@ impl NodeLayer {
         self.doc.mark_host_dirty();
         self.doc
             .make_in_document_subtree_strong(self.node_id, node_id, env)?;
-        wrap_node(&self.doc, env, node_id)
+        Ok(to_anything(wrap_node(&self.doc, env, node_id)?, env)?)
     }
 
     #[layer]
@@ -222,9 +243,9 @@ impl NodeLayer {
     }
 
     #[layer]
-    fn replace_with<'a>(&mut self, env: &'a Env, node: Object) -> Result<Object<'a>> {
+    fn replace_with(&mut self, env: &Env, node: Object) -> Result<Anything> {
         let removed_id = self.node_id;
-        let node_id = napi_inherit::own::with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
+        let node_id = with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
         // Switch the removed node to weak before detaching, while parent chain is intact.
         if let Err(e) = self.doc.make_in_document_subtree_weak(removed_id, env) {
             eprintln!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
@@ -238,11 +259,11 @@ impl NodeLayer {
         // The new node is now in document -> strong.
         self.doc
             .make_in_document_subtree_strong(node_id, node_id, env)?;
-        wrap_node(&self.doc, env, node_id)
+        Ok(to_anything(wrap_node(&self.doc, env, node_id)?, env)?)
     }
 
     #[layer]
-    fn clone_node<'a>(&self, env: &'a Env, deep: bool) -> Result<Object<'a>> {
+    fn clone_node(&self, env: &Env, deep: bool) -> Result<Anything> {
         let new_id = if deep {
             let mut base = self.doc.base.borrow_mut();
             let mut mutator = base.mutate();
@@ -253,13 +274,13 @@ impl NodeLayer {
         } else {
             let mut base = self.doc.base.borrow_mut();
             let Some(data) = base.get_node(self.node_id).map(|node| node.data.clone()) else {
-                return wrap_node(&self.doc, env, self.node_id);
+                return Ok(to_anything(wrap_node(&self.doc, env, self.node_id)?, env)?);
             };
             let clone_id = base.create_node(data);
             drop(base);
             clone_id
         };
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, env, new_id)
+        Ok(to_anything(wrap_node(&self.doc, env, new_id)?, env)?)
     }
 }

@@ -1,10 +1,7 @@
 //! The `Comment` layer — a comment node directly under `Node`.
 
-use napi::{Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event_target::EventTargetLayer;
+use napi::{Error, Result};
+use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 use crate::layers::node::NodeLayer;
 

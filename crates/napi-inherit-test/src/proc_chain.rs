@@ -2,13 +2,9 @@ use napi::bindgen_prelude::{FnArgs, Object};
 use napi::{Error, Result, Status};
 use napi_derive::napi;
 
-use napi_inherit::{
-    from_chain,
-    layer::{Constructed, RootLayer, Super},
-    own::{with_own, with_own_mut},
+use napi_helpers::inherits::{
+    Constructed, RootLayer, Super, from_chain, proc::layer, with_own, with_own_mut,
 };
-
-use napi_inherit_proc::layer;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

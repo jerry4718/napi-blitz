@@ -3,15 +3,19 @@
 use std::rc::Rc;
 
 use blitz::dom::{Attribute as BlitzAttribute, NodeId, local_name};
-use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event::EventLayer;
+use napi::{Env, Error, Result};
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer},
+};
 
-use crate::layers::node::NodeLayer;
-use crate::shared::doc::{SharedDoc, wrap_node};
-use crate::shared::ops::{AttrInit, make_qual_name};
+use crate::{
+    layers::node::NodeLayer,
+    shared::{
+        doc::{SharedDoc, wrap_node},
+        ops::{AttrInit, make_qual_name, to_anything},
+    },
+};
 
 /// Own block of the `Document` class. The blitz document node is always
 /// the root node, so the members here work off `doc` alone (the parent
@@ -90,23 +94,23 @@ impl DocumentLayer {
     }
 
     #[layer]
-    fn query_selector<'a>(&self, selector: String, env: &'a Env) -> Result<Option<Object<'a>>> {
+    fn query_selector(&self, selector: String, env: &Env) -> Result<Option<Anything>> {
         let state = self.doc.base.borrow();
         match state.query_selector(&selector) {
-            Ok(Some(id)) => Ok(Some(wrap_node(&self.doc, env, id)?)),
+            Ok(Some(id)) => Ok(Some(to_anything(wrap_node(&self.doc, env, id)?, env)?)),
             Ok(None) => Ok(None),
             Err(err) => Err(Error::from_reason(format!("query_selector: {err:?}"))),
         }
     }
 
     #[layer]
-    fn query_selector_all<'a>(&self, selector: String, env: &'a Env) -> Result<Vec<Object<'a>>> {
+    fn query_selector_all(&self, selector: String, env: &Env) -> Result<Vec<Anything>> {
         let state = self.doc.base.borrow();
         match state.query_selector_all(&selector) {
             Ok(ids) => {
                 let mut result = Vec::new();
                 for id in ids {
-                    result.push(wrap_node(&self.doc, env, id)?);
+                    result.push(to_anything(wrap_node(&self.doc, env, id)?, env)?);
                 }
                 Ok(result)
             }
@@ -115,23 +119,23 @@ impl DocumentLayer {
     }
 
     #[layer]
-    fn get_element_by_id<'a>(&self, id: String, env: &'a Env) -> Option<Object<'a>> {
+    fn get_element_by_id(&self, id: String, env: &Env) -> Option<Anything> {
         let node_id = self.doc.base.borrow().get_element_by_id(&id)?;
-        wrap_node(&self.doc, env, node_id).ok()
+        to_anything(wrap_node(&self.doc, env, node_id).ok()?, env).ok()
     }
 
     #[layer]
-    fn get_elements_by_tag_name<'a>(&self, name: String, env: &'a Env) -> Vec<Object<'a>> {
+    fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<Anything> {
         let doc = self.doc.clone();
         let root = doc.base.borrow().root_node().id;
         let ids = dfs(&doc, root, |n| is_element_with_tag(n, &name));
         ids.into_iter()
-            .filter_map(|id| wrap_node(&doc, env, id).ok())
+            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
     #[layer]
-    fn get_elements_by_class_name<'a>(&self, class_name: String, env: &'a Env) -> Vec<Object<'a>> {
+    fn get_elements_by_class_name(&self, class_name: String, env: &Env) -> Vec<Anything> {
         let doc = self.doc.clone();
         let root = doc.base.borrow().root_node().id;
         let ids = dfs(&doc, root, |n| {
@@ -140,18 +144,18 @@ impl DocumentLayer {
                 .unwrap_or(false)
         });
         ids.into_iter()
-            .filter_map(|id| wrap_node(&doc, env, id).ok())
+            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
     #[layer]
-    fn create_element<'a>(
+    fn create_element(
         &mut self,
         local_name: String,
         namespace: Option<String>,
         attrs: Option<Vec<AttrInit>>,
-        env: &'a Env,
-    ) -> Result<Object<'a>> {
+        env: &Env,
+    ) -> Result<Anything> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         let qn = make_qual_name(&local_name, namespace.as_deref());
@@ -167,47 +171,47 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, env, node_id)
+        Ok(to_anything(wrap_node(&self.doc, env, node_id)?, env)?)
     }
 
     #[layer]
-    fn create_text_node<'a>(&mut self, text: String, env: &'a Env) -> Result<Object<'a>> {
+    fn create_text_node(&mut self, text: String, env: &Env) -> Result<Anything> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         let node_id = mutator.create_text_node(&text);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, env, node_id)
+        Ok(to_anything(wrap_node(&self.doc, env, node_id)?, env)?)
     }
 
     #[layer]
-    fn create_comment<'a>(&mut self, text: String, env: &'a Env) -> Result<Object<'a>> {
+    fn create_comment(&mut self, text: String, env: &Env) -> Result<Anything> {
         let mut state = self.doc.base.borrow_mut();
         let mut mutator = state.mutate();
         let node_id = mutator.create_comment_node(&text);
         drop(mutator);
         drop(state);
         self.doc.mark_host_dirty();
-        wrap_node(&self.doc, env, node_id)
+        Ok(to_anything(wrap_node(&self.doc, env, node_id)?, env)?)
     }
 
     #[layer]
-    fn document_element<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
+    fn document_element(&self, env: &Env) -> Option<Anything> {
         let id = find_first(&self.doc.clone(), |n| is_element_with_tag(n, "html"))?;
-        wrap_node(&self.doc, env, id).ok()
+        to_anything(wrap_node(&self.doc, env, id).ok()?, env).ok()
     }
 
     #[layer]
-    fn head<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
+    fn head(&self, env: &Env) -> Option<Anything> {
         let id = find_first(&self.doc.clone(), |n| is_element_with_tag(n, "head"))?;
-        wrap_node(&self.doc, env, id).ok()
+        to_anything(wrap_node(&self.doc, env, id).ok()?, env).ok()
     }
 
     #[layer]
-    fn body<'a>(&self, env: &'a Env) -> Option<Object<'a>> {
+    fn body(&self, env: &Env) -> Option<Anything> {
         let id = find_first(&self.doc.clone(), |n| is_element_with_tag(n, "body"))?;
-        wrap_node(&self.doc, env, id).ok()
+        to_anything(wrap_node(&self.doc, env, id).ok()?, env).ok()
     }
 
     #[layer(getter)]

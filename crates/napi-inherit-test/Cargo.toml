@@ -12,8 +12,7 @@ napi = { workspace = true, features = ["napi6"] }
 # `napi-derive` dependency with the `type-def` feature, so the layer macro's
 # intermediate JSONL gets rendered into `index.d.ts`.
 napi-derive = { workspace = true, features = ["type-def"] }
-napi-inherit = { workspace = true }
-napi-inherit-proc = { workspace = true }
+napi-helpers = { workspace = true }
 
 [build-dependencies]
 napi-build = "2"

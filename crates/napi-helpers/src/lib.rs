@@ -6,7 +6,12 @@ mod err;
 pub mod finalize;
 pub mod js_weak_ref;
 pub mod switchable_ref;
-pub use napi_inherit as inherit;
+
+use napi_inherit as inherit;
+
+pub mod inherits {
+    pub use super::inherit::*;
+}
 
 pub use finalize::{Finalize, finalize_trampoline};
 pub use js_weak_ref::JsWeakRef;

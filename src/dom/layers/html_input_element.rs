@@ -4,17 +4,16 @@
 use std::rc::Rc;
 
 use blitz::dom::{LocalName, NodeId};
-use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event::EventLayer;
+use napi::{Error, Result};
+use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::layers::element::ElementLayer;
-use crate::layers::html_element::HTMLElementLayer;
-use crate::layers::node::NodeLayer;
-use crate::shared::doc::SharedDoc;
-use crate::shared::ops::{make_qual_name, remove_detached_attribute, set_detached_attribute};
+use crate::{
+    layers::html_element::HTMLElementLayer,
+    shared::{
+        doc::SharedDoc,
+        ops::{make_qual_name, remove_detached_attribute, set_detached_attribute},
+    },
+};
 
 /// Own block of the `HTMLInputElement` class.
 #[layer(js_name = "HTMLInputElement", parent = HTMLElementLayer)]

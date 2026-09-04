@@ -16,14 +16,10 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use napi_inherit::{
-    class::{
-        build_class, define_getter, define_method, define_setter, define_static_getter,
-        define_static_method, define_static_setter, define_static_value, new_from_chain,
-    },
-    layer::{Constructed, LayerChain, LayerComposed, RootLayer, Super},
-    own::{with_own, with_own_mut},
-    registry,
+use napi_helpers::inherits::{
+    Constructed, LayerChain, LayerComposed, RootLayer, Super, build_class, define_getter,
+    define_method, define_setter, define_static_getter, define_static_method, define_static_setter,
+    define_static_value, new_from_chain, require, with_own, with_own_mut,
 };
 
 /// Backing store for the static `counter` accessor pair.
@@ -259,9 +255,9 @@ pub fn build_inherit_test_classes<'env>(env: &'env Env) -> Result<Object<'env>> 
     build_class::<MidLayer>(env)?;
     build_class::<LeafLayer>(env)?;
 
-    let (base_ctor, _) = registry::require(env, TypeId::of::<BaseLayer>())?;
-    let (mid_ctor, _) = registry::require(env, TypeId::of::<MidLayer>())?;
-    let (leaf_ctor, _) = registry::require(env, TypeId::of::<LeafLayer>())?;
+    let (base_ctor, _) = require(env, TypeId::of::<BaseLayer>())?;
+    let (mid_ctor, _) = require(env, TypeId::of::<MidLayer>())?;
+    let (leaf_ctor, _) = require(env, TypeId::of::<LeafLayer>())?;
 
     let mut out = Object::new(env)?;
     out.set_named_property("Base", base_ctor)?;

@@ -14,11 +14,11 @@
 //! - Rust with an existing data chain: `new_from_chain` + `populate_chain`
 //!   (fields move straight into the own blocks, parent first).
 
-pub mod class;
-pub mod layer;
+mod class;
+mod layer;
 mod macros;
-pub mod own;
-pub mod registry;
+mod own;
+mod registry;
 
 pub use napi_inherit_proc as proc;
 

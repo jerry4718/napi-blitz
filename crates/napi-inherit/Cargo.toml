@@ -5,5 +5,4 @@ edition = "2024"
 
 [dependencies]
 napi = { workspace = true, features = ["napi6"] }
-napi-derive = { workspace = true }
 napi-inherit-proc = { workspace = true }

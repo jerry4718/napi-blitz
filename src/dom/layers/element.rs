@@ -4,18 +4,22 @@
 use std::rc::Rc;
 
 use blitz::dom::NodeId;
-use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
+use napi::{Env, Error, Result};
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer},
+};
 use style::properties::PropertyId;
-use wintertc_events::event::EventLayer;
 
-use crate::layers::node::{NodeLayer, NodeState};
-use crate::shared::doc::{SharedDoc, wrap_node};
-use crate::shared::ops::{
-    AttrInit, DomRect, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
-    set_detached_attribute,
+use crate::{
+    layers::node::NodeLayer,
+    shared::{
+        doc::{SharedDoc, wrap_node},
+        ops::{
+            AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
+            set_detached_attribute, to_anything,
+        },
+    },
 };
 
 /// Mutable per-element state placeholder (see `NodeState`).
@@ -209,7 +213,7 @@ impl ElementLayer {
     }
 
     #[layer]
-    fn query_selector<'a>(&self, selector: String, env: &'a Env) -> Result<Option<Object<'a>>> {
+    fn query_selector(&self, selector: String, env: &Env) -> Result<Option<Anything>> {
         let result_id = {
             let base = self.doc.base.borrow();
             let selector_list = base
@@ -229,13 +233,13 @@ impl ElementLayer {
             result.map(|node| node.id)
         };
         match result_id {
-            Some(id) => Ok(Some(wrap_node(&self.doc, env, id)?)),
+            Some(id) => Ok(Some(to_anything(wrap_node(&self.doc, env, id)?, env)?)),
             None => Ok(None),
         }
     }
 
     #[layer]
-    fn query_selector_all<'a>(&self, selector: String, env: &'a Env) -> Result<Vec<Object<'a>>> {
+    fn query_selector_all(&self, selector: String, env: &Env) -> Result<Vec<Anything>> {
         let ids: Vec<blitz::dom::NodeId> = {
             let base = self.doc.base.borrow();
             let selector_list = base
@@ -256,7 +260,7 @@ impl ElementLayer {
         };
         let mut out = Vec::new();
         for id in ids {
-            out.push(wrap_node(&self.doc, env, id)?);
+            out.push(to_anything(wrap_node(&self.doc, env, id)?, env)?);
         }
         Ok(out)
     }

@@ -24,7 +24,7 @@ pub(crate) use wheel_event::WheelEventLayer;
 
 use blitz::traits::events::DomEventData;
 use napi::{Env, Result, bindgen_prelude::Object};
-use napi_helpers::inherit::{from_chain, layer_chain};
+use napi_helpers::inherits::{from_chain, layer_chain};
 use wintertc_events::event::{DispatchTarget, EventLayer};
 
 /// Build the most specific `Event` layer chain for a blitz payload and

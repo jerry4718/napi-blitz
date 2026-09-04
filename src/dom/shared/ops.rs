@@ -3,7 +3,12 @@
 //! plain attribute/rect payload structs.
 
 use blitz::dom::{BaseDocument, LocalName, Namespace, NodeId, QualName, local_name, ns};
+use napi::{
+    Env, Result,
+    bindgen_prelude::{FromNapiValue, JsValue, Object},
+};
 use napi_derive::napi;
+use napi_helpers::anything::Anything;
 use style::{Atom, invalidation::element::restyle_hints::RestyleHint};
 
 /// Plain attribute pair used by the create/insert APIs.
@@ -87,4 +92,11 @@ pub(crate) fn remove_detached_attribute(
     }
     element.attrs.remove(name);
     true
+}
+
+/// Turn a JS `Object` into an owned [`Anything`] (a strong napi
+/// reference) so a `#[layer]` method can hand it to the macro closure
+/// without borrowing the `env` parameter.
+pub fn to_anything(node: Object, env: &Env) -> Result<Anything> {
+    unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&node)) }
 }

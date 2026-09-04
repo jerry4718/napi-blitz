@@ -25,9 +25,14 @@ use napi::{
     Env, JsValue, Result,
     bindgen_prelude::{FromNapiValue, Object},
 };
-use napi_helpers::{anything::Anything, inherit as napi_inherit};
-use wintertc_events::event::{DispatchTarget, EventLayer};
-use wintertc_events::event_target::EventTargetLayer;
+use napi_helpers::{
+    anything::Anything,
+    inherits::{with_own, with_own_mut},
+};
+use wintertc_events::{
+    event::{DispatchTarget, EventLayer},
+    event_target::EventTargetLayer,
+};
 
 use crate::shared::doc::{SharedDoc, wrap_node};
 
@@ -122,7 +127,7 @@ impl JsEventHandler {
         // 3. Set lazy target on the event's dispatch state.
         {
             let doc_clone = shared_doc.clone();
-            napi_inherit::own::with_own_mut::<EventLayer, _>(&event_obj, |d| {
+            with_own_mut::<EventLayer, _>(&event_obj, |d| {
                 d.state_mut().target = DispatchTarget::from_callable(Box::new(move |env| {
                     let node = wrap_node(&doc_clone, env, target_nid)?;
                     to_anything(node, env)
@@ -168,14 +173,14 @@ impl JsEventHandler {
         // 8. Reset transient dispatch state: currentTarget → none,
         //    eventPhase → NONE (0). Per DOM spec, after dispatch ends
         //    these values are cleared so async callbacks see null.
-        napi_inherit::own::with_own_mut::<EventLayer, _>(&event_obj, |d| {
+        with_own_mut::<EventLayer, _>(&event_obj, |d| {
             let s = d.state_mut();
             s.current_target = DispatchTarget::None;
             s.phase = 0;
         })?;
 
         // 9. Read back flags and write to blitz EventState.
-        let (canceled, stopped) = napi_inherit::own::with_own::<EventLayer, _>(&event_obj, |d| {
+        let (canceled, stopped) = with_own::<EventLayer, _>(&event_obj, |d| {
             let s = d.state_ref();
             (s.canceled, s.stop_propagation || propagation_stopped)
         })?;
@@ -214,7 +219,7 @@ impl JsEventHandler {
         // 2. Set lazy currentTarget + eventPhase on the event state.
         {
             let doc_clone = doc.clone();
-            let _ = napi_inherit::own::with_own_mut::<EventLayer, _>(event, |d| {
+            let _ = with_own_mut::<EventLayer, _>(event, |d| {
                 let s = d.state_mut();
                 s.phase = phase;
                 s.current_target = DispatchTarget::from_callable(Box::new(move |env| {
@@ -226,13 +231,13 @@ impl JsEventHandler {
 
         // 3. Invoke the receiver's listener dispatch (`EventTargetLayer`
         //    slot on its chain), then read the event flags.
-        if let Err(e) = napi_inherit::own::with_own::<EventTargetLayer, _>(&node, |d| {
-            d.dispatch_event(env, event.clone())
-        }) {
+        if let Err(e) =
+            with_own::<EventTargetLayer, _>(&node, |d| d.dispatch_event(env, event.clone()))
+        {
             eprintln!("napi-blitz-dom: dispatch_event failed on node {node_id}: {e}");
             return false;
         }
-        napi_inherit::own::with_own::<EventLayer, _>(event, |d| {
+        with_own::<EventLayer, _>(event, |d| {
             let s = d.state_ref();
             s.stop_propagation || s.stop_immediate
         })

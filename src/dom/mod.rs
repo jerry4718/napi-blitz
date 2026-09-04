@@ -30,10 +30,6 @@
 //! from the immutable configuration fields, so a `state` can later be
 //! wrapped in a `RefCell`.
 
-// `#[layer]` expands to paths under `napi_inherit::`, which lives here via
-// the `napi_helpers::inherit` re-export.
-use napi_helpers::inherit as napi_inherit;
-
 mod dispatch;
 mod layers;
 mod shared;

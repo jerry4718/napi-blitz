@@ -2,11 +2,11 @@
 
 use blitz::traits::events::{BlitzPointerEvent, MouseEventButton};
 use napi::{Env, Result, bindgen_prelude::FnArgs};
-use napi_helpers::anything::Anything;
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event::{DispatchTarget, EventInit, EventLayer};
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer},
+};
+use wintertc_events::event::{DispatchTarget, EventInit};
 
 use crate::events::ui_event::UiEventLayer;
 

@@ -1,9 +1,7 @@
 //! `UiEvent` layer — parent of Mouse/Wheel/Keyboard/Composition/Focus.
 
 use napi::{Result, bindgen_prelude::FnArgs};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
+use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use wintertc_events::event::{EventInit, EventLayer};
 
 /// Own block of the `UiEvent` class.

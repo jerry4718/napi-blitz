@@ -2,13 +2,11 @@
 
 use blitz::traits::events::{BlitzWheelDelta, BlitzWheelEvent};
 use napi::{Result, bindgen_prelude::FnArgs};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event::{EventInit, EventLayer};
+use napi_helpers::inherits::{Constructed, Super, proc::layer};
+use std::mem::ManuallyDrop;
+use wintertc_events::event::EventInit;
 
 use crate::events::mouse_event::MouseEventLayer;
-use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `WheelEvent` class.
 #[layer(js_name = "WheelEvent", parent = MouseEventLayer)]
@@ -58,4 +56,12 @@ impl WheelEventLayer {
             },
         ))
     }
+}
+
+pub struct X<T> {
+    x: ManuallyDrop<T>,
+}
+
+impl X<WheelEventLayer> {
+    pub fn xxx() {}
 }

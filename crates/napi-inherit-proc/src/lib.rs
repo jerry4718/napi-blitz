@@ -648,8 +648,8 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         MemberKind::Getter => {
             if f.sig.receiver().is_some() {
                 quote! {
-                    napi_inherit::class::define_getter(proto, #js, |env, this| {
-                        napi_inherit::own::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
+                    napi_helpers::inherits::define_getter(proto, #js, |env, this| {
+                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
                     })?;
                 }
             } else if !has_this {
@@ -659,13 +659,13 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     quote! { Ok(#self_ty::#name(#(#call),*)) }
                 };
                 quote! {
-                    napi_inherit::class::define_static_getter(ctor, #js, |env| {
+                    napi_helpers::inherits::define_static_getter(ctor, #js, |env| {
                         #static_call
                     })?;
                 }
             } else {
                 quote! {
-                    napi_inherit::class::define_getter(proto, #js, |env, this| {
+                    napi_helpers::inherits::define_getter(proto, #js, |env, this| {
                         #self_ty::#name(#(#call),*)
                     })?;
                 }
@@ -687,8 +687,8 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
             };
             if f.sig.receiver().is_some() {
                 quote! {
-                    napi_inherit::class::define_setter(proto, #js, |env, this, value: #value_ty| {
-                        napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, #env_arg value))#result_tail
+                    napi_helpers::inherits::define_setter(proto, #js, |env, this, value: #value_ty| {
+                        napi_helpers::inherits::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, #env_arg value))#result_tail
                     })?;
                 }
             } else if !has_this {
@@ -701,7 +701,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     quote! { Ok(#self_ty::#name(#env_arg value)) }
                 };
                 quote! {
-                    napi_inherit::class::define_static_setter(ctor, #js, |env, value: #value_ty| {
+                    napi_helpers::inherits::define_static_setter(ctor, #js, |env, value: #value_ty| {
                         #static_call
                     })?;
                 }
@@ -712,7 +712,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     quote! { Ok(#self_ty::#name(&this, #env_arg value)) }
                 };
                 quote! {
-                    napi_inherit::class::define_setter(proto, #js, |env, this, value: #value_ty| {
+                    napi_helpers::inherits::define_setter(proto, #js, |env, this, value: #value_ty| {
                         #call
                     })?;
                 }
@@ -727,7 +727,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     quote! { Ok(#self_ty::#name(#(#call),*)) }
                 };
                 quote! {
-                    napi_inherit::class::define_static_method(env, ctor, #js, |ctx| {
+                    napi_helpers::inherits::define_static_method(env, ctor, #js, |ctx| {
                         let env = *ctx.env;
                         #(#arg_binds)*
                         #static_call
@@ -740,12 +740,12 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     .map(|r| r.mutability.is_some())
                     .unwrap_or(false);
                 let slot = if takes_mut {
-                    quote! { napi_inherit::own::with_own_mut::<#self_ty, _> }
+                    quote! { napi_helpers::inherits::with_own_mut::<#self_ty, _> }
                 } else {
-                    quote! { napi_inherit::own::with_own::<#self_ty, _> }
+                    quote! { napi_helpers::inherits::with_own::<#self_ty, _> }
                 };
                 quote! {
-                    napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                    napi_helpers::inherits::define_method(env, proto, #js, |ctx| {
                         let env = *ctx.env;
                         let this: napi::bindgen_prelude::Object = ctx.this()?;
                         #(#arg_binds)*
@@ -758,7 +758,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 // through `with_own`/`with_own_mut` itself. No outer borrow,
                 // so same-slot mutable access is fine.
                 quote! {
-                    napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                    napi_helpers::inherits::define_method(env, proto, #js, |ctx| {
                         let env = *ctx.env;
                         let this: napi::bindgen_prelude::Object = ctx.this()?;
                         #(#arg_binds)*
@@ -770,42 +770,28 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
     }
 }
 
-struct ExtendLayerCtx<'a> {
-    self_ty: &'a Ident,
-    js_name: &'a str,
-    parent_ty: &'a Option<Type>,
-    ctor_name: &'a Ident,
-    build: &'a BuildParams,
-    full_params_ty: &'a [Type],
-    fields: &'a [FieldMember],
-    members: &'a [MemberFn],
-    consts: &'a [(String, syn::Expr)],
+fn gen_extend_layer_impl(
+    self_ty: &Ident,
+    js_name: &str,
+    parent_ty: &Option<Type>,
+    ctor_name: &Ident,
+    build: &BuildParams,
+    full_params_ty: &Vec<Box<Type>>,
+    fields: &[FieldMember],
+    members: &[MemberFn],
+    consts: &[(String, syn::Expr)],
     ctor_ret_is_result: bool,
-}
-
-fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
-    let ExtendLayerCtx {
-        self_ty,
-        js_name,
-        parent_ty,
-        ctor_name,
-        build,
-        full_params_ty,
-        fields,
-        members,
-        consts,
-        ctor_ret_is_result,
-    } = ctx;
+) -> TokenStream2 {
     let parent_tokens = match parent_ty {
         Some(ty) => quote! { #ty },
-        None => quote! { napi_inherit::layer::RootLayer },
+        None => quote! { napi_helpers::inherits::RootLayer },
     };
     let field_getters = fields.iter().filter(|f| f.getter).map(|f| {
         let ident = &f.ident;
         let field_js = to_camel(&ident.to_string());
         quote! {
-            napi_inherit::class::define_getter(proto, #field_js, |_ctx, this| {
-                napi_inherit::own::with_own::<#self_ty, _>(&this, |d| d.#ident)
+            napi_helpers::inherits::define_getter(proto, #field_js, |_ctx, this| {
+                napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| d.#ident)
             })?;
         }
     });
@@ -814,8 +800,8 @@ fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
         let ty = &f.ty;
         let field_js = to_camel(&ident.to_string());
         quote! {
-            napi_inherit::class::define_setter(proto, #field_js, |_env, this, value: #ty| {
-                napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
+            napi_helpers::inherits::define_setter(proto, #field_js, |_env, this, value: #ty| {
+                napi_helpers::inherits::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
             })?;
         }
     });
@@ -824,7 +810,7 @@ fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
         .map(|m| member_define_tokens(self_ty, &m.f, m.kind));
     let const_tokens = consts.iter().map(|(cname, cexpr)| {
         quote! {
-            napi_inherit::class::define_static_value(env, ctor, #cname, #cexpr)?;
+            napi_helpers::inherits::define_static_value(env, ctor, #cname, #cexpr)?;
         }
     });
     // The full argument tuple comes straight from the build signature's real
@@ -874,7 +860,7 @@ fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
         quote! { Ok(#self_ty::#ctor_name(#(#forward),*)) }
     };
     quote! {
-        impl napi_inherit::layer::LayerDef for #self_ty {
+        impl napi_helpers::inherits::LayerDef for #self_ty {
             type Parent = #parent_tokens;
             const CLASS_NAME: &'static str = #js_name;
 
@@ -891,14 +877,14 @@ fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
             }
         }
 
-        impl napi_inherit::layer::LayerBuild for #self_ty {
+        impl napi_helpers::inherits::LayerBuild for #self_ty {
             type Args = #args_tuple_ty;
 
             fn build<'env>(
                 #env_param,
                 args: napi::bindgen_prelude::FnArgs<Self::Args>,
-                sup: napi_inherit::layer::Super<'_, 'env, Self::Parent>,
-            ) -> napi::Result<napi_inherit::layer::Constructed<Self>> {
+                sup: napi_helpers::inherits::Super<'_, 'env, Self::Parent>,
+            ) -> napi::Result<napi_helpers::inherits::Constructed<Self>> {
                 #destructure
                 #ctor_call
             }
@@ -917,7 +903,7 @@ fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStre
     let export_fn = format_ident!("__layer_export_{lower}");
     let ancestor_builds = ancestors.iter().map(|ty| {
         quote! {
-            napi_inherit::class::build_class::<#ty>(&env)?;
+            napi_helpers::inherits::build_class::<#ty>(&env)?;
         }
     });
     quote! {
@@ -942,8 +928,8 @@ fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStre
         ) -> napi::bindgen_prelude::Result<napi::bindgen_prelude::sys::napi_value> {
             let env = napi::Env::from(env);
             #(#ancestor_builds)*
-            napi_inherit::class::build_class::<#self_ty>(&env)?;
-            let (ctor, _) = napi_inherit::registry::require(&env, std::any::TypeId::of::<#self_ty>())?;
+            napi_helpers::inherits::build_class::<#self_ty>(&env)?;
+            let (ctor, _) = napi_helpers::inherits::require(&env, std::any::TypeId::of::<#self_ty>())?;
             Ok(napi::bindgen_prelude::JsValue::raw(&ctor))
         }
     }
@@ -1043,7 +1029,7 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     // constructor arguments, ancestors' first. They feed both the TS
     // constructor signature and `LayerBuild::Args`.
     let ts_params: Vec<(Ident, Box<Type>)> = ctor_build.params();
-    let full_params_ty: Vec<Type> = ts_params.iter().map(|(_, t)| (**t).clone()).collect();
+    let full_params_ty: Vec<Box<Type>> = ts_params.iter().map(|(_, t)| t.clone()).collect();
     let ancestors: Vec<Type> = ancestor_chain(&meta);
     napi_fns.push(member_napi_fn(
         &ctor_f,
@@ -1093,18 +1079,18 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
         ReturnType::Default => false,
     };
-    let extend_layer = gen_extend_layer_impl(ExtendLayerCtx {
-        self_ty: &self_ty,
-        js_name: &meta.js_name,
-        parent_ty: &parent_ty,
-        ctor_name: &ctor_name_of(&ctor_f),
-        build: &ctor_build,
-        full_params_ty: &full_params_ty,
-        fields: &fields,
-        members: &members,
-        consts: &consts,
+    let extend_layer = gen_extend_layer_impl(
+        &self_ty,
+        &meta.js_name,
+        &parent_ty,
+        &ctor_name_of(&ctor_f),
+        &ctor_build,
+        &full_params_ty,
+        &fields,
+        &members,
+        &consts,
         ctor_ret_is_result,
-    });
+    );
     let register = gen_register(&self_ty, &meta.js_name, &ancestors);
     Ok(quote! { #i #extend_layer #register })
 }

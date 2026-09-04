@@ -1,13 +1,9 @@
 //! The `HTMLElement` layer — parent of the concrete HTML element classes.
 
-use napi::{Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherit as napi_inherit;
-use napi_helpers::inherit::layer::{Constructed, Super};
-use napi_helpers::inherit::proc::layer;
-use wintertc_events::event::EventLayer;
+use napi::{Error, Result};
+use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 use crate::layers::element::ElementLayer;
-use crate::layers::node::NodeLayer;
 
 /// Own block of the `HTMLElement` class.
 #[layer(js_name = "HTMLElement", parent = ElementLayer)]
