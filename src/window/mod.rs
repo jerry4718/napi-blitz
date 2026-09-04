@@ -21,14 +21,21 @@ use self::{
 };
 use crate::{
     app::lifecycle::Lifecycle,
-    dom::{WindowDocument, layers::html_document::HTMLDocumentLayer, shared::doc::SharedDocument},
+    dom::{
+        WindowDocument,
+        layers::html_document::HTMLDocumentLayer,
+        shared::doc::{SharedDocument, build_shared_document},
+        shared::wrap_node,
+    },
     events::base::EventTargetLayer,
     window::util::{parse_dimension, parse_window_buttons},
 };
+use blitz::dom::DEFAULT_CSS;
 use napi::{
-    Error, Result,
-    bindgen_prelude::{BigInt, PromiseRaw, Uint8Array, Undefined},
+    Env, Error, Result,
+    bindgen_prelude::{BigInt, Object, PromiseRaw, Uint8Array, Undefined},
 };
+use napi_helpers::discard_err;
 use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 use std::{
     cell::{Ref, RefCell},
@@ -128,6 +135,59 @@ impl WindowLayer {
     pub fn set_title(&self, title: String) -> Result<()> {
         self.native_window()?.set_title(&title);
         Ok(())
+    }
+
+    /// Replace the window's document the way assigning `location.href`
+    /// would: a fresh document object is built and swapped in, and the
+    /// old document — wrappers, caches and all — is retired. The swap is
+    /// the cycle-breaking switch: the old document drops every native
+    /// strong edge (`detach_window`) and the new one gains them
+    /// (`attach_window`) in the same step. Returns the fresh document,
+    /// like `DOMParser.parseFromString` does for its parsed document.
+    /// This is a blitz-specific navigation API, not a DOM-standard one,
+    /// so it lives on the window rather than on `Document`.
+    #[layer]
+    pub fn load_html(
+        &mut self,
+        this: &Object,
+        env: &Env,
+        html: String,
+    ) -> Result<LayerRef<HTMLDocumentLayer>> {
+        if self.state.borrow().closed {
+            return Err(Error::from_reason("window is closed"));
+        }
+        let new_shared = build_shared_document(env, &html, vec![DEFAULT_CSS.to_string()])?;
+
+        // Rebind the window entry to the new document, carrying over the
+        // live viewport. Pure Rust, so the state borrow is not held
+        // across any JS work.
+        {
+            let mut state = self.lifecycle.state_mut();
+            let entry = state
+                .windows
+                .get_mut(&self.window_id)
+                .ok_or_else(|| Error::from_reason("window is not open"))?;
+            let viewport = entry.shared_doc.base().viewport().clone();
+            new_shared.base_mut().set_viewport(viewport);
+            entry.shared_doc = Rc::clone(&new_shared);
+            entry.view.borrow_mut().doc = make_window_document(&new_shared);
+        }
+
+        // Retire the old document: its JS Document reference and whole
+        // cached tree go weak at once.
+        discard_err!(self.shared_doc.detach_window(env), "detach old document");
+
+        // Point the window layer at the new document and pin it for the
+        // window's lifetime.
+        let node_id = new_shared.base().root_node().id;
+        let document = wrap_node(&new_shared, env, node_id)?;
+        let fresh_document = LayerRef::new(&document, env)?;
+        self.shared_doc = Rc::clone(&new_shared);
+        self.document = fresh_document.clone();
+        new_shared.set_window_ref(env, this)?;
+        new_shared.attach_window(env)?;
+        new_shared.mark_host_dirty();
+        Ok(fresh_document)
     }
 
     #[layer]
@@ -290,7 +350,7 @@ impl WindowLayer {
     /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
     #[layer]
     pub fn set_zoom(&self, zoom: f64) -> Result<()> {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         let entry = state
             .windows
             .get(&self.window_id)
@@ -305,7 +365,7 @@ impl WindowLayer {
     /// Get the current document zoom level.
     #[layer]
     pub fn get_zoom(&self) -> Result<f32> {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         let entry = state
             .windows
             .get(&self.window_id)

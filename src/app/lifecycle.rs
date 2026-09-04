@@ -38,12 +38,6 @@
 //! JS. Clone the dispatch pieces (`shared_doc`, `js_app_ref`) out under
 //! a short borrow, drop the borrow, then dispatch.
 
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    sync::mpsc::Receiver,
-};
-
 use blitz::shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use napi::{
     Env, Error, JsValue, Result,
@@ -57,6 +51,11 @@ use napi_helpers::{
     discard_err,
     inherits::{LayerRef, from_chain},
     native_log,
+};
+use std::{
+    cell::{Cell, Ref, RefCell, RefMut},
+    rc::Rc,
+    sync::mpsc::Receiver,
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
 
@@ -80,7 +79,9 @@ pub(crate) struct Lifecycle {
     /// on the main thread, so holding the env here is safe.
     env: Env,
     /// Live windows and queued open/close requests - the facts of window
-    /// life and death. Pure data; see `state.rs`.
+    /// life and death. Pure data; see `state.rs`. The borrow is never
+    /// held across JS re-entry. Use `state()` / `state_mut()` — do not
+    /// borrow the `RefCell` directly.
     state: RefCell<AppState>,
     /// Proxy for sending events into the event loop (redraw, poll, etc.).
     proxy: BlitzShellProxy,
@@ -118,8 +119,14 @@ impl Lifecycle {
     /// Read access to the window facts, for `NativeApp`'s per-window
     /// queries (monitors, zoom) and `AppHandler`'s event routing. Writes
     /// go through the lifecycle methods above.
-    pub(crate) fn state(&self) -> &RefCell<AppState> {
-        &self.state
+    /// Read-only access to the app state table.
+    pub(crate) fn state(&self) -> Ref<'_, AppState> {
+        self.state.borrow()
+    }
+
+    /// Mutable access to the app state table.
+    pub(crate) fn state_mut(&self) -> RefMut<'_, AppState> {
+        self.state.borrow_mut()
     }
 
     /// Store a weak ref to the JS `BlitzApp` object so Rust can dispatch
@@ -346,9 +353,9 @@ impl Lifecycle {
             // for lifecycle dispatch.
             let build = (|| -> Result<sys::napi_value> {
                 let document = match shared_doc
-                    .js_weak()
+                    .document_ref()
                     .as_ref()
-                    .and_then(|w| w.get_value(&self.env))
+                    .and_then(|r| r.get_value(&self.env))
                 {
                     Some(obj) => LayerRef::new(&obj, &self.env)?,
                     None => return Err(Error::from_reason("document is gone")),

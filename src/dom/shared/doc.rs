@@ -22,7 +22,7 @@ use blitz::{
 use fontique::Blob;
 use napi::{Env, JsValue, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{JsWeakRef, anything::OtherRef};
+use napi_helpers::{JsWeakRef, SwitchableRef, anything::OtherRef};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     rc::Rc,
@@ -51,8 +51,12 @@ pub struct SharedDocument {
     node_cache: RefCell<NodeCache>,
     /// Host-dirty flag: JS mutated the DOM, window needs redraw.
     host_dirty: Cell<bool>,
-    /// Weak ref to the JS Document object
-    js_weak: RefCell<Option<JsWeakRef>>,
+    /// Two-state reference to the JS Document object: strong while a
+    /// window is live (the native side must reach the document at any
+    /// moment), weak after the window tears down, so the wrapper's
+    /// lifetime returns to the JS side alone. Toggled only inside
+    /// `attach_window` / `detach_window`.
+    document_ref: RefCell<Option<SwitchableRef>>,
     /// Weak ref to the JS Window object, for lifecycle dispatch.
     js_window_ref: RefCell<Option<JsWeakRef>>,
     /// The document's `FontFaceSet`, retained strongly: created at
@@ -77,7 +81,7 @@ impl SharedDocument {
             base: RefCell::new(base),
             host_dirty: Cell::new(false),
             node_cache: RefCell::new(NodeCache::new()),
-            js_weak: RefCell::new(None),
+            document_ref: RefCell::new(None),
             js_window_ref: RefCell::new(None),
             fonts: RefCell::new(None),
             env: Cell::new(None),
@@ -129,15 +133,16 @@ impl SharedDocument {
         self.env.get()
     }
 
-    /// Register the JS Document object, retained weakly.
-    pub fn set_js_weak(&self, env: &Env, document: &Object) -> Result<()> {
-        *self.js_weak.borrow_mut() = Some(JsWeakRef::new(document, env)?);
+    /// Register the JS Document object. Documents start unattached, so
+    /// the reference is created weak; `attach_window` promotes it.
+    pub fn set_document_ref(&self, env: &Env, document: &Object) -> Result<()> {
+        *self.document_ref.borrow_mut() = Some(SwitchableRef::new(document, env, false)?);
         Ok(())
     }
 
-    /// Register the JS Document object, retained weakly.
-    pub fn js_weak(&self) -> Ref<'_, Option<JsWeakRef>> {
-        self.js_weak.borrow()
+    /// Read the two-state JS Document reference.
+    pub fn document_ref(&self) -> Ref<'_, Option<SwitchableRef>> {
+        self.document_ref.borrow()
     }
 
     /// Register the JS Window object, retained weakly; the lifecycle
@@ -163,20 +168,28 @@ impl SharedDocument {
         self.fonts.borrow()
     }
 
-    /// Pin the whole cached tree for a live window: JS wrappers of
-    /// in-document nodes are held strongly so listeners registered on
-    /// them survive, and the strength predicate for future wraps turns on.
+    /// Pin the document for a live window: the JS Document reference and
+    /// the whole cached tree go strong in the same step — the single
+    /// entry point that turns the cross-heap cycle into intentional
+    /// ownership for the window's lifetime.
     pub fn attach_window(&self, env: &Env) -> Result<()> {
         self.window_live.set(true);
+        if let Some(r) = self.document_ref.borrow_mut().as_mut() {
+            r.make_strong(env)?;
+        }
         let root_id = self.base().root_node().id;
         self.make_subtree_strong(root_id, env)
     }
 
-    /// Release the whole cached tree after the window tore down: every
-    /// entry goes weak, wrappers the JS side no longer holds are collected
-    /// by the GC, and the strength predicate for future wraps turns off.
+    /// Release the document after the window tore down: the JS Document
+    /// reference and the whole cached tree go weak in the same step — the
+    /// single switch point that breaks every native-strong edge back to
+    /// the JS wrappers at once.
     pub fn detach_window(&self, env: &Env) -> Result<()> {
         self.window_live.set(false);
+        if let Some(r) = self.document_ref.borrow_mut().as_mut() {
+            r.make_weak(env)?;
+        }
         let root_id = self.base().root_node().id;
         self.make_subtree_weak(root_id, env)
     }
@@ -361,13 +374,13 @@ impl BlitzDocument for WindowDocument {
 
 // ── Document creation ─────────────────────────────────────────────────
 
-/// Create a new document from Rust, populate it with the default HTML,
-/// and return the JS Document object (an `HTMLDocument` layer chain).
-#[napi]
-pub fn create_document<'env>(
-    env: &'env Env,
-    config: Option<DocHandleConfig>,
-) -> Result<Object<'env>> {
+/// Build a `SharedDocument` populated from an HTML string, with a fresh
+/// font context and its `FontFaceSet`.
+pub(crate) fn build_shared_document(
+    env: &Env,
+    html: &str,
+    ua_stylesheets: Vec<String>,
+) -> Result<Rc<SharedDocument>> {
     let mut font_ctx = FontContext::new();
     font_ctx
         .collection
@@ -379,15 +392,6 @@ pub fn create_document<'env>(
     // are visible to the engine's own context.
     let fonts_ctx = font_ctx.clone();
 
-    let ua_stylesheets = config
-        .as_ref()
-        .and_then(|c| c.ua_stylesheets.clone())
-        .unwrap_or_else(|| vec![DEFAULT_CSS.to_string()]);
-    let base_html = config
-        .as_ref()
-        .and_then(|c| c.base_html.clone())
-        .unwrap_or_else(|| DEFAULT_HTML.to_string());
-
     let doc_config = DocumentConfig {
         html_parser_provider: Some(Arc::new(HtmlProvider) as _),
         ua_stylesheets: Some(ua_stylesheets),
@@ -398,7 +402,7 @@ pub fn create_document<'env>(
     let mut base = BaseDocument::new(doc_config);
     {
         let mut mutator = base.mutate();
-        DocumentHtmlParser::parse_into_mutator(&mut mutator, &base_html);
+        DocumentHtmlParser::parse_into_mutator(&mut mutator, html);
     }
     base.resolve(0.0);
 
@@ -407,6 +411,26 @@ pub fn create_document<'env>(
 
     let fonts = FontFaceSetLayer::init(env, fonts_ctx)?;
     shared_doc.set_fonts(env, &fonts)?;
+    Ok(shared_doc)
+}
+
+/// Create a new document from Rust and return the JS Document object
+/// (an `HTMLDocument` layer chain).
+#[napi]
+pub fn create_document<'env>(
+    env: &'env Env,
+    config: Option<DocHandleConfig>,
+) -> Result<Object<'env>> {
+    let base_html = config
+        .as_ref()
+        .and_then(|c| c.base_html.clone())
+        .unwrap_or_else(|| DEFAULT_HTML.to_string());
+    let ua_stylesheets = config
+        .as_ref()
+        .and_then(|c| c.ua_stylesheets.clone())
+        .unwrap_or_else(|| vec![DEFAULT_CSS.to_string()]);
+
+    let shared_doc = build_shared_document(env, &base_html, ua_stylesheets)?;
 
     let node_id = shared_doc.base().root_node().id;
     wrap_node(&shared_doc, env, node_id)

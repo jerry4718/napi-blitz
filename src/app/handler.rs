@@ -22,7 +22,7 @@ impl ApplicationHandler for AppHandler {
 
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         {
-            let state = self.lifecycle.state().borrow();
+            let state = self.lifecycle.state();
             for entry in state.windows.values() {
                 entry.view.borrow_mut().resume();
             }
@@ -64,7 +64,7 @@ impl ApplicationHandler for AppHandler {
         // except through a fresh state borrow (which no longer
         // conflicts), so this is safe.
         let view_rc = {
-            let state = self.lifecycle.state().borrow();
+            let state = self.lifecycle.state();
             state.windows.get(&window_id).map(|e| Rc::clone(&e.view))
         };
         if let Some(view_rc) = view_rc {
@@ -80,14 +80,14 @@ impl ApplicationHandler for AppHandler {
     }
 
     fn suspended(&mut self, _event_loop: &dyn ActiveEventLoop) {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         for entry in state.windows.values() {
             entry.view.borrow_mut().suspend();
         }
     }
 
     fn destroy_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         for entry in state.windows.values() {
             entry.view.borrow_mut().suspend();
         }

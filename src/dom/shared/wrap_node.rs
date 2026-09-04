@@ -64,16 +64,14 @@ pub fn wrap_node<'a>(
         },
     );
     // 3. Document node: resolve to the JS Document object, creating and
-    //    registering it on first access. The root wrapper is cached with
-    //    the current cache strength: weak while no window is live, so a
-    //    document whose JS handles are all dropped can be collected as a
-    //    whole (the wrapper's own block carries the last `Rc` to the
-    //    shared state).
+    //    registering it on first access. The wrapper's lifetime anchor is
+    //    `SharedDocument.document_ref` (two-state); the cache entry here
+    //    only carries identity.
     if let NodeKind::Document = node_kind {
         if let Some(existing) = shared_doc
-            .js_weak()
+            .document_ref()
             .as_ref()
-            .and_then(|weak| weak.get_value(env))
+            .and_then(|r| r.get_value(env))
         {
             shared_doc.node_cache_mut().insert(
                 node_id,
@@ -92,7 +90,7 @@ pub fn wrap_node<'a>(
             },
             HTMLDocumentLayer {},
         )?;
-        shared_doc.set_js_weak(env, &document)?;
+        shared_doc.set_document_ref(env, &document)?;
         shared_doc.node_cache_mut().insert(
             node_id,
             &document,

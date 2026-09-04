@@ -35,19 +35,6 @@ impl DocumentLayer {
         ))
     }
 
-    /// Replace document content from an HTML string.
-    #[layer]
-    fn load_html(&mut self, html: String) {
-        let mut state = self.shared.base_mut();
-        {
-            let mut mutator = state.mutate();
-            blitz::html::DocumentHtmlParser::parse_into_mutator(&mut mutator, &html);
-        }
-        state.resolve(0.0);
-        drop(state);
-        self.shared.mark_host_dirty();
-    }
-
     #[layer]
     fn query_selector(
         &self,

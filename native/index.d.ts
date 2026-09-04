@@ -280,8 +280,8 @@ export interface AttrInit {
 }
 
 /**
- * Create a new document from Rust, populate it with the default HTML,
- * and return the JS Document object (an `HTMLDocument` layer chain).
+ * Create a new document from Rust and return the JS Document object
+ * (an `HTMLDocument` layer chain).
  */
 export declare function createDocument(config?: DocHandleConfig | undefined | null): object
 
@@ -532,8 +532,6 @@ export declare class CustomEventClass extends Event {
  */
 export declare class DocumentClass extends Node {
   constructor()
-  /** Replace document content from an HTML string. */
-  loadHtml(html: string): void
   querySelector(selector: string): Element | null
   querySelectorAll(selector: string): Array<Element>
   getElementById(id: string): Element | null
@@ -1001,6 +999,18 @@ export declare class WindowClass extends EventTarget {
    */
   windowHandle(): WindowHandle
   setTitle(title: string): void
+  /**
+   * Replace the window's document the way assigning `location.href`
+   * would: a fresh document object is built and swapped in, and the
+   * old document — wrappers, caches and all — is retired. The swap is
+   * the cycle-breaking switch: the old document drops every native
+   * strong edge (`detach_window`) and the new one gains them
+   * (`attach_window`) in the same step. Returns the fresh document,
+   * like `DOMParser.parseFromString` does for its parsed document.
+   * This is a blitz-specific navigation API, not a DOM-standard one,
+   * so it lives on the window rather than on `Document`.
+   */
+  loadHtml(html: string): HTMLDocument
   setSize(width: number, height: number): void
   resize(width: number, height: number): void
   getSize(): Array<number>

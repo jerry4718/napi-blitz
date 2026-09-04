@@ -162,7 +162,7 @@ impl BlitzAppLayer {
     /// no windows have been created yet.
     #[layer]
     pub fn available_monitors(&self) -> Vec<MonitorInfo> {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         let Some(entry) = state.windows.values().next() else {
             return Vec::new();
         };
@@ -179,7 +179,7 @@ impl BlitzAppLayer {
     /// created yet.
     #[layer]
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         let entry = state.windows.values().next()?;
         entry
             .view
@@ -262,7 +262,7 @@ impl BlitzAppLayer {
     }
 
     fn poll_live_views(&self) {
-        let state = self.lifecycle.state().borrow();
+        let state = self.lifecycle.state();
         for entry in state.windows.values() {
             entry.view.borrow_mut().poll();
         }
