@@ -46,8 +46,8 @@ impl BaseLayer {
     }
 
     #[layer]
-    fn bump_base(this: &Object, delta: u32) -> Result<u32> {
-        with_own_mut::<BaseLayer, _>(this, |d| {
+    fn bump_base(that: Object, delta: u32) -> Result<u32> {
+        with_own_mut::<BaseLayer, _>(&that, |d| {
             d.base_value += delta;
             d.base_value
         })
@@ -120,11 +120,11 @@ impl BaseLayer {
 
     /// Result-returning `this`-injected method.
     #[layer]
-    fn guard(this: &Object, v: u32) -> Result<String> {
+    fn guard(that: Object, v: u32) -> Result<String> {
         if v == 0 {
             return Err(Error::new(Status::GenericFailure, "guard rejects zero"));
         }
-        let base = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
+        let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
         Ok(format!("guard:{v}/base:{base}"))
     }
 
@@ -138,6 +138,14 @@ impl BaseLayer {
             ));
         }
         Ok(v * 2)
+    }
+
+    /// Explicit `#[layer(this)]`: no receiver, the instance is injected
+    /// anyway, so the body reaches the layer slot on its own.
+    #[layer(this)]
+    fn this_injected(this: &Object) -> Result<String> {
+        let v = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
+        Ok(format!("injected:{v}"))
     }
 }
 
@@ -175,9 +183,9 @@ impl MidLayer {
     }
 
     #[layer]
-    fn mid_describe(this: &Object) -> Result<String> {
-        let mid = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
-        let base = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
+    fn mid_describe(that: Object) -> Result<String> {
+        let mid = with_own::<MidLayer, _>(&that, |d| d.mid_value)?;
+        let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
         Ok(format!("mid:{mid}/base:{base}"))
     }
 }
@@ -223,10 +231,10 @@ impl LeafLayer {
     }
 
     #[layer]
-    fn leaf_shout(this: &Object) -> Result<String> {
-        let leaf = with_own::<LeafLayer, _>(this, |d| d.leaf_value)?;
-        let mid = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
-        let base = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
+    fn leaf_shout(that: Object) -> Result<String> {
+        let leaf = with_own::<LeafLayer, _>(&that, |d| d.leaf_value)?;
+        let mid = with_own::<MidLayer, _>(&that, |d| d.mid_value)?;
+        let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
         Ok(format!("leaf:{leaf}+mid:{mid}+base:{base}"))
     }
 
@@ -243,8 +251,10 @@ impl LeafLayer {
 /// `makeInheritLeafFromChain`.
 #[napi]
 pub fn make_proc_leaf_from_chain<'env>(env: &'env napi::Env) -> Result<Object<'env>> {
-    from_chain!((
-        LeafLayer,
-        env
-    ) BaseLayer { base_value: 100, renamed: 42 }, MidLayer { mid_value: 200, base_seen_after_super: 100 }, LeafLayer { leaf_value: 300, mid_seen_after_super: 200 })
+    from_chain!(
+        (LeafLayer, env)
+        BaseLayer { base_value: 100, renamed: 42 },
+        MidLayer { mid_value: 200, base_seen_after_super: 100 },
+        LeafLayer { leaf_value: 300, mid_seen_after_super: 200 }
+    )
 }

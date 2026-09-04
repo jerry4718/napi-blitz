@@ -56,6 +56,16 @@ export function registerChainCases(api: ChainApi): void {
         t.is(leaf.leafValue, 9);
     });
 
+    test("field js_name aliases the field to a custom property name", (t) => {
+        const leaf = new Leaf(1, 2, 3);
+        t.is(leaf.renamedProp, 42);
+        leaf.renamedProp = 7;
+        t.is(leaf.renamedProp, 7);
+        const desc = Object.getOwnPropertyDescriptor(Base.prototype, "renamedProp")!;
+        t.is(typeof desc.get, "function");
+        t.is(typeof desc.set, "function");
+    });
+
     test("instanceof works across the whole chain", (t) => {
         const leaf = new Leaf(1, 2, 3);
         t.true(leaf instanceof Leaf);
@@ -79,8 +89,8 @@ export function registerChainCases(api: ChainApi): void {
         const b = new Leaf(2, 2, 2);
         t.is(a.baseValue, 1);
         t.is(b.baseValue, 2);
-        t.is(a.leafShout(), "leaf:1+mid:1+base:1");
-        t.is(b.leafShout(), "leaf:2+mid:2+base:2");
+        t.is(Leaf.leafShout(a), "leaf:1+mid:1+base:1");
+        t.is(Leaf.leafShout(b), "leaf:2+mid:2+base:2");
     });
 
     test("JS subclass extends the leaf and stays wired", (t) => {
@@ -91,7 +101,7 @@ export function registerChainCases(api: ChainApi): void {
         t.true(c instanceof Mid);
         t.true(c instanceof Base);
         t.is(c.baseValue, 7);
-        t.is(c.leafShout(), "leaf:9+mid:8+base:7");
+        t.is(Leaf.leafShout(c), "leaf:9+mid:8+base:7");
         t.is(Object.getPrototypeOf(CustomLeaf.prototype), Leaf.prototype);
         t.is(c.baseSeenAfterSuper, 7);
         t.is(c.midSeenAfterSuper, 8);
@@ -117,14 +127,14 @@ export function registerChainCases(api: ChainApi): void {
     test("methods compose data across layers", (t) => {
         const leaf = new Leaf(7, 8, 9);
         t.is(leaf.baseGreet(), "base:7");
-        t.is(leaf.midDescribe(), "mid:8/base:7");
-        t.is(leaf.leafShout(), "leaf:9+mid:8+base:7");
+        t.is(Mid.midDescribe(leaf), "mid:8/base:7");
+        t.is(Leaf.leafShout(leaf), "leaf:9+mid:8+base:7");
     });
 
     test("with_own_mut mutates a layer in place, isolated per instance", (t) => {
         const leaf = new Leaf(7, 8, 9);
         t.is(leaf.baseValue, 7);
-        t.is(leaf.bumpBase(10), 17);
+        t.is(Base.bumpBase(leaf, 10), 17);
         t.is(leaf.baseValue, 17);
         const other = new Leaf(1, 2, 3);
         t.is(other.baseValue, 1);
@@ -213,12 +223,12 @@ export function registerChainCases(api: ChainApi): void {
     test("Result-returning methods resolve and throw on error", (t) => {
         const leaf = new Leaf(7, 8, 9);
         t.is(leaf.guardedGreet(), "base:7");
-        t.is(leaf.guard(5), "guard:5/base:7");
+        t.is(Base.guard(leaf, 5), "guard:5/base:7");
         t.is(Leaf.staticGuard(5), 10);
 
         const zero = new Leaf(0, 0, 0);
         t.throws(() => zero.guardedGreet(), {message: /base is zero/});
-        t.throws(() => leaf.guard(0), {message: /guard rejects zero/});
+        t.throws(() => Base.guard(leaf, 0), {message: /guard rejects zero/});
         t.throws(() => Leaf.staticGuard(0), {message: /static guard rejects zero/});
     });
 
@@ -279,7 +289,7 @@ export function registerChainCases(api: ChainApi): void {
         t.is(leaf.midValue, 200);
         t.is(leaf.leafValue, 300);
         t.is(leaf.baseSeenAfterSuper, 100);
-        t.is(leaf.leafShout(), "leaf:300+mid:200+base:100");
+        t.is(Leaf.leafShout(leaf), "leaf:300+mid:200+base:100");
         t.is(Object.getOwnPropertySymbols(leaf).length, 0);
     });
 }

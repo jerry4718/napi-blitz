@@ -70,10 +70,15 @@
 //! - `#[layer(getter)]` / `#[layer(setter)]` on a method — property
 //!   accessors. The JS property name is the camelCased method name; a
 //!   setter's `set_` prefix is dropped so it lands on the same property as
-//!   its getter. Without a receiver (and without `this`) the accessor is
-//!   static, on the constructor.
+//!   its getter. With a receiver the accessor is on the prototype; without
+//!   one it is static, on the constructor.
 //! - `#[layer]` on a method — an instance method when it has a receiver,
 //!   a static method otherwise.
+//! - `#[layer(this)]` on a member — an explicit instance member without a
+//!   receiver: the JS instance is still injected, so the body reaches any
+//!   layer's slot via `with_own` / `with_own_mut` on its own. The flag is
+//!   also honoured on `#[layer(getter, this)]` / `#[layer(setter, this)]`
+//!   accessors.
 //! - `#[layer] const NAME: T = v;` — a static value on the constructor,
 //!   using the Rust name verbatim (JS convention is `UPPER_SNAKE`).
 //!
@@ -81,9 +86,14 @@
 //!
 //! Besides real arguments, a member may declare `env: &Env` — the current
 //! napi environment — and `this: &Object` — the JS instance, letting the
-//! body reach any layer's slot via `with_own` / `with_own_mut`. Injected
-//! parameters never take part in the JS arguments. A `Result` return type
-//! surfaces as a JS exception; a non-`Result` return is wrapped.
+//! body reach any layer's slot via `with_own` / `with_own_mut` while the
+//! current layer's data is handed over as `&self`. Injected parameters
+//! never take part in the JS arguments. `this` is only injectable on an
+//! instance member: one with a `&self` receiver, or a receiver-less member
+//! explicitly marked `#[layer(this)]`. A plain static method (no receiver,
+//! no `#[layer(this)]`) declaring a `this` parameter is a compile error. A
+//! `Result` return type surfaces as a JS exception; a non-`Result` return
+//! is wrapped.
 //!
 //! # js_name, parent and the registry
 //!
@@ -313,6 +323,9 @@ fn layer_attr_has_flag(attr: &Attribute, flag: &str) -> bool {
 /// A `#[layer(...)]`-annotated impl member.
 struct MemberInfo {
     kind: MemberKind,
+    /// `#[layer(this)]` — inject the JS instance although there is no
+    /// receiver. Without the flag a receiver-less member is a plain static.
+    this_injectable: bool,
 }
 
 impl MemberKind {
@@ -325,6 +338,7 @@ impl MemberKind {
                 return true;
             }
             let mut kind = MemberKind::Method;
+            let mut this_injectable = false;
             if let Meta::List(list) = &a.meta
                 && let Ok(nested) =
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
@@ -334,16 +348,20 @@ impl MemberKind {
                     if let Meta::Path(p) = meta
                         && let Some(i) = p.get_ident()
                     {
-                        kind = match i.to_string().as_str() {
-                            "constructor" => MemberKind::Constructor,
-                            "getter" => MemberKind::Getter,
-                            "setter" => MemberKind::Setter,
-                            _ => kind,
-                        };
+                        match i.to_string().as_str() {
+                            "constructor" => kind = MemberKind::Constructor,
+                            "getter" => kind = MemberKind::Getter,
+                            "setter" => kind = MemberKind::Setter,
+                            "this" => this_injectable = true,
+                            _ => {}
+                        }
                     }
                 }
             }
-            out = Some(MemberInfo { kind });
+            out = Some(MemberInfo {
+                kind,
+                this_injectable,
+            });
             false
         });
         out
@@ -521,6 +539,7 @@ fn member_napi_fn(
     ts_params: &[(Ident, Box<Type>)],
     parent: &Ident,
     parent_js: &str,
+    this_injectable: bool,
 ) -> NapiFn {
     let name = f.sig.ident.clone();
     let args = if kind == MemberKind::Constructor {
@@ -547,10 +566,29 @@ fn member_napi_fn(
             .inputs
             .iter()
             .filter_map(|a| match a {
-                FnArg::Typed(pat) => Some(NapiFnArg {
-                    kind: NapiFnArgKind::PatType(Box::new(pat.clone())),
-                    ts_arg_type: None,
-                }),
+                FnArg::Typed(pat) => {
+                    // Injected parameters never take part in the JS
+                    // arguments, so they stay out of the TS signature too.
+                    let is_named_this =
+                        matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
+                            && type_last_ident(&pat.ty)
+                                .map(|i| i == "Object")
+                                .unwrap_or(false);
+                    let is_injected = (f.sig.receiver().is_some() || this_injectable)
+                        && is_named_this
+                        || matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "env")
+                            && type_last_ident(&pat.ty)
+                                .map(|i| i == "Env")
+                                .unwrap_or(false);
+                    if is_injected {
+                        None
+                    } else {
+                        Some(NapiFnArg {
+                            kind: NapiFnArgKind::PatType(Box::new(pat.clone())),
+                            ts_arg_type: None,
+                        })
+                    }
+                }
                 FnArg::Receiver(_) => None,
             })
             .collect()
@@ -566,18 +604,24 @@ fn member_napi_fn(
         MemberKind::Method => (FnKind::Normal, to_camel(&name.to_string())),
     };
     // Instance vs static is derived from the signature: `&self`/`&mut self`
-    // receiver means an instance member, no receiver means a static one.
-    let fn_self = f.sig.receiver().map(|recv| {
+    // receiver means an instance member, no receiver means a static one. A
+    // `#[layer(this)]` member has no receiver but is still an instance
+    // member, so it type-defs as one.
+    let fn_self = if let Some(recv) = f.sig.receiver() {
         if recv.reference.is_some() {
             if recv.mutability.is_some() {
-                FnSelf::MutRef
+                Some(FnSelf::MutRef)
             } else {
-                FnSelf::Ref
+                Some(FnSelf::Ref)
             }
         } else {
-            FnSelf::Value
+            Some(FnSelf::Value)
         }
-    });
+    } else if this_injectable {
+        Some(FnSelf::Ref)
+    } else {
+        None
+    };
     NapiFn {
         name,
         js_name,
@@ -690,7 +734,12 @@ fn expand_struct(s: &ItemStruct) -> syn::Result<TokenStream2> {
 /// through `with_own`; static members (no receiver) call the implementation
 /// directly. Everything here lands in `LayerMembers::define_members` - the
 /// `LayerAccessors` side is generated by the struct block alone.
-fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) -> TokenStream2 {
+fn member_define_tokens(
+    self_ty: &Ident,
+    f: &syn::ImplItemFn,
+    kind: MemberKind,
+    this_injectable: bool,
+) -> TokenStream2 {
     let name = f.sig.ident.clone();
     let js = to_camel(&name.to_string());
     // Split the signature into JS args and the injected receiver. A parameter
@@ -699,20 +748,37 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
     // `with_own`/`with_own_mut` (the current layer's data is already handed to
     // the method as `&self`). `this` never participates in the JS args.
     //
+    // `this` is only injectable on an instance member: with a `&self`
+    // receiver, or without a receiver when the member is explicitly marked
+    // `#[layer(this)]`. A receiver-less member that declares a `this`
+    // parameter without the flag is a static method bug, so it is rejected
+    // here instead of surfacing as a stray JS argument.
+    //
     // A parameter named `env` of type `&Env` is filled by the runtime with the
     // current napi environment, so a getter/method can create JS values or
     // call back into JS without a global env. It also never participates in
     // the JS args.
+    let has_receiver = f.sig.receiver().is_some();
     let mut normal: Vec<(usize, Type)> = vec![];
     let mut call: Vec<TokenStream2> = vec![];
     let mut has_this = false;
     let mut has_env = false;
     for a in &f.sig.inputs {
         let FnArg::Typed(pat) = a else { continue };
-        let is_this = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
+        let is_named_this = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
             && type_last_ident(&pat.ty)
                 .map(|i| i == "Object")
                 .unwrap_or(false);
+        if is_named_this && !has_receiver && !this_injectable {
+            return syn::Error::new_spanned(
+                a,
+                "a static #[layer] method cannot take a parameter named `this`: \
+                 add a `&self` receiver for self + instance injection, or mark \
+                 the member with #[layer(this)] for instance injection without a receiver",
+            )
+            .into_compile_error();
+        }
+        let is_this = (has_receiver || this_injectable) && is_named_this;
         let is_env = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "env")
             && type_last_ident(&pat.ty)
                 .map(|i| i == "Env")
@@ -763,13 +829,19 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
 
     match kind {
         MemberKind::Getter => {
-            if f.sig.receiver().is_some() {
+            if has_receiver {
                 quote! {
                     napi_helpers::inherits::define_getter(proto, #js, |env, this| {
                         napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
                     })?;
                 }
-            } else if !has_this {
+            } else if this_injectable {
+                quote! {
+                    napi_helpers::inherits::define_getter(proto, #js, |env, this| {
+                        #self_ty::#name(#(#call),*)
+                    })?;
+                }
+            } else {
                 let static_call = if ret_is_result {
                     quote! { #self_ty::#name(#(#call),*) }
                 } else {
@@ -778,12 +850,6 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 quote! {
                     napi_helpers::inherits::define_static_getter(ctor, #js, |env| {
                         #static_call
-                    })?;
-                }
-            } else {
-                quote! {
-                    napi_helpers::inherits::define_getter(proto, #js, |env, this| {
-                        #self_ty::#name(#(#call),*)
                     })?;
                 }
             }
@@ -802,13 +868,29 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
             } else {
                 quote! {}
             };
-            if f.sig.receiver().is_some() {
+            if has_receiver {
                 quote! {
                     napi_helpers::inherits::define_setter(proto, #js, |env, this, value: #value_ty| {
                         napi_helpers::inherits::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, #env_arg value))#result_tail
                     })?;
                 }
-            } else if !has_this {
+            } else if this_injectable {
+                let this_arg = if has_this {
+                    quote! { &this, }
+                } else {
+                    quote! {}
+                };
+                let call = if ret_is_result {
+                    quote! { #self_ty::#name(#this_arg #env_arg value) }
+                } else {
+                    quote! { Ok(#self_ty::#name(#this_arg #env_arg value)) }
+                };
+                quote! {
+                    napi_helpers::inherits::define_setter(proto, #js, |env, this, value: #value_ty| {
+                        #call
+                    })?;
+                }
+            } else {
                 // A setter's method already returns `Result<()>`; the static
                 // closure returns it as-is (no `?` - that would unwrap to
                 // `()` and break the closure's `Result<()>` type).
@@ -822,22 +904,11 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                         #static_call
                     })?;
                 }
-            } else {
-                let call = if ret_is_result {
-                    quote! { #self_ty::#name(&this, #env_arg value) }
-                } else {
-                    quote! { Ok(#self_ty::#name(&this, #env_arg value)) }
-                };
-                quote! {
-                    napi_helpers::inherits::define_setter(proto, #js, |env, this, value: #value_ty| {
-                        #call
-                    })?;
-                }
             }
         }
         MemberKind::Constructor => unreachable!("constructor handled separately"),
         MemberKind::Method => {
-            if f.sig.receiver().is_none() && !has_this {
+            if !has_receiver && !this_injectable {
                 let static_call = if ret_is_result {
                     quote! { #self_ty::#name(#(#call),*) }
                 } else {
@@ -850,7 +921,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                         #static_call
                     })?;
                 }
-            } else if f.sig.receiver().is_some() {
+            } else if has_receiver {
                 let takes_mut = f
                     .sig
                     .receiver()
@@ -870,10 +941,10 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     })?;
                 }
             } else {
-                // `this`-injected instance method: no receiver, the instance
-                // object is handed over and the body reaches any layer's slot
-                // through `with_own`/`with_own_mut` itself. No outer borrow,
-                // so same-slot mutable access is fine.
+                // `#[layer(this)]` instance method: no receiver, but the
+                // instance object is injected and the body reaches any layer's
+                // slot through `with_own`/`with_own_mut` itself. No outer
+                // borrow, so same-slot mutable access is fine.
                 quote! {
                     napi_helpers::inherits::define_method(env, proto, #js, |ctx| {
                         let env = *ctx.env;
@@ -907,7 +978,7 @@ fn gen_extend_layer_impl(
     };
     let member_tokens = members
         .iter()
-        .map(|m| member_define_tokens(self_ty, &m.f, m.kind));
+        .map(|m| member_define_tokens(self_ty, &m.f, m.kind, m.this_injectable));
     let const_tokens = consts.iter().map(|(cname, cexpr)| {
         quote! {
             napi_helpers::inherits::define_static_value(env, ctor, #cname, #cexpr)?;
@@ -1028,6 +1099,7 @@ fn gen_register(self_ty: &Ident, js_name: &str) -> TokenStream2 {
 
 struct MemberFn {
     kind: MemberKind,
+    this_injectable: bool,
     f: syn::ImplItemFn,
 }
 
@@ -1081,9 +1153,17 @@ fn expand_impl(i: &ItemImpl, attrs: &LayerAttrs) -> syn::Result<TokenStream2> {
                 if info.kind == MemberKind::Constructor {
                     ctor = Some((f.clone(), analyze_build(f)));
                 } else {
-                    napi_fns.push(member_napi_fn(f, info.kind, &[], &self_ty, &js_name));
+                    napi_fns.push(member_napi_fn(
+                        f,
+                        info.kind,
+                        &[],
+                        &self_ty,
+                        &js_name,
+                        info.this_injectable,
+                    ));
                     members.push(MemberFn {
                         kind: info.kind,
+                        this_injectable: info.this_injectable,
                         f: f.clone(),
                     });
                 }
@@ -1113,13 +1193,19 @@ fn expand_impl(i: &ItemImpl, attrs: &LayerAttrs) -> syn::Result<TokenStream2> {
     // constructor arguments, ancestors' first. They feed both the TS
     // constructor signature and `LayerBuild::Args`.
     let ts_params: Vec<(Ident, Box<Type>)> = ctor_build.params();
-    napi_fns.push(member_napi_fn(
-        &ctor_f,
-        MemberKind::Constructor,
-        &ts_params,
-        &self_ty,
-        &js_name,
-    ));
+    // The constructor leads the member list so the class declaration's
+    // signature sits right after the field block instead of at the end.
+    napi_fns.insert(
+        0,
+        member_napi_fn(
+            &ctor_f,
+            MemberKind::Constructor,
+            &ts_params,
+            &self_ty,
+            &js_name,
+            false,
+        ),
+    );
 
     let impl_def = NapiImpl {
         name: self_ty.clone(),

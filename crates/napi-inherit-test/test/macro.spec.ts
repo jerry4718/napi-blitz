@@ -31,6 +31,14 @@ test("macro: field js_name overrides the default property name", (t) => {
     t.is(leaf.renamedProp, 7);
 });
 
+test("macro: #[layer(this)] injects the instance into a receiver-less method", (t) => {
+    const leaf = new InheritLeaf(7, 8, 9);
+    t.is(leaf.thisInjected(), "injected:7");
+    const desc = Object.getOwnPropertyDescriptor(InheritBase.prototype, "thisInjected")!;
+    t.is(typeof desc.value, "function");
+    t.is(typeof InheritBase.thisInjected, "undefined");
+});
+
 test("rust layer struct names are not exported", (t) => {
     for (const name of ["InheritBase", "InheritMid", "InheritLeaf"]) {
         t.true(name in binding, `${name} should be exported`);

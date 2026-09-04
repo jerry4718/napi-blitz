@@ -19,7 +19,8 @@ use std::{
 use napi_helpers::inherits::{
     Constructed, LayerAccessors, LayerChain, LayerComposed, RootLayer, Super, build_class,
     define_getter, define_method, define_setter, define_static_getter, define_static_method,
-    define_static_setter, define_static_value, new_from_chain, require, with_own, with_own_mut,
+    define_static_setter, define_static_value, from_chain, new_from_chain, require, with_own,
+    with_own_mut,
 };
 
 /// Backing store for the static `counter` accessor pair.
@@ -29,6 +30,7 @@ static SHARED_COUNTER: AtomicU32 = AtomicU32::new(10);
 
 pub struct BaseLayer {
     pub base_value: u32,
+    pub renamed: u32,
 }
 
 // ── InheritBase accessors ─────────────────────────────────────────────────
@@ -40,6 +42,12 @@ impl LayerAccessors for BaseLayer {
         })?;
         define_setter(proto, "baseValue", |_env, this, value: u32| {
             with_own_mut::<BaseLayer, _>(&this, |d| d.base_value = value)
+        })?;
+        define_getter(proto, "renamedProp", |_ctx, this| {
+            with_own::<BaseLayer, _>(&this, |d| d.renamed)
+        })?;
+        define_setter(proto, "renamedProp", |_env, this, value: u32| {
+            with_own_mut::<BaseLayer, _>(&this, |d| d.renamed = value)
         })?;
         define_getter(proto, "checkedValue", |_env, this| {
             with_own::<BaseLayer, _>(&this, |d| {
@@ -75,7 +83,13 @@ impl LayerComposed for BaseLayer {
     ) -> Result<Constructed<Self>> {
         let (base_value,) = args.data;
         let done = sup.call(FnArgs::from(()))?;
-        Ok(Constructed::new(done, Self { base_value }))
+        Ok(Constructed::new(
+            done,
+            Self {
+                base_value,
+                renamed: 42,
+            },
+        ))
     }
 
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
@@ -84,10 +98,10 @@ impl LayerComposed for BaseLayer {
             let v = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
             Ok(format!("base:{v}"))
         })?;
-        define_method(env, proto, "bumpBase", |ctx| {
-            let this: Object = ctx.this()?;
-            let delta: f64 = ctx.get(0)?;
-            with_own_mut::<BaseLayer, _>(&this, |d| {
+        define_static_method(env, ctor, "bumpBase", |ctx| {
+            let that: Object = ctx.get(0)?;
+            let delta: f64 = ctx.get(1)?;
+            with_own_mut::<BaseLayer, _>(&that, |d| {
                 d.base_value += delta as u32;
                 d.base_value
             })
@@ -128,13 +142,13 @@ impl LayerComposed for BaseLayer {
                 }
             })?
         })?;
-        define_method(env, proto, "guard", |ctx| {
-            let this: Object = ctx.this()?;
-            let v: u32 = ctx.get(0)?;
+        define_static_method(env, ctor, "guard", |ctx| {
+            let that: Object = ctx.get(0)?;
+            let v: u32 = ctx.get(1)?;
             if v == 0 {
                 return Err(Error::new(Status::GenericFailure, "guard rejects zero"));
             }
-            let base = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
+            let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
             Ok(format!("guard:{v}/base:{base}"))
         })?;
         define_static_method(env, ctor, "staticGuard", |ctx| {
@@ -183,10 +197,10 @@ impl LayerComposed for MidLayer {
     }
 
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
-        define_method(env, proto, "midDescribe", |ctx| {
-            let this: Object = ctx.this()?;
-            let mid = with_own::<MidLayer, _>(&this, |d| d.mid_value)?;
-            let base = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
+        define_static_method(env, ctor, "midDescribe", |ctx| {
+            let that: Object = ctx.get(0)?;
+            let mid = with_own::<MidLayer, _>(&that, |d| d.mid_value)?;
+            let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
             Ok(format!("mid:{mid}/base:{base}"))
         })?;
         define_static_value(env, ctor, "MID_CONST", 2u32)?;
@@ -242,11 +256,11 @@ impl LayerComposed for LeafLayer {
     }
 
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
-        define_method(env, proto, "leafShout", |ctx| {
-            let this: Object = ctx.this()?;
-            let leaf = with_own::<LeafLayer, _>(&this, |d| d.leaf_value)?;
-            let mid = with_own::<MidLayer, _>(&this, |d| d.mid_value)?;
-            let base = with_own::<BaseLayer, _>(&this, |d| d.base_value)?;
+        define_static_method(env, ctor, "leafShout", |ctx| {
+            let that: Object = ctx.get(0)?;
+            let leaf = with_own::<LeafLayer, _>(&that, |d| d.leaf_value)?;
+            let mid = with_own::<MidLayer, _>(&that, |d| d.mid_value)?;
+            let base = with_own::<BaseLayer, _>(&that, |d| d.base_value)?;
             Ok(format!("leaf:{leaf}+mid:{mid}+base:{base}"))
         })?;
         define_static_value(env, ctor, "LEAF_CONST", 3u32)?;
@@ -294,21 +308,10 @@ pub fn build_inherit_test_classes<'env>(env: &'env Env) -> Result<Object<'env>> 
 /// the JS `new` path entirely.
 #[napi]
 pub fn make_inherit_leaf_from_chain<'env>(env: &'env Env) -> Result<Object<'env>> {
-    let chain = LayerChain {
-        parent: LayerChain {
-            parent: LayerChain {
-                parent: (),
-                own: BaseLayer { base_value: 100 },
-            },
-            own: MidLayer {
-                mid_value: 200,
-                base_seen_after_super: 100,
-            },
-        },
-        own: LeafLayer {
-            leaf_value: 300,
-            mid_seen_after_super: 200,
-        },
-    };
-    new_from_chain(env, chain)
+    from_chain!(
+        (LeafLayer, env)
+        BaseLayer { base_value: 100, renamed: 42 },
+        MidLayer { mid_value: 200, base_seen_after_super: 100 },
+        LeafLayer { leaf_value: 300, mid_seen_after_super: 200 }
+    )
 }
