@@ -17,6 +17,8 @@ pub(crate) struct Member {
     pub this_injectable: bool,
     /// `#[layer(getter, js_name = "...")]` — explicit JS member name.
     pub js_name: Option<String>,
+    /// `#[layer(ts_return_type = "...")]` — explicit TS return type.
+    pub ts_return_type: Option<String>,
     pub f: syn::ImplItemFn,
 }
 
@@ -29,6 +31,7 @@ impl Member {
             kind: info.kind,
             this_injectable: info.this_injectable,
             js_name: info.js_name,
+            ts_return_type: info.ts_return_type,
             f: f.clone(),
         })
     }
@@ -43,6 +46,7 @@ impl Member {
             kind,
             this_injectable,
             js_name,
+            ts_return_type: _,
             f,
         } = self;
         let name = f.sig.ident.clone();
@@ -292,6 +296,7 @@ impl Member {
             kind,
             this_injectable,
             js_name,
+            ts_return_type,
             f,
         } = self;
         let name = f.sig.ident.clone();
@@ -354,7 +359,32 @@ impl Member {
         // `Result` / `Option` / `Vec`) is emitted as `L`'s JS class name so
         // the TS defs are precise instead of `Any`; the runtime conversion
         // still runs through the normal `ToNapiValue` impls.
-        let ts_return_type = ret.as_ref().and_then(layer_ts_type);
+        // A return type that carries `LayerRef<L>` (possibly inside
+        // `Result` / `Option` / `Vec`) is emitted as `L`'s JS class name so
+        // the TS defs are precise instead of `Any`; the runtime conversion
+        // still runs through the normal `ToNapiValue` impls. An explicit
+        // `#[layer(ts_return_type = "...")]` takes precedence — the
+        // automatic mapping needs the referenced layer's struct block to
+        // have been expanded already, which module order does not
+        // guarantee.
+        let ts_return_type = ts_return_type
+            .clone()
+            .or_else(|| ret.as_ref().and_then(layer_ts_type));
+        // Generator protocol members are driven by the engine: no JS
+        // arguments, and the per-step item type wraps into an iterator.
+        let ts_return_type = match kind {
+            MemberKind::Generator | MemberKind::AsyncGenerator => ret.as_ref().and_then(|r| {
+                let item = unwrap_wrapped(r)?;
+                let (ts, _) = napi_derive_backend::ty_to_ts_type(item, true, false, false);
+                let prefix = if matches!(kind, MemberKind::AsyncGenerator) {
+                    "AsyncIterableIterator"
+                } else {
+                    "IterableIterator"
+                };
+                Some(format!("{prefix}<{ts}>"))
+            }),
+            _ => ts_return_type,
+        };
         let fallback = match kind {
             MemberKind::Constructor => "constructor".to_owned(),
             MemberKind::Getter => to_camel(&name.to_string()),
@@ -369,8 +399,7 @@ impl Member {
                 MemberKind::Getter => FnKind::Getter,
                 MemberKind::Setter => FnKind::Setter,
                 MemberKind::Method => FnKind::Normal,
-                MemberKind::Generator => FnKind::Getter,
-                MemberKind::AsyncGenerator => FnKind::Getter,
+                MemberKind::Generator | MemberKind::AsyncGenerator => FnKind::Normal,
             },
             js_name.clone().unwrap_or(fallback),
         );
@@ -413,7 +442,10 @@ impl Member {
             js_mod: None,
             ts_generic_types: None,
             ts_type: None,
-            ts_args_type: None,
+            ts_args_type: match kind {
+                MemberKind::Generator | MemberKind::AsyncGenerator => Some(String::new()),
+                _ => None,
+            },
             ts_return_type,
             skip_typescript: false,
             comments: crate::util::extract_doc(&f.attrs),
@@ -462,4 +494,22 @@ fn layer_ts_type(ty: &Type) -> Option<String> {
         "Vec" => layer_ts_type(&inner_ty()?).map(|t| format!("Array<{t}>")),
         _ => None,
     }
+}
+
+/// Peel `Result<T>` / `Option<T>` wrappers down to the bare item type.
+fn unwrap_wrapped(ty: &Type) -> Option<&Type> {
+    let Type::Path(path) = ty else {
+        return Some(ty);
+    };
+    let seg = path.path.segments.last()?;
+    if seg.ident != "Option" && seg.ident != "Result" {
+        return Some(ty);
+    }
+    let PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let GenericArgument::Type(inner) = args.args.first()? else {
+        return None;
+    };
+    unwrap_wrapped(inner)
 }

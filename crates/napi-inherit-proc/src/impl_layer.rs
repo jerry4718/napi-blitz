@@ -208,6 +208,7 @@ impl ImplLayer {
             class_type,
             instance_type,
             meta,
+            parent_ty,
             parent_js,
             members,
             ctor,
@@ -222,6 +223,11 @@ impl ImplLayer {
         // The constructor leads the member list so the class declaration's
         // signature sits right after the field block instead of at the end.
         napi_fns.insert(0, ctor_member.napi_fn(&ts_params, self_ty, js_name));
+        // The iterator protocol members trail the declaration, after every
+        // plain member.
+        napi_fns.sort_by_key(|f| {
+            f.js_name == "[Symbol.iterator]" || f.js_name == "[Symbol.asyncIterator]"
+        });
 
         let mut defs = vec![];
         let impl_def = NapiImpl {
@@ -260,15 +266,22 @@ impl ImplLayer {
         }
         // The TS `extends` link points at the parent class declaration,
         // which carries the same `Class` suffix. A parent with no layer
-        // registration (e.g. the root layer) simply has no declaration and
-        // the link is dropped by the CLI.
+        // registration (e.g. the root layer) has no declaration to point
+        // at, so the link is not emitted at all.
         if let Some(parent) = parent_js {
-            defs.push(TypeDef {
-                kind: "extends".to_owned(),
-                name: class_decl.clone(),
-                def: parent.clone(),
-                ..Default::default()
-            });
+            let parent_registered = parent_ty
+                .as_ref()
+                .and_then(type_last_ident)
+                .map(|id| read_layer(&id.to_string()).is_some())
+                .unwrap_or(false);
+            if parent_registered {
+                defs.push(TypeDef {
+                    kind: "extends".to_owned(),
+                    name: class_decl.clone(),
+                    def: parent.clone(),
+                    ..Default::default()
+                });
+            }
         }
         // The exported aliases: a constructor value and an instance type, so
         // callers write `new InheritLeaf(...)` / `leaf: InheritLeaf` instead

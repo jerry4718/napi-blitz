@@ -7,8 +7,7 @@
 //! fixes the declared class at compile time - no layer data is copied. The
 //! macro maps `LayerRef<L>` to the layer's JS class name in the TS defs.
 
-use std::marker::PhantomData;
-use std::ptr;
+use std::{marker::PhantomData, ptr, rc::Rc};
 
 use napi::{
     Env, JsValue, Result,
@@ -18,15 +17,38 @@ use napi::{
 
 use crate::layer::ExtendLayer;
 
-/// A strong reference to a JS object whose own-data chain carries layer `L`.
-///
-/// Converted back into a JS value with [`ToNapiValue`] (which releases the
-/// reference); if it is dropped unconverted the reference is released too,
-/// so a `LayerRef` never leaks.
-pub struct LayerRef<L: ExtendLayer> {
+/// The shared part of a [`LayerRef`]: the `napi_ref` plus the `napi_env`
+/// (stable for the addon's lifetime) needed to delete it.
+struct RefInner {
     inner: sys::napi_ref,
     env: sys::napi_env,
+}
+
+impl Drop for RefInner {
+    fn drop(&mut self) {
+        if !self.inner.is_null() {
+            let _ = unsafe { sys::napi_delete_reference(self.env, self.inner) };
+        }
+    }
+}
+
+/// A strong reference to a JS object whose own-data chain carries layer `L`.
+///
+/// Cloning shares the underlying reference; the `napi_ref` is released when
+/// the last clone is dropped. Converting back into a JS value hands out the
+/// referenced object without releasing the reference.
+pub struct LayerRef<L: ExtendLayer> {
+    inner: Rc<RefInner>,
     _marker: PhantomData<fn() -> L>,
+}
+
+impl<L: ExtendLayer> Clone for LayerRef<L> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Rc::clone(&self.inner),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<L: ExtendLayer> LayerRef<L> {
@@ -38,8 +60,10 @@ impl<L: ExtendLayer> LayerRef<L> {
             "LayerRef: failed to create reference"
         )?;
         Ok(Self {
-            inner,
-            env: env.raw(),
+            inner: Rc::new(RefInner {
+                inner,
+                env: env.raw(),
+            }),
             _marker: PhantomData,
         })
     }
@@ -47,7 +71,7 @@ impl<L: ExtendLayer> LayerRef<L> {
     fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
         let mut value = ptr::null_mut();
         check_status!(
-            unsafe { sys::napi_get_reference_value(env.raw(), self.inner, &mut value) },
+            unsafe { sys::napi_get_reference_value(env.raw(), self.inner.inner, &mut value) },
             "LayerRef: failed to get reference value"
         )?;
         Ok(value)
@@ -55,11 +79,8 @@ impl<L: ExtendLayer> LayerRef<L> {
 }
 
 impl<L: ExtendLayer> ToNapiValue for LayerRef<L> {
-    unsafe fn to_napi_value(env: sys::napi_env, mut val: Self) -> Result<sys::napi_value> {
-        let raw = val.raw_value(&Env::from_raw(env))?;
-        let _ = unsafe { sys::napi_delete_reference(env, val.inner) };
-        val.inner = ptr::null_mut();
-        Ok(raw)
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
+        val.raw_value(&Env::from_raw(env))
     }
 }
 
@@ -71,18 +92,8 @@ impl<L: ExtendLayer> FromNapiValue for LayerRef<L> {
             "LayerRef: failed to create reference"
         )?;
         Ok(Self {
-            inner,
-            env,
+            inner: Rc::new(RefInner { inner, env }),
             _marker: PhantomData,
         })
-    }
-}
-
-impl<L: ExtendLayer> Drop for LayerRef<L> {
-    fn drop(&mut self) {
-        if !self.inner.is_null() {
-            let _ = unsafe { sys::napi_delete_reference(self.env, self.inner) };
-            self.inner = ptr::null_mut();
-        }
     }
 }

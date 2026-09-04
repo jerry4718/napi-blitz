@@ -4,12 +4,12 @@
 import test from "ava";
 import {createRequire} from "node:module";
 
-import {InheritBase, InheritMid, InheritLeaf, makeProcLeafFromChain} from "../out/index.cjs";
+import {InheritBase, InheritMid, InheritLeaf, makeProcLeafFromChain} from "../lib/index.cjs";
 
 import {registerChainCases} from "./chain-cases.ts";
 
 const require = createRequire(import.meta.url);
-const binding = require("../out/index.cjs");
+const binding = require("../lib/index.cjs");
 
 registerChainCases({
     Base: InheritBase,

@@ -74,6 +74,10 @@ struct MemberFlags {
     /// `#[layer(getter, js_name = "...")]` — explicit JS member name for
     /// names `to_camel` cannot express (e.g. `innerHTML`).
     js_name: Option<String>,
+    /// `#[layer(ts_return_type = "...")]` — explicit TS return type, taking
+    /// precedence over the automatic `LayerRef<L>` mapping (which needs the
+    /// referenced layer's struct to have been expanded already).
+    ts_return_type: Option<String>,
 }
 
 impl Parse for MemberFlags {
@@ -81,6 +85,7 @@ impl Parse for MemberFlags {
         let mut kind = MemberKind::Method;
         let mut this_injectable = false;
         let mut js_name = None;
+        let mut ts_return_type = None;
         let metas = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
         for meta in metas {
             match &meta {
@@ -104,6 +109,12 @@ impl Parse for MemberFlags {
                     {
                         js_name = Some(s.value());
                     }
+                    if nv.path.is_ident("ts_return_type")
+                        && let syn::Expr::Lit(lit) = &nv.value
+                        && let syn::Lit::Str(s) = &lit.lit
+                    {
+                        ts_return_type = Some(s.value());
+                    }
                 }
                 _ => {}
             }
@@ -112,6 +123,7 @@ impl Parse for MemberFlags {
             kind,
             this_injectable,
             js_name,
+            ts_return_type,
         })
     }
 }
@@ -121,6 +133,7 @@ pub(crate) struct MemberInfo {
     pub kind: MemberKind,
     pub this_injectable: bool,
     pub js_name: Option<String>,
+    pub ts_return_type: Option<String>,
 }
 
 impl MemberInfo {
@@ -139,6 +152,7 @@ impl MemberInfo {
                             kind: flags.kind,
                             this_injectable: flags.this_injectable,
                             js_name: flags.js_name,
+                            ts_return_type: flags.ts_return_type,
                         });
                     }
                 }
@@ -148,6 +162,7 @@ impl MemberInfo {
                         kind: MemberKind::Method,
                         this_injectable: false,
                         js_name: None,
+                        ts_return_type: None,
                     })
                 }
             }

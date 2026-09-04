@@ -1,6 +1,6 @@
 /* eslint-disable */
 
-type ClassType<T extends abstract new (...args: any) => any> =
+export type ClassType<T extends abstract new (...args: any) => any> =
   & { new(...args: ConstructorParameters<T>): InstanceType<T> }
   & { [K in keyof T]: T[K] };
 

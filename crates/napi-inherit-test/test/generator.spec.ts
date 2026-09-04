@@ -4,7 +4,7 @@
 // `{value, done}` results through `await`.
 import test from "ava";
 
-import {GenSource} from "../out/index.cjs";
+import {GenSource} from "../lib/index.cjs";
 
 test("generator: for...of sees constructor items and terminates", (t) => {
     const g = new GenSource("src");
