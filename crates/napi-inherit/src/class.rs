@@ -17,7 +17,7 @@ use napi::{
 };
 
 use crate::{
-    layer::{EmitOwn, ExtendLayer, LayerBuild, LayerChain},
+    layer::{EmitOwn, ExtendLayer, LayerArgs, LayerBuild, LayerChain},
     own::attach_registry,
     registry,
 };
@@ -274,12 +274,13 @@ where
     let env = Env::from(env_raw);
     let mut this_obj = unsafe { Object::from_napi_value(env_raw, this) }?;
     attach_registry::<T>(&mut this_obj)?;
-    // Pack the raw JS args into a JS array, then parse it back into the
-    // layer's `Args` tuple. This is the same round-trip napi itself uses for
-    // tuple arguments: `()` (a parameterless layer) parses as `Undefined`.
+    // Size the array to the layer's `ARITY` so omitted trailing arguments
+    // stay `undefined`; napi's `Option: FromNapiValue` parses those as
+    // `None`.
+    let arity = <T::Args as LayerArgs>::ARITY;
     let mut args_array = ptr::null_mut();
-    check_status!(unsafe { sys::napi_create_array_with_length(env_raw, argc, &mut args_array) })?;
-    for (i, v) in argv[..argc].iter().enumerate() {
+    check_status!(unsafe { sys::napi_create_array_with_length(env_raw, arity, &mut args_array) })?;
+    for (i, v) in argv[..argc.min(arity)].iter().enumerate() {
         check_status!(unsafe { sys::napi_set_element(env_raw, args_array, i as u32, *v) })?;
     }
     let args = unsafe { <T::Args as FromNapiValue>::from_napi_value(env_raw, args_array) }?;

@@ -96,31 +96,31 @@ test("composedPath returns an array", (t) => {
 // ── CustomEvent ─────────────────────────────────────────────────────────
 
 test("CustomEvent stores a string detail", (t) => {
-  const ce = new CustomEvent("boom", "payload");
+  const ce = new CustomEvent("boom", { detail: "payload" });
   t.is(ce.type, "boom");
   t.is(ce.detail, "payload");
 });
 
 test("CustomEvent stores a number detail", (t) => {
-  const ce = new CustomEvent("boom", 42);
+  const ce = new CustomEvent("boom", { detail: 42 });
   t.is(ce.detail, 42);
 });
 
 test("CustomEvent stores a boolean detail", (t) => {
-  const ce = new CustomEvent("boom", true);
+  const ce = new CustomEvent("boom", { detail: true });
   t.true(ce.detail);
 });
 
 test("CustomEvent stores a bigint detail", (t) => {
-  const ce = new CustomEvent("boom", 123n);
+  const ce = new CustomEvent("boom", { detail: 123n });
   t.is(ce.detail, 123n);
-  const neg = new CustomEvent("boom", -5n);
+  const neg = new CustomEvent("boom", { detail: -5n });
   t.is(neg.detail, -5n);
 });
 
 test("CustomEvent stores an object detail", (t) => {
   const obj = { a: 1, b: [2, 3] };
-  const ce = new CustomEvent("boom", obj);
+  const ce = new CustomEvent("boom", { detail: obj });
   t.deepEqual(ce.detail, obj);
   t.is(ce.detail, obj); // object detail keeps identity, per the standard
 });
@@ -130,10 +130,25 @@ test("CustomEvent default detail is null", (t) => {
   t.is(ce.detail, null);
 });
 
+test("EventInit bubbles/cancelable/composed", (t) => {
+  const e = new Event("x", { bubbles: true, cancelable: true, composed: true });
+  t.true(e.bubbles);
+  t.true(e.cancelable);
+  t.true(e.composed);
+});
+
+test("CustomEventInit forwards EventInit members", (t) => {
+  const ce = new CustomEvent("boom", { detail: 1, bubbles: true, composed: true });
+  t.is(ce.detail, 1);
+  t.true(ce.bubbles);
+  t.true(ce.composed);
+  t.false(ce.cancelable);
+});
+
 // ── MessageEvent ────────────────────────────────────────────────────────
 
 test("MessageEvent stores data and origin", (t) => {
-  const me = new MessageEvent("msg", "hello", "https://example.com");
+  const me = new MessageEvent("msg", {data: "hello", origin: "https://example.com"});
   t.is(me.type, "msg");
   t.is(me.data, "hello");
   t.is(me.origin, "https://example.com");
@@ -143,6 +158,21 @@ test("MessageEvent defaults", (t) => {
   const me = new MessageEvent("msg");
   t.is(me.data, null);
   t.is(me.origin, "");
+  t.is(me.lastEventId, "");
+});
+
+test("MessageEventInit forwards EventInit members", (t) => {
+  const me = new MessageEvent("msg", {
+    data: "payload",
+    lastEventId: "id-7",
+    bubbles: true,
+    composed: true,
+  });
+  t.is(me.data, "payload");
+  t.is(me.lastEventId, "id-7");
+  t.true(me.bubbles);
+  t.true(me.composed);
+  t.false(me.cancelable);
 });
 
 // ── EventTarget ─────────────────────────────────────────────────────────

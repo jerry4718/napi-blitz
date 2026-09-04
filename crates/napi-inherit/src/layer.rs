@@ -12,7 +12,7 @@
 use std::marker::PhantomData;
 
 use crate::{own::set_own_block, registry::HasClassRef};
-use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec};
+use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, ToNapiValue};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 /// Compile-time layout of a layer's own data inside the per-instance
@@ -44,25 +44,49 @@ pub trait LayerDef: Sized + 'static {
     fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()>;
 }
 
+/// Constructor argument tuple for a layer chain. `ARITY` is the compile-time
+/// count of arguments the tuple declares. napi's blanket
+/// `impl<T: ToNapiValue> JsValuesTupleIntoVec for T` keeps `()` valid as the
+/// parameterless case.
+pub trait LayerArgs: JsValuesTupleIntoVec {
+    const ARITY: usize;
+}
+
+impl LayerArgs for () {
+    const ARITY: usize = 0;
+}
+
+macro_rules! impl_layer_args {
+    ($($ident:ident),*) => {
+        impl<$($ident: ToNapiValue),*> LayerArgs for ($($ident,)*) {
+            const ARITY: usize = [$(stringify!($ident)),*].len();
+        }
+    };
+}
+
+impl_layer_args!(A);
+impl_layer_args!(A, B);
+impl_layer_args!(A, B, C);
+impl_layer_args!(A, B, C, D);
+impl_layer_args!(A, B, C, D, E);
+impl_layer_args!(A, B, C, D, E, F);
+impl_layer_args!(A, B, C, D, E, F, G);
+impl_layer_args!(A, B, C, D, E, F, G, H);
+impl_layer_args!(A, B, C, D, E, F, G, H, I);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
 /// The constructor bridge. `sup.call(...)` must be invoked before returning:
-/// `Constructed` can only be assembled from the resulting `SuperDone`
-/// receipt, so the type system forces the parent to be constructed first -
-/// the ES super-before-return rule. The instance is not a parameter: it only
-/// becomes reachable through the `SuperDone` receipt after `sup.call`, the
-/// ES "no `this` before super" rule expressed at the signature level.
-///
-/// The macro generates this from a `#[layer(constructor)]` method: it
-/// dispatches the method's typed arguments out of the raw JS slice, calls
-/// `sup`, and hands `env` / `this` to the method (which may be a JS subclass
-/// instance).
-/// Constructor argument tuple for a layer chain. `JsValuesTupleIntoVec`
-/// serializes it back to raw JS values. napi's blanket
-/// `impl<T: ToNapiValue> JsValuesTupleIntoVec for T` makes the empty tuple
-/// (a parameterless layer) valid because `()` is `ToNapiValue`.
-pub trait LayerArgs: JsValuesTupleIntoVec {}
-
-impl<T> LayerArgs for T where T: JsValuesTupleIntoVec {}
-
+/// `Constructed` is only assemble from the resulting `SuperDone`
+/// receipt, which enforces the ES super-before-return rule and keeps `this`
+/// unreachable before super. Generated from a `#[layer(constructor)]`
+/// method, it dispatches the typed arguments, calls `sup`, and hands `env` /
+/// `sup` / `this` to the method (which may be a JS subclass instance).
 pub trait LayerBuild: LayerDef + Sized + 'static {
     type Args: LayerArgs;
 

@@ -2,33 +2,64 @@
 
 use napi::Result;
 use napi::bindgen_prelude::FnArgs;
+use napi_derive::napi;
 use napi_helpers::any_value::AnyValue;
 use napi_inherit::layer::{Constructed, Super};
 use napi_inherit_proc::layer;
+
+use crate::event::EventInit;
+
+/// `dictionary MessageEventInit : EventInit`.
+/// `source` and `ports` are not implemented yet.
+#[napi(object)]
+#[derive(Default)]
+pub struct MessageEventInit {
+    pub data: Option<AnyValue>,
+    pub origin: Option<String>,
+    pub last_event_id: Option<String>,
+    pub bubbles: Option<bool>,
+    pub cancelable: Option<bool>,
+    pub composed: Option<bool>,
+}
 
 /// Own block of the `MessageEvent` class.
 #[layer(js_name = "MessageEvent", parent = super::EventLayer)]
 pub struct MessageEventLayer {
     data: AnyValue,
     origin: String,
+    last_event_id: String,
 }
 
 #[layer]
 impl MessageEventLayer {
-    /// `new MessageEvent(type, data, origin)`.
+    /// `new MessageEvent(type, init?)` — `init` follows
+    /// `dictionary MessageEventInit`.
     #[layer(constructor)]
     fn build(
         type_: String,
-        data: Option<AnyValue>,
-        origin: Option<String>,
+        init: Option<MessageEventInit>,
         sup: Super<crate::event::EventLayer>,
     ) -> Result<Constructed<Self>> {
-        let done = sup.call(FnArgs::from((type_,)))?;
+        let MessageEventInit {
+            data,
+            origin,
+            last_event_id,
+            bubbles,
+            cancelable,
+            composed,
+        } = init.unwrap_or_default();
+        let event_init = Some(EventInit {
+            bubbles,
+            cancelable,
+            composed,
+        });
+        let done = sup.call(FnArgs::from((type_, event_init)))?;
         Ok(Constructed::new(
             done,
             Self {
                 data: data.unwrap_or(AnyValue::Null),
                 origin: origin.unwrap_or_default(),
+                last_event_id: last_event_id.unwrap_or_default(),
             },
         ))
     }
@@ -41,5 +72,10 @@ impl MessageEventLayer {
     #[layer(getter)]
     fn origin(&self) -> String {
         self.origin.clone()
+    }
+
+    #[layer(getter)]
+    fn last_event_id(&self) -> String {
+        self.last_event_id.clone()
     }
 }

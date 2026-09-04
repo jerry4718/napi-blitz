@@ -15,7 +15,7 @@ test("CustomEvent detail releases its AnyValue reference when the event is colle
 
   function seed() {
     const payload = {tag: "payload"};
-    const ev = new CustomEvent("boom", payload);
+    const ev = new CustomEvent("boom", {detail: payload});
 
     // The stored AnyValue reads back the same object.
     t.is(ev.detail, payload);

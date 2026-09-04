@@ -12,9 +12,19 @@ use napi::{
     Env, Result,
     bindgen_prelude::{FnArgs, Object},
 };
+use napi_derive::napi;
 use napi_helpers::any_value::AnyValue;
 use napi_inherit::layer::{Constructed, RootLayer, Super};
 use napi_inherit_proc::layer;
+
+/// `dictionary EventInit { boolean bubbles = false; boolean cancelable = false; boolean composed = false; }`
+#[napi(object)]
+#[derive(Default)]
+pub struct EventInit {
+    pub bubbles: Option<bool>,
+    pub cancelable: Option<bool>,
+    pub composed: Option<bool>,
+}
 
 /// A reference to the event's target (or current target).
 ///
@@ -115,17 +125,26 @@ impl EventLayer {
     #[layer]
     const BUBBLING_PHASE: u32 = 3;
 
-    /// `new Event(type)`.
+    /// `new Event(type, init?)` — `init` follows `dictionary EventInit`.
     #[layer(constructor)]
-    fn build(type_: String, sup: Super<RootLayer>) -> Result<Constructed<Self>> {
+    fn build(
+        type_: String,
+        init: Option<EventInit>,
+        sup: Super<RootLayer>,
+    ) -> Result<Constructed<Self>> {
+        let EventInit {
+            bubbles,
+            cancelable,
+            composed,
+        } = init.unwrap_or_default();
         let done = sup.call(FnArgs::from(()))?;
         Ok(Constructed::new(
             done,
             Self {
                 type_,
-                bubbles: false,
-                cancelable: false,
-                composed: false,
+                bubbles: bubbles.unwrap_or(false),
+                cancelable: cancelable.unwrap_or(false),
+                composed: composed.unwrap_or(false),
                 time_stamp: 0.0,
                 is_trusted: false,
                 state: EventState::default(),
