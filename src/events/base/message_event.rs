@@ -24,14 +24,14 @@ pub struct MessageEventInit {
 }
 
 /// Own block of the `MessageEvent` class.
-#[layer(js_name = "MessageEvent")]
+#[layer]
 pub struct MessageEventLayer {
     data: Anything,
     origin: String,
     last_event_id: String,
 }
 
-#[layer]
+#[layer(js_name = "MessageEvent")]
 impl MessageEventLayer {
     #[layer(parent)]
     type Parent = EventLayer;

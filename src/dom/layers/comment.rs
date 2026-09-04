@@ -6,10 +6,10 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use crate::dom::layers::node::NodeLayer;
 
 /// Own block of the `Comment` class.
-#[layer(js_name = "Comment")]
+#[layer]
 pub struct CommentLayer {}
 
-#[layer]
+#[layer(js_name = "Comment")]
 impl CommentLayer {
     #[layer(parent)]
     type Parent = NodeLayer;

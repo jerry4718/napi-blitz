@@ -30,14 +30,14 @@ pub struct ElementState {}
 /// Own block of the `Element` class. Carries its own `node_id`/`doc` copy
 /// (they never change once assigned) so the members here don't need to
 /// re-materialize the parent `NodeLayer` slot on every call.
-#[layer(js_name = "Element")]
+#[layer]
 pub struct ElementLayer {
     pub(crate) node_id: NodeId,
     pub(crate) shared_doc: Rc<SharedDocument>,
     pub(crate) state: ElementState,
 }
 
-#[layer]
+#[layer(js_name = "Element")]
 impl ElementLayer {
     #[layer(parent)]
     type Parent = NodeLayer;

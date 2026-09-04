@@ -6,10 +6,10 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use crate::dom::layers::node::NodeLayer;
 
 /// Own block of the `Text` class.
-#[layer(js_name = "Text")]
+#[layer]
 pub struct TextLayer {}
 
-#[layer]
+#[layer(js_name = "Text")]
 impl TextLayer {
     #[layer(parent)]
     type Parent = NodeLayer;

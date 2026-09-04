@@ -24,12 +24,12 @@ pub struct CustomEventInit {
 }
 
 /// Own block of the `CustomEvent` class.
-#[layer(js_name = "CustomEvent")]
+#[layer]
 pub struct CustomEventLayer {
     detail: Anything,
 }
 
-#[layer]
+#[layer(js_name = "CustomEvent")]
 impl CustomEventLayer {
     #[layer(parent)]
     type Parent = EventLayer;

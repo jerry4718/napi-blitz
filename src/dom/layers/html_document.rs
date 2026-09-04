@@ -7,10 +7,10 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use crate::dom::layers::document::DocumentLayer;
 
 /// Own block of the `HTMLDocument` class.
-#[layer(js_name = "HTMLDocument")]
+#[layer]
 pub struct HTMLDocumentLayer {}
 
-#[layer]
+#[layer(js_name = "HTMLDocument")]
 impl HTMLDocumentLayer {
     #[layer(parent)]
     type Parent = DocumentLayer;

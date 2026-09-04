@@ -5,12 +5,12 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `InputEvent` class.
-#[layer(js_name = "InputEvent")]
+#[layer]
 pub struct InputEventLayer {
     pub(crate) data: String,
 }
 
-#[layer]
+#[layer(js_name = "InputEvent")]
 impl InputEventLayer {
     #[layer(parent)]
     type Parent = UiEventLayer;

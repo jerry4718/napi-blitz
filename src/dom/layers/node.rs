@@ -22,13 +22,13 @@ const NODE_TYPE_DOCUMENT: u32 = 9;
 const NODE_TYPE_OTHER: u32 = 0;
 
 /// Own block of the `Node` class.
-#[layer(js_name = "Node")]
+#[layer]
 pub struct NodeLayer {
     pub(crate) node_id: NodeId,
     pub(crate) shared_doc: Rc<SharedDocument>,
 }
 
-#[layer]
+#[layer(js_name = "Node")]
 impl NodeLayer {
     #[layer(parent)]
     type Parent = EventTargetLayer;

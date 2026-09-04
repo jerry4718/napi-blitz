@@ -6,7 +6,7 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `KeyboardEvent` class.
-#[layer(js_name = "KeyboardEvent")]
+#[layer]
 pub struct KeyboardEventLayer {
     pub(crate) key: String,
     pub(crate) code: String,
@@ -42,7 +42,7 @@ impl KeyboardEventLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "KeyboardEvent")]
 impl KeyboardEventLayer {
     #[layer(parent)]
     type Parent = UiEventLayer;

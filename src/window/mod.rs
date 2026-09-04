@@ -56,7 +56,7 @@ pub(crate) struct WindowState {
 
 /// Own block of the `Window` class. Constructed by the open-flow
 /// (`Lifecycle::drain_opening_windows`), never from JS directly.
-#[layer(js_name = "Window")]
+#[layer]
 pub struct WindowLayer {
     pub(crate) window_id: WindowId,
     pub(crate) state: Rc<RefCell<WindowState>>,
@@ -76,7 +76,7 @@ impl WindowLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "Window")]
 impl WindowLayer {
     #[layer(parent)]
     type Parent = EventTargetLayer;

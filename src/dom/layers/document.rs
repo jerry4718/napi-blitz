@@ -21,12 +21,12 @@ use crate::dom::{
 /// Own block of the `Document` class. The blitz document node is always
 /// the root node, so the members here work off `doc` alone (the parent
 /// `NodeLayer` slot carries the `node_id`).
-#[layer(js_name = "Document")]
+#[layer]
 pub struct DocumentLayer {
     pub(crate) shared: Rc<SharedDocument>,
 }
 
-#[layer]
+#[layer(js_name = "Document")]
 impl DocumentLayer {
     #[layer(parent)]
     type Parent = NodeLayer;

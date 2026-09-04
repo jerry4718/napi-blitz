@@ -6,7 +6,7 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `WheelEvent` class.
-#[layer(js_name = "WheelEvent")]
+#[layer]
 pub struct WheelEventLayer {
     #[layer(getter)]
     pub delta_x: f64,
@@ -34,7 +34,7 @@ impl WheelEventLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "WheelEvent")]
 impl WheelEventLayer {
     #[layer(parent)]
     type Parent = MouseEventLayer;

@@ -54,13 +54,13 @@ pub struct PumpResult {
 }
 
 /// Own block of the `BlitzApp` class.
-#[layer(js_name = "BlitzApp")]
+#[layer]
 pub struct BlitzAppLayer {
     event_loop: RefCell<EventLoop>,
     lifecycle: Rc<Lifecycle>,
 }
 
-#[layer]
+#[layer(js_name = "BlitzApp")]
 impl BlitzAppLayer {
     #[layer(parent)]
     type Parent = EventTargetLayer;

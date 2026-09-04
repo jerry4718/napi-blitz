@@ -5,12 +5,12 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `CompositionEvent` class.
-#[layer(js_name = "CompositionEvent")]
+#[layer]
 pub struct CompositionEventLayer {
     pub(crate) data: String,
 }
 
-#[layer]
+#[layer(js_name = "CompositionEvent")]
 impl CompositionEventLayer {
     #[layer(parent)]
     type Parent = UiEventLayer;

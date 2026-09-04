@@ -56,7 +56,7 @@ unsafe fn same_callback(env: &Env, incoming: sys::napi_value, stored: &OtherRef)
 }
 
 /// Own block of the `EventTarget` class.
-#[layer(js_name = "EventTarget")]
+#[layer]
 pub struct EventTargetLayer {
     listeners: RefCell<Vec<ListenerEntry>>,
 }
@@ -72,7 +72,7 @@ impl EventTargetLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "EventTarget")]
 impl EventTargetLayer {
     #[layer(constructor)]
     fn build(sup: Super<RootLayer>) -> Result<Constructed<Self>> {

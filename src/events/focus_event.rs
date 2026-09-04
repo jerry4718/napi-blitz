@@ -11,12 +11,12 @@ use napi_helpers::{
 };
 
 /// Own block of the `FocusEvent` class.
-#[layer(js_name = "FocusEvent")]
+#[layer]
 pub struct FocusEventLayer {
     pub related_target: DispatchTarget,
 }
 
-#[layer]
+#[layer(js_name = "FocusEvent")]
 impl FocusEventLayer {
     #[layer(parent)]
     type Parent = UiEventLayer;

@@ -5,13 +5,13 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `UiEvent` class.
-#[layer(js_name = "UiEvent")]
+#[layer]
 pub struct UiEventLayer {
     #[layer(getter)]
     pub detail: i32,
 }
 
-#[layer]
+#[layer(js_name = "UiEvent")]
 impl UiEventLayer {
     #[layer(parent)]
     type Parent = EventLayer;

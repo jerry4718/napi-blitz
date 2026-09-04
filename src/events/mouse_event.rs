@@ -12,7 +12,7 @@ use napi_helpers::{
 };
 
 /// Own block of the `MouseEvent` class.
-#[layer(js_name = "MouseEvent")]
+#[layer]
 pub struct MouseEventLayer {
     #[layer(getter)]
     pub screen_x: i32,
@@ -96,7 +96,7 @@ impl MouseEventLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "MouseEvent")]
 impl MouseEventLayer {
     #[layer(parent)]
     type Parent = UiEventLayer;

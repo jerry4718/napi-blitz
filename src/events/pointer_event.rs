@@ -6,7 +6,7 @@ use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `PointerEvent` class (pointer-specific fields).
-#[layer(js_name = "PointerEvent")]
+#[layer]
 pub struct PointerEventLayer {
     #[layer(getter)]
     pub pointer_id: i32,
@@ -73,7 +73,7 @@ impl PointerEventLayer {
     }
 }
 
-#[layer]
+#[layer(js_name = "PointerEvent")]
 impl PointerEventLayer {
     #[layer(parent)]
     type Parent = MouseEventLayer;

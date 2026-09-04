@@ -6,10 +6,10 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use crate::dom::layers::element::ElementLayer;
 
 /// Own block of the `HTMLElement` class.
-#[layer(js_name = "HTMLElement")]
+#[layer]
 pub struct HTMLElementLayer {}
 
-#[layer]
+#[layer(js_name = "HTMLElement")]
 impl HTMLElementLayer {
     #[layer(parent)]
     type Parent = ElementLayer;

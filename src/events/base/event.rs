@@ -99,7 +99,7 @@ pub struct EventState {
 }
 
 /// Own block of the `Event` class.
-#[layer(js_name = "Event")]
+#[layer]
 pub struct EventLayer {
     type_: String,
     #[layer(getter)]
@@ -115,7 +115,7 @@ pub struct EventLayer {
     pub(crate) state: EventState,
 }
 
-#[layer]
+#[layer(js_name = "Event")]
 impl EventLayer {
     #[layer]
     const NONE: u32 = 0;
