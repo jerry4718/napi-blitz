@@ -3,12 +3,7 @@
 //! plain attribute/rect payload structs.
 
 use blitz::dom::{BaseDocument, LocalName, Namespace, NodeId, QualName, local_name, ns};
-use napi::{
-    Env, Result,
-    bindgen_prelude::{FromNapiValue, JsValue, Object},
-};
 use napi_derive::napi;
-use napi_helpers::anything::Anything;
 use style::{Atom, invalidation::element::restyle_hints::RestyleHint};
 
 /// Plain attribute pair used by the create/insert APIs.
