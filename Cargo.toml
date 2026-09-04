@@ -47,6 +47,8 @@ skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_rende
 [dependencies]
 napi = { workspace = true }
 napi-derive = { workspace = true }
+napi-inherit = { workspace = true }
+napi-inherit-proc = { workspace = true }
 winit = { workspace = true }
 blitz = { workspace = true }
 blitz-dom = { workspace = true }

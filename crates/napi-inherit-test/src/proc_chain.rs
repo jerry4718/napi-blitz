@@ -1,10 +1,10 @@
-use napi::{Error, Result, Status};
 use napi::bindgen_prelude::Object;
+use napi::{Error, Result, Status};
 use napi_derive::napi;
 
 use napi_inherit::{
-    own::{with_own, with_own_mut},
     from_chain,
+    own::{with_own, with_own_mut},
 };
 
 use napi_inherit_proc::layer;
@@ -124,7 +124,10 @@ impl BaseLayer {
     #[layer]
     fn static_guard(v: u32) -> Result<u32> {
         if v == 0 {
-            return Err(Error::new(Status::GenericFailure, "static guard rejects zero"));
+            return Err(Error::new(
+                Status::GenericFailure,
+                "static guard rejects zero",
+            ));
         }
         Ok(v * 2)
     }
@@ -148,8 +151,7 @@ impl MidLayer {
 
     #[layer(constructor)]
     fn build<'env>(this: &'env Object<'env>, mid_value: u32) -> Result<Self> {
-        let base_seen_after_super =
-            with_own::<BaseLayer, _>(this, |d| d.base_value)?;
+        let base_seen_after_super = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
         Ok(Self {
             mid_value,
             base_seen_after_super,
@@ -181,13 +183,9 @@ impl LeafLayer {
 
     #[layer(constructor)]
     fn build<'env>(this: &'env Object<'env>, leaf_value: u32) -> Result<Self> {
-        let mid_seen_after_super =
-            with_own::<MidLayer, _>(this, |d| d.mid_value)?;
+        let mid_seen_after_super = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
         if leaf_value > 100 {
-            return Err(Error::new(
-                Status::GenericFailure,
-                "leaf_value too large",
-            ));
+            return Err(Error::new(Status::GenericFailure, "leaf_value too large"));
         }
         Ok(Self {
             leaf_value,

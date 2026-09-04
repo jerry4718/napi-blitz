@@ -82,6 +82,30 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  crates/wintertc-events:
+    dependencies:
+      '@napi-rs/cli':
+        specifier: 'catalog:'
+        version: 3.8.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@22.20.1)
+      '@oxc-node/core':
+        specifier: 'catalog:'
+        version: 0.1.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.1
+      ava:
+        specifier: 'catalog:'
+        version: 8.0.1
+      cross-env:
+        specifier: 'catalog:'
+        version: 10.1.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.14(typescript@6.0.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
   examples/html-3d-sphere:
     dependencies:
       '@ylcc/napi-blitz':

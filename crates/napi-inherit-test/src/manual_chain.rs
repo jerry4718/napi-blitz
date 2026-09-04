@@ -11,7 +11,10 @@ use napi::{
     Env, Error, JsValue, Result, Status,
     bindgen_prelude::{FromNapiValue, JsObjectValue, Object, Unknown},
 };
-use std::{any::TypeId, sync::atomic::{AtomicU32, Ordering}};
+use std::{
+    any::TypeId,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use napi_inherit::{
     class::{
@@ -143,7 +146,10 @@ impl LayerComposed for BaseLayer {
         define_static_method(env, ctor, "staticGuard", |ctx| {
             let v: u32 = ctx.get(0)?;
             if v == 0 {
-                return Err(Error::new(Status::GenericFailure, "static guard rejects zero"));
+                return Err(Error::new(
+                    Status::GenericFailure,
+                    "static guard rejects zero",
+                ));
             }
             Ok(v * 2)
         })?;
@@ -220,10 +226,7 @@ impl LayerComposed for LeafLayer {
         let this = done.this();
         let mid_seen_after_super = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
         if leaf_value > 100 {
-            return Err(Error::new(
-                Status::GenericFailure,
-                "leaf_value too large",
-            ));
+            return Err(Error::new(Status::GenericFailure, "leaf_value too large"));
         }
         Ok(Constructed::new(
             done,

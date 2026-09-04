@@ -695,7 +695,11 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     })?;
                 }
             } else if f.sig.receiver().is_some() {
-                let takes_mut = f.sig.receiver().map(|r| r.mutability.is_some()).unwrap_or(false);
+                let takes_mut = f
+                    .sig
+                    .receiver()
+                    .map(|r| r.mutability.is_some())
+                    .unwrap_or(false);
                 let slot = if takes_mut {
                     quote! { napi_inherit::own::with_own_mut::<#self_ty, _> }
                 } else {
@@ -741,31 +745,25 @@ fn gen_extend_layer_impl(
         Some(ty) => quote! { #ty },
         None => quote! { napi_inherit::layer::RootLayer },
     };
-    let field_getters = fields
-        .iter()
-        .filter(|f| f.getter)
-        .map(|f| {
-            let ident = &f.ident;
-            let field_js = to_camel(&ident.to_string());
-            quote! {
-                napi_inherit::class::define_getter(proto, #field_js, |_ctx, this| {
-                    napi_inherit::own::with_own::<#self_ty, _>(&this, |d| d.#ident)
-                })?;
-            }
-        });
-    let field_setters = fields
-        .iter()
-        .filter(|f| f.setter)
-        .map(|f| {
-            let ident = &f.ident;
-            let ty = &f.ty;
-            let field_js = to_camel(&ident.to_string());
-            quote! {
-                napi_inherit::class::define_setter(proto, #field_js, |_env, this, value: #ty| {
-                    napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
-                })?;
-            }
-        });
+    let field_getters = fields.iter().filter(|f| f.getter).map(|f| {
+        let ident = &f.ident;
+        let field_js = to_camel(&ident.to_string());
+        quote! {
+            napi_inherit::class::define_getter(proto, #field_js, |_ctx, this| {
+                napi_inherit::own::with_own::<#self_ty, _>(&this, |d| d.#ident)
+            })?;
+        }
+    });
+    let field_setters = fields.iter().filter(|f| f.setter).map(|f| {
+        let ident = &f.ident;
+        let ty = &f.ty;
+        let field_js = to_camel(&ident.to_string());
+        quote! {
+            napi_inherit::class::define_setter(proto, #field_js, |_env, this, value: #ty| {
+                napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| d.#ident = value)
+            })?;
+        }
+    });
     let member_tokens = members
         .iter()
         .map(|m| member_define_tokens(self_ty, &m.f, m.kind));

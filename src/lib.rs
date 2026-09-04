@@ -16,6 +16,8 @@ mod global;
 
 mod helpers;
 
+mod events;
+
 mod dom;
 
 mod dialog;

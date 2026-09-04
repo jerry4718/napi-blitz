@@ -171,7 +171,12 @@ pub fn define_static_value<V: ToNapiValue>(
 
 /// A static method on the constructor itself: a callable function value
 /// (writable, configurable) matching the `static foo(): T` TS shape.
-pub fn define_static_method<Return, F>(env: &Env, ctor: &mut Object, name: &str, method: F) -> Result<()>
+pub fn define_static_method<Return, F>(
+    env: &Env,
+    ctor: &mut Object,
+    name: &str,
+    method: F,
+) -> Result<()>
 where
     Return: ToNapiValue,
     F: 'static + Fn(FunctionCallContext) -> Result<Return>,
