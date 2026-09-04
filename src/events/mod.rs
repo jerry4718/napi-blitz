@@ -22,7 +22,7 @@ pub(crate) use input_event::InputEventLayer;
 pub(crate) use keyboard_event::KeyboardEventLayer;
 pub(crate) use mouse_event::MouseEventLayer;
 pub(crate) use pointer_event::PointerEventLayer;
-pub(crate) use ui_event::UiEventLayer;
+pub(crate) use ui_event::UIEventLayer;
 pub(crate) use wheel_event::WheelEventLayer;
 
 use crate::events::base::{DispatchTarget, EventLayer};
@@ -41,7 +41,7 @@ pub(crate) fn build_event<'env>(
 ) -> Result<Object<'env>> {
     let event = EventLayer::with_init(event_type, bubbles, cancelable, false);
 
-    let base_chain = layer_chain!(event, UiEventLayer::default());
+    let base_chain = layer_chain!(event, UIEventLayer::default());
 
     match data {
         DomEventData::PointerMove(e)
@@ -115,6 +115,6 @@ pub(crate) fn build_event<'env>(
                 },
             )
         }
-        _ => from_chain!((UiEventLayer, env)..base_chain),
+        _ => from_chain!((UIEventLayer, env)..base_chain),
     }
 }

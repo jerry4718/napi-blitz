@@ -2,7 +2,7 @@
 
 use crate::events::{
     base::{DispatchTarget, EventInit},
-    ui_event::UiEventLayer,
+    ui_event::UIEventLayer,
 };
 use blitz::traits::events::{BlitzPointerEvent, MouseEventButton};
 use napi::{Env, Result, bindgen_prelude::FnArgs};
@@ -99,13 +99,13 @@ impl MouseEventLayer {
 #[layer(js_name = "MouseEvent")]
 impl MouseEventLayer {
     #[layer(parent)]
-    type Parent = UiEventLayer;
+    type Parent = UIEventLayer;
 
     #[layer(constructor)]
     fn build(
         type_: String,
         init: Option<EventInit>,
-        sup: Super<UiEventLayer>,
+        sup: Super<UIEventLayer>,
     ) -> Result<Constructed<Self>> {
         let done = sup.call(FnArgs::from((type_, init)))?;
         Ok(Constructed::new(done, Self::default()))

@@ -1,6 +1,6 @@
 //! `CompositionEvent` layer — extends `UiEvent` (IME composition).
 
-use crate::events::{base::EventInit, ui_event::UiEventLayer};
+use crate::events::{base::EventInit, ui_event::UIEventLayer};
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
@@ -13,13 +13,13 @@ pub struct CompositionEventLayer {
 #[layer(js_name = "CompositionEvent")]
 impl CompositionEventLayer {
     #[layer(parent)]
-    type Parent = UiEventLayer;
+    type Parent = UIEventLayer;
 
     #[layer(constructor)]
     fn build(
         type_: String,
         init: Option<EventInit>,
-        sup: Super<UiEventLayer>,
+        sup: Super<UIEventLayer>,
     ) -> Result<Constructed<Self>> {
         let done = sup.call(FnArgs::from((type_, init)))?;
         Ok(Constructed::new(

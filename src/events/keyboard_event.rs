@@ -1,6 +1,6 @@
 //! `KeyboardEvent` layer — extends `UiEvent`.
 
-use crate::events::{base::EventInit, ui_event::UiEventLayer};
+use crate::events::{base::EventInit, ui_event::UIEventLayer};
 use blitz::traits::events::BlitzKeyEvent;
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
@@ -45,13 +45,13 @@ impl KeyboardEventLayer {
 #[layer(js_name = "KeyboardEvent")]
 impl KeyboardEventLayer {
     #[layer(parent)]
-    type Parent = UiEventLayer;
+    type Parent = UIEventLayer;
 
     #[layer(constructor)]
     fn build(
         type_: String,
         init: Option<EventInit>,
-        sup: Super<UiEventLayer>,
+        sup: Super<UIEventLayer>,
     ) -> Result<Constructed<Self>> {
         let done = sup.call(FnArgs::from((type_, init)))?;
         Ok(Constructed::new(

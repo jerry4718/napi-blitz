@@ -6,13 +6,13 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 /// Own block of the `UiEvent` class.
 #[layer]
-pub struct UiEventLayer {
+pub struct UIEventLayer {
     #[layer(getter)]
     pub detail: i32,
 }
 
-#[layer(js_name = "UiEvent")]
-impl UiEventLayer {
+#[layer(js_name = "UIEvent")]
+impl UIEventLayer {
     #[layer(parent)]
     type Parent = EventLayer;
 
@@ -28,7 +28,7 @@ impl UiEventLayer {
 }
 
 /// Argument-less own block; used in chains where `detail` is 0.
-impl Default for UiEventLayer {
+impl Default for UIEventLayer {
     fn default() -> Self {
         Self { detail: 0 }
     }
