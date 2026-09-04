@@ -3,11 +3,11 @@ import {CustomEvent, Event, EventTarget} from "../_shim.ts";
 
 declare const gc: (() => void) | undefined;
 
-// A value stored in a `CustomEvent.detail` is held through an `AnyValue`
+// A value stored in a `CustomEvent.detail` is held through an `Anything`
 // reference: while the event object is alive the detail object stays alive
 // (strong reference), and once the event object is collected the reference
 // is released so the detail can be collected too.
-test("CustomEvent detail releases its AnyValue reference when the event is collected", async (t) => {
+test("CustomEvent detail releases its Anything reference when the event is collected", async (t) => {
   const finalized = new Set<string>();
   const reg = new FinalizationRegistry<string>((held) => {
     finalized.add(held);
@@ -17,12 +17,12 @@ test("CustomEvent detail releases its AnyValue reference when the event is colle
     const payload = {tag: "payload"};
     const ev = new CustomEvent("boom", {detail: payload});
 
-    // The stored AnyValue reads back the same object.
+    // The stored Anything reads back the same object.
     t.is(ev.detail, payload);
 
     // Register both for collection notification. Returning from `seed`
     // drops the function-scoped references; the detail then only stays
-    // alive through the event's AnyValue reference.
+    // alive through the event's Anything reference.
     reg.register(payload, "payload");
     reg.register(ev, "event");
   }
@@ -43,10 +43,10 @@ test("CustomEvent detail releases its AnyValue reference when the event is colle
 });
 
 // The event passed to `dispatchEvent` crosses into native code through an
-// `AnyValue` and out to each listener. That reference is released when the
+// `Anything` and out to each listener. That reference is released when the
 // call returns, so once nothing else references the event (and the listener
 // no longer holds it) it can be collected.
-test("dispatchEvent releases the event's AnyValue reference after the call", async (t) => {
+test("dispatchEvent releases the event's Anything reference after the call", async (t) => {
   const finalized = new Set<string>();
   const reg = new FinalizationRegistry<string>((held) => {
     finalized.add(held);

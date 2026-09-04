@@ -6,7 +6,7 @@
 use napi::Result;
 use napi::bindgen_prelude::FnArgs;
 use napi_derive::napi;
-use napi_helpers::any_value::AnyValue;
+use napi_helpers::anything::Anything;
 use napi_inherit::layer::{Constructed, Super};
 use napi_inherit_proc::layer;
 
@@ -16,7 +16,7 @@ use crate::event::EventInit;
 #[napi(object)]
 #[derive(Default)]
 pub struct CustomEventInit {
-    pub detail: Option<AnyValue>,
+    pub detail: Option<Anything>,
     pub bubbles: Option<bool>,
     pub cancelable: Option<bool>,
     pub composed: Option<bool>,
@@ -25,7 +25,7 @@ pub struct CustomEventInit {
 /// Own block of the `CustomEvent` class.
 #[layer(js_name = "CustomEvent", parent = super::EventLayer)]
 pub struct CustomEventLayer {
-    detail: AnyValue,
+    detail: Anything,
 }
 
 #[layer]
@@ -53,13 +53,13 @@ impl CustomEventLayer {
         Ok(Constructed::new(
             done,
             Self {
-                detail: detail.unwrap_or(AnyValue::Null),
+                detail: detail.unwrap_or(Anything::Null),
             },
         ))
     }
 
     #[layer(getter)]
-    fn detail(&self) -> AnyValue {
+    fn detail(&self) -> Anything {
         self.detail.clone()
     }
 }

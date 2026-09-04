@@ -3,7 +3,7 @@
 use napi::Result;
 use napi::bindgen_prelude::FnArgs;
 use napi_derive::napi;
-use napi_helpers::any_value::AnyValue;
+use napi_helpers::anything::Anything;
 use napi_inherit::layer::{Constructed, Super};
 use napi_inherit_proc::layer;
 
@@ -14,7 +14,7 @@ use crate::event::EventInit;
 #[napi(object)]
 #[derive(Default)]
 pub struct MessageEventInit {
-    pub data: Option<AnyValue>,
+    pub data: Option<Anything>,
     pub origin: Option<String>,
     pub last_event_id: Option<String>,
     pub bubbles: Option<bool>,
@@ -25,7 +25,7 @@ pub struct MessageEventInit {
 /// Own block of the `MessageEvent` class.
 #[layer(js_name = "MessageEvent", parent = super::EventLayer)]
 pub struct MessageEventLayer {
-    data: AnyValue,
+    data: Anything,
     origin: String,
     last_event_id: String,
 }
@@ -57,7 +57,7 @@ impl MessageEventLayer {
         Ok(Constructed::new(
             done,
             Self {
-                data: data.unwrap_or(AnyValue::Null),
+                data: data.unwrap_or(Anything::Null),
                 origin: origin.unwrap_or_default(),
                 last_event_id: last_event_id.unwrap_or_default(),
             },
@@ -65,7 +65,7 @@ impl MessageEventLayer {
     }
 
     #[layer(getter)]
-    fn data(&self) -> AnyValue {
+    fn data(&self) -> Anything {
         self.data.clone()
     }
 

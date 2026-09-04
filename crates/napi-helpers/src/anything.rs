@@ -4,11 +4,11 @@ use std::{ptr, rc::Rc};
 
 use napi::{
     Env, Result, ValueType,
-    bindgen_prelude::{BigInt, FromNapiValue, JsValue, Null, ToNapiValue, Unknown},
+    bindgen_prelude::{BigInt, FromNapiValue, Null, ToNapiValue, Unknown},
     check_status, sys, type_of,
 };
 
-/// The shared part of a [`AnyRef`]: the `napi_ref` plus the `napi_env`
+/// The shared part of a [`OtherRef`]: the `napi_ref` plus the `napi_env`
 /// (stable for the addon's lifetime) needed to delete it.
 struct RefInner {
     inner: sys::napi_ref,
@@ -28,38 +28,47 @@ impl Drop for RefInner {
 ///
 /// napi's `UnknownRef` stores only the `napi_ref` handle, so dropping it
 /// cannot reach the `Env` needed to delete the reference. The reference is
-/// shared through `Rc`, so cloning a [`AnyRef`] (and thus an [`AnyValue`])
+/// shared through `Rc`, so cloning a [`OtherRef`] (and thus an [`Anything`])
 /// does not duplicate the `napi_ref`; the `napi_ref` lives until every clone
 /// is gone.
 #[derive(Clone)]
-pub struct AnyRef {
+pub struct OtherRef {
     inner: Rc<RefInner>,
 }
 
-impl AnyRef {
+#[allow(unused)]
+#[derive(Clone)]
+pub struct OtherValue {
+    inner: Rc<RefInner>,
+    value: sys::napi_value,
+}
+
+impl OtherRef {
     /// Create a strong reference to `value`.
-    pub fn new(env: &Env, value: sys::napi_value) -> Result<Self> {
+    pub fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
         let mut inner = ptr::null_mut();
         check_status!(
-            unsafe { sys::napi_create_reference(env.raw(), value, 1, &mut inner) },
+            unsafe { sys::napi_create_reference(env, value, 1, &mut inner) },
             "RefValue: failed to create reference"
         )?;
         Ok(Self {
-            inner: Rc::new(RefInner {
-                inner,
-                env: env.raw(),
-            }),
+            inner: Rc::new(RefInner { inner, env }),
         })
     }
 
     /// Retrieve the referenced value.
-    pub fn get_value<'e>(&self, env: &'e Env) -> Result<Unknown<'e>> {
+    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
         let mut value = ptr::null_mut();
         check_status!(
             unsafe { sys::napi_get_reference_value(env.raw(), self.inner.inner, &mut value) },
             "RefValue: failed to get reference value"
         )?;
-        unsafe { Unknown::from_napi_value(env.raw(), value) }
+        Ok(value)
+    }
+
+    /// Retrieve the referenced value.
+    pub fn unknown_value<'e>(&self, env: &'e Env) -> Result<Unknown<'e>> {
+        unsafe { Unknown::from_napi_value(env.raw(), self.raw_value(env)?) }
     }
 }
 
@@ -69,77 +78,22 @@ impl AnyRef {
 /// that produced them, so an event can not store an arbitrary JS value as a
 /// bare handle for later reads. Primitives are copied into Rust values;
 /// objects/functions are retained through a reference that releases itself on
-/// drop (the only cross-call handle in Node-API). Cloning an `AnyValue`
+/// drop (the only cross-call handle in Node-API). Cloning an `Anything`
 /// clones the stored value — primitives are copied, object references are
 /// shared.
 #[derive(Clone)]
-pub enum AnyValue {
+pub enum Anything {
     String(String),
     Number(f64),
     Boolean(bool),
     BigInt(BigInt),
     Null,
     Undefined,
-    Object(AnyRef),
+    Object(OtherRef),
+    Function(OtherRef),
 }
 
-impl AnyValue {
-    /// Normalize a JS value into Rust storage, classifying by runtime type.
-    pub fn from_value(env: &Env, v: &Unknown<'_>) -> Result<Self> {
-        match v.get_type()? {
-            ValueType::String => Ok(Self::String(
-                unsafe { v.cast::<napi::JsString>() }?
-                    .into_utf8()?
-                    .into_owned()?,
-            )),
-            ValueType::Number => Ok(Self::Number(
-                unsafe { v.cast::<napi::JsNumber>() }?.get_double()?,
-            )),
-            ValueType::Boolean => Ok(Self::Boolean(unsafe { v.cast::<bool>() }?)),
-            ValueType::BigInt => Ok(Self::BigInt(unsafe { v.cast::<BigInt>() }?)),
-            ValueType::Null => Ok(Self::Null),
-            ValueType::Undefined => Ok(Self::Undefined),
-            _ => Ok(Self::Object(AnyRef::new(env, JsValue::raw(v))?)),
-        }
-    }
-
-    /// Rebuild the JS value from the stored data.
-    pub fn to_value(&self, env: &Env) -> Result<Unknown<'static>> {
-        match self {
-            Self::String(s) => {
-                let js: napi::JsString = env.create_string(s)?;
-                unsafe { Unknown::from_napi_value(env.raw(), js.raw()) }
-            }
-            Self::Number(n) => {
-                let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), *n) }?;
-                unsafe { Unknown::from_napi_value(env.raw(), raw) }
-            }
-            Self::Boolean(b) => {
-                let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), *b) }?;
-                unsafe { Unknown::from_napi_value(env.raw(), raw) }
-            }
-            Self::BigInt(b) => {
-                let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), b.clone()) }?;
-                unsafe { Unknown::from_napi_value(env.raw(), raw) }
-            }
-            Self::Null => {
-                let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), Null) }?;
-                unsafe { Unknown::from_napi_value(env.raw(), raw) }
-            }
-            Self::Undefined => {
-                let mut raw = ptr::null_mut();
-                unsafe { sys::napi_get_undefined(env.raw(), &mut raw) };
-                unsafe { Unknown::from_napi_value(env.raw(), raw) }
-            }
-            Self::Object(r) => {
-                let v = r.get_value(env)?;
-                unsafe { Unknown::from_napi_value(env.raw(), JsValue::raw(&v)) }
-            }
-        }
-    }
-}
-
-impl FromNapiValue for AnyValue {
+impl FromNapiValue for Anything {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
         // Classify the raw JS value directly; no `Unknown` round-trip.
         match type_of!(env, napi_val)? {
@@ -157,14 +111,15 @@ impl FromNapiValue for AnyValue {
             }?)),
             ValueType::Null => Ok(Self::Null),
             ValueType::Undefined => Ok(Self::Undefined),
-            // Everything else (objects, functions, symbols, ...) is retained
+            ValueType::Function => Ok(Self::Function(OtherRef::new(env, napi_val)?)),
+            // Everything else (objects, symbols, ...) is retained
             // by reference so the value survives the call.
-            _ => Ok(Self::Object(AnyRef::new(&Env::from_raw(env), napi_val)?)),
+            _ => Ok(Self::Object(OtherRef::new(env, napi_val)?)),
         }
     }
 }
 
-impl ToNapiValue for AnyValue {
+impl ToNapiValue for Anything {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
         // Rebuild the JS value per variant; no `Unknown` round-trip.
         match val {
@@ -178,10 +133,9 @@ impl ToNapiValue for AnyValue {
                 check_status!(unsafe { sys::napi_get_undefined(env, &mut raw) })?;
                 Ok(raw)
             }
-            Self::Object(r) => {
+            Self::Object(r) | Self::Function(r) => {
                 let env = Env::from_raw(env);
-                let v = r.get_value(&env)?;
-                Ok(JsValue::raw(&v))
+                Ok(r.raw_value(&env)?)
             }
         }
     }

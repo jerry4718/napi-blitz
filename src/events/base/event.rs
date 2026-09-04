@@ -3,8 +3,8 @@
 //! Configuration fields (type, bubbles, cancelable, composed, timeStamp,
 //! isTrusted) are immutable, exposed as read-only getters. Mutable dispatch
 //! state (target, currentTarget, eventPhase, canceled, propagation flags)
-//! lives in [`EventState`], written by the dispatch walk and read back by
-//! the state getters.
+//! lives in [`EventState`], written by the event methods and read by the
+//! dispatch side.
 
 use std::cell::RefCell;
 
@@ -13,7 +13,7 @@ use napi::{
     bindgen_prelude::{FnArgs, Object},
 };
 use napi_derive::napi;
-use napi_helpers::any_value::AnyValue;
+use napi_helpers::anything::Anything;
 use napi_inherit::layer::{Constructed, RootLayer, Super};
 use napi_inherit_proc::layer;
 
@@ -37,11 +37,11 @@ pub enum DispatchTarget {
     /// No target assigned.
     None,
     /// A direct held value.
-    Direct(AnyValue),
+    Direct(Anything),
     /// Lazily produces the target; the result is cached after first resolve.
     Callable {
-        callable: Box<dyn Fn(&Env) -> Result<AnyValue>>,
-        cached: RefCell<Option<AnyValue>>,
+        callable: Box<dyn Fn(&Env) -> Result<Anything>>,
+        cached: RefCell<Option<Anything>>,
     },
 }
 
@@ -53,12 +53,12 @@ impl Default for DispatchTarget {
 
 impl DispatchTarget {
     /// Hold a JS value directly.
-    pub fn from_value(v: AnyValue) -> Self {
+    pub fn from_value(v: Anything) -> Self {
         Self::Direct(v)
     }
 
     /// Resolve lazily via a callable; the produced value is cached.
-    pub fn from_callable(callable: Box<dyn Fn(&Env) -> Result<AnyValue>>) -> Self {
+    pub fn from_callable(callable: Box<dyn Fn(&Env) -> Result<Anything>>) -> Self {
         Self::Callable {
             callable,
             cached: RefCell::new(None),
@@ -67,9 +67,9 @@ impl DispatchTarget {
 
     /// Produce the target JS value (null when unset). Resolving a `Callable`
     /// caches its result.
-    pub fn resolve(&self, env: &Env) -> Result<AnyValue> {
+    pub fn resolve(&self, env: &Env) -> Result<Anything> {
         match self {
-            Self::None => Ok(AnyValue::Null),
+            Self::None => Ok(Anything::Null),
             Self::Direct(v) => Ok(v.clone()),
             Self::Callable { callable, cached } => {
                 if let Some(c) = cached.borrow().as_ref() {
@@ -83,9 +83,9 @@ impl DispatchTarget {
     }
 }
 
-/// Mutable per-event dispatch state, set by the dispatch walk in
-/// `dispatch`. `target` / `current_target` are resolved lazily — the JS
-/// side only materializes them when the getters are read.
+/// Mutable per-event dispatch state. `target` / `current_target` are
+/// resolved lazily — the JS side only materializes them when the getters
+/// are read.
 #[derive(Default)]
 pub struct EventState {
     pub target: DispatchTarget,
@@ -164,13 +164,13 @@ impl EventLayer {
 
     /// `event.target` — resolves the target only when read.
     #[layer(getter)]
-    fn target(&self, env: &Env) -> Result<AnyValue> {
+    fn target(&self, env: &Env) -> Result<Anything> {
         self.state.target.resolve(env)
     }
 
     /// `event.currentTarget` — the current receiver during dispatch.
     #[layer(getter)]
-    fn current_target(&self, env: &Env) -> Result<AnyValue> {
+    fn current_target(&self, env: &Env) -> Result<Anything> {
         self.state.current_target.resolve(env)
     }
 
@@ -205,7 +205,7 @@ impl EventLayer {
     /// `event.composedPath()`. Placeholder: the dispatch chain is populated
     /// by the dispatch side.
     #[layer]
-    fn composed_path(&self) -> Vec<AnyValue> {
+    fn composed_path(&self) -> Vec<Anything> {
         Vec::new()
     }
 }

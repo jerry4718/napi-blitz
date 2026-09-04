@@ -190,8 +190,8 @@ test("addEventListener + dispatchEvent invokes the listener with the event", (t)
 });
 
 test("dispatchEvent returns true for a non-cancelable prevented event", (t) => {
-  // The current Event constructor is `(type)` only; cancelable defaults to
-  // false, so preventDefault() does not cancel the default action.
+  // Built without `cancelable: true`, so preventDefault() cannot cancel the
+  // default action.
   const et = new EventTarget();
   const ev = new Event("foo");
   ev.preventDefault();
@@ -207,6 +207,48 @@ test("listener with a different type is not called", (t) => {
   t.is(calls, 0);
 });
 
+// Removing a listener must target the exact callback passed in, and the
+// native side must release its reference so an unused listener can be
+// collected.
+test("removeEventListener removes the matching callback and releases it", async (t) => {
+  const et = new EventTarget();
+  const finalized = new Set<string>();
+  const reg = new FinalizationRegistry<string>((held) => {
+    finalized.add(held);
+  });
+
+  let callsA = 0;
+  let callsB = 0;
+  function seed() {
+    const callbackB = () => callsB++;
+    function callbackA() {
+      callsA++;
+    }
+    reg.register(callbackA, "callbackA");
+    // Register B first: a remove that ignores the callback argument would
+    // drop this first entry instead of the requested one.
+    et.addEventListener("foo", callbackB);
+    et.addEventListener("foo", callbackA);
+    et.removeEventListener("foo", callbackA);
+  }
+
+  seed();
+  let waited = 0;
+  while (waited < 100 && !finalized.has("callbackA")) {
+    if (typeof gc === "function") {
+      gc();
+      gc();
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    waited += 1;
+  }
+
+  et.dispatchEvent(new Event("foo"));
+  t.is(callsA, 0, "the removed callback must not fire");
+  t.is(callsB, 1, "the other callback must stay registered");
+  t.true(finalized.has("callbackA"), "removed listener reference should be released");
+});
+
 test("removeEventListener stops future dispatch", (t) => {
   const et = new EventTarget();
   let calls = 0;
@@ -216,6 +258,25 @@ test("removeEventListener stops future dispatch", (t) => {
   et.removeEventListener("foo", cb);
   et.dispatchEvent(new Event("foo"));
   t.is(calls, 1);
+});
+
+test("addEventListener accepts the options object", (t) => {
+  const et = new EventTarget();
+  let calls = 0;
+  et.addEventListener("foo", () => calls++, { capture: false, once: true });
+  et.dispatchEvent(new Event("foo"));
+  et.dispatchEvent(new Event("foo"));
+  t.is(calls, 1); // once removes itself after the first call
+});
+
+test("removeEventListener accepts the options object", (t) => {
+  const et = new EventTarget();
+  let calls = 0;
+  const cb = () => calls++;
+  et.addEventListener("foo", cb, true);
+  et.removeEventListener("foo", cb, { capture: true });
+  et.dispatchEvent(new Event("foo"));
+  t.is(calls, 0);
 });
 
 test("capture listeners are not invoked on the plain target dispatch", (t) => {

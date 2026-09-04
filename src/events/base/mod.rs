@@ -10,8 +10,8 @@
 //! ```
 //!
 //! Each layer is a plain Rust struct declared with `#[layer]`; instance data
-//! lives in the per-instance `OwnDataRegistry` (see `napi-inherit`). The
-//! dispatch half (listener storage + three-phase walk) lives in [`dispatch`].
+//! lives in the per-instance `OwnDataRegistry` (see `napi-inherit`). Listeners
+//! are stored and dispatched in `event_target`.
 
 mod dispatch;
 
