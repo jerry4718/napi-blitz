@@ -6,9 +6,10 @@
 use napi::Result;
 use napi::bindgen_prelude::FnArgs;
 use napi_derive::napi;
-use napi_helpers::anything::Anything;
-use napi_inherit::layer::{Constructed, Super};
-use napi_inherit_proc::layer;
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer},
+};
 
 use crate::event::EventInit;
 

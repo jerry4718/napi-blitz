@@ -13,9 +13,10 @@ use napi::{
     bindgen_prelude::{FnArgs, Object},
 };
 use napi_derive::napi;
-use napi_helpers::anything::Anything;
-use napi_inherit::layer::{Constructed, RootLayer, Super};
-use napi_inherit_proc::layer;
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, LayerChain, RootLayer, Super, new_from_chain, proc::layer},
+};
 
 /// `dictionary EventInit { boolean bubbles = false; boolean cancelable = false; boolean composed = false; }`
 #[napi(object)]
@@ -260,7 +261,6 @@ impl EventLayer {
 /// Build an `Event` from native data (Rust-side construction, bypassing the
 /// JS `new` path).
 pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
-    use napi_inherit::layer::LayerChain;
     let chain = LayerChain {
         own: EventLayer {
             type_: type_.into(),
@@ -273,5 +273,5 @@ pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
         },
         parent: (),
     };
-    napi_inherit::class::new_from_chain::<EventLayer>(env, chain)
+    new_from_chain::<EventLayer>(env, chain)
 }

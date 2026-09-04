@@ -5,17 +5,17 @@
 
 use std::cell::RefCell;
 
+use super::EventLayer;
 use napi::{
     Env, Error, Result, Status,
     bindgen_prelude::{Either, FnArgs, FromNapiValue, Function, JsValue, Object},
     check_status, sys,
 };
 use napi_derive::napi;
-use napi_helpers::anything::{Anything, OtherRef};
-use napi_inherit::layer::{Constructed, RootLayer, Super};
-use napi_inherit_proc::layer;
-
-use super::event::EventLayer;
+use napi_helpers::{
+    anything::{Anything, OtherRef},
+    inherits::{Constructed, RootLayer, Super, proc::layer, with_own},
+};
 
 /// `dictionary EventListenerOptions { boolean capture = false; }`
 #[napi(object)]
