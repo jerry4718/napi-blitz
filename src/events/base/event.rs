@@ -123,7 +123,8 @@ impl EventLayer {
 
     /// `new Event(type)`.
     #[layer(constructor)]
-    fn build(type_: String) -> Self {
+    fn build(env: &Env, type_: String) -> Self {
+        crate::dispatch::set_env(*env);
         Self {
             type_,
             bubbles: false,
@@ -199,8 +200,9 @@ impl EventLayer {
 /// JS `new` path).
 pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
     use napi_inherit::layer::LayerChain;
+    crate::dispatch::set_env(*env);
     let chain = LayerChain {
-        own: EventLayer::build(type_.into()),
+        own: EventLayer::build(env, type_.into()),
         parent: (),
     };
     napi_inherit::class::new_from_chain::<EventLayer>(env, chain)

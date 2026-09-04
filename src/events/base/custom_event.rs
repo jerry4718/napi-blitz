@@ -4,13 +4,15 @@
 //! Event properties are inherited via the prototype chain.
 
 use napi::{
-    Result, UnknownRef,
+    Env, Result, UnknownRef,
     bindgen_prelude::{FromNapiValue, JsValue, Unknown},
 };
 use napi_inherit_proc::layer;
 
+use super::EventLayer;
+
 /// Own block of the `CustomEvent` class.
-#[layer(js_name = "CustomEvent")]
+#[layer(js_name = "CustomEvent", parent = EventLayer)]
 pub struct CustomEventLayer {
     detail: UnknownRef,
 }
@@ -19,10 +21,10 @@ pub struct CustomEventLayer {
 impl CustomEventLayer {
     /// `new CustomEvent(type, detail)`.
     #[layer(constructor)]
-    fn build(detail: Option<Unknown<'static>>) -> Result<Self> {
-        let env = super::dispatch::env()?;
+    fn build(env: &Env, detail: Option<Unknown<'static>>) -> Result<Self> {
+        super::dispatch::set_env(*env);
         let detail = match detail {
-            None => super::dispatch::null_unknown(&env)?,
+            None => super::dispatch::null_unknown(env)?,
             Some(v) => v,
         };
         let r = unsafe { UnknownRef::from_napi_value(env.raw(), JsValue::raw(&detail)) }?;
