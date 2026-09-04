@@ -4,11 +4,12 @@
 //! to quote itself for both outputs — nothing else needs its internals.
 
 use crate::attrs::{MemberInfo, MemberKind};
+use crate::registry::resolve_js_name;
 use crate::util::{setter_js_name, to_camel, type_last_ident};
 use napi_derive_backend::{FnKind, FnSelf, NapiFn, NapiFnArg, NapiFnArgKind};
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{FnArg, ReturnType, Type};
+use syn::{FnArg, GenericArgument, PathArguments, ReturnType, Type};
 
 pub(crate) struct Member {
     pub kind: MemberKind,
@@ -349,6 +350,11 @@ impl Member {
             ReturnType::Default => None,
             ReturnType::Type(_, ty) => Some((**ty).clone()),
         };
+        // A return type that carries `LayerRef<L>` (possibly inside
+        // `Result` / `Option` / `Vec`) is emitted as `L`'s JS class name so
+        // the TS defs are precise instead of `Any`; the runtime conversion
+        // still runs through the normal `ToNapiValue` impls.
+        let ts_return_type = ret.as_ref().and_then(layer_ts_type);
         let fallback = match kind {
             MemberKind::Constructor => "constructor".to_owned(),
             MemberKind::Getter => to_camel(&name.to_string()),
@@ -408,7 +414,7 @@ impl Member {
             ts_generic_types: None,
             ts_type: None,
             ts_args_type: None,
-            ts_return_type: None,
+            ts_return_type,
             skip_typescript: false,
             comments: crate::util::extract_doc(&f.attrs),
             parent_is_generator: false,
@@ -421,5 +427,39 @@ impl Member {
             register_name: format_ident!("__layer_placeholder"),
             no_export: false,
         }
+    }
+}
+
+/// The TS signature of a return type, when it carries a `LayerRef<L>`.
+/// `LayerRef<L>` maps to `L`'s JS class name (resolved through the layer
+/// registry); `Result` / `Option` / `Vec` wrappers map to `L`, `L | null`
+/// and `Array<L>` respectively. Any other type yields `None`, leaving the
+/// default napi type mapping untouched.
+fn layer_ts_type(ty: &Type) -> Option<String> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    let seg = path.path.segments.last()?;
+    let inner_ty = || -> Option<Type> {
+        let PathArguments::AngleBracketed(args) = &seg.arguments else {
+            return None;
+        };
+        let GenericArgument::Type(t) = args.args.first()? else {
+            return None;
+        };
+        Some(t.clone())
+    };
+    match seg.ident.to_string().as_str() {
+        "LayerRef" => {
+            let Type::Path(inner) = inner_ty()? else {
+                return None;
+            };
+            let name = inner.path.segments.last()?.ident.to_string();
+            Some(resolve_js_name(&name))
+        }
+        "Result" => layer_ts_type(&inner_ty()?),
+        "Option" => layer_ts_type(&inner_ty()?).map(|t| format!("{t} | null")),
+        "Vec" => layer_ts_type(&inner_ty()?).map(|t| format!("Array<{t}>")),
+        _ => None,
     }
 }

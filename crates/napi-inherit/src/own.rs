@@ -128,6 +128,7 @@ pub fn set_own_block<T: ExtendLayer + OwnBlock>(this: &Object, data: T) -> Resul
 }
 
 /// Read a layer's own block by shared reference.
+#[inline]
 pub fn with_own<T, R>(this: &Object, f: impl FnOnce(&T) -> R) -> Result<R>
 where
     T: ExtendLayer + OwnBlock,
@@ -139,6 +140,7 @@ where
 /// Mutate a layer's own block in place through the callback. The `&mut T`
 /// borrow lives only inside `f` - do not touch the same own block again
 /// before it returns.
+#[inline]
 pub fn with_own_mut<T, R>(this: &Object, f: impl FnOnce(&mut T) -> R) -> Result<R>
 where
     T: ExtendLayer + OwnBlock,
