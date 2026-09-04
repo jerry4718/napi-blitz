@@ -26,7 +26,7 @@ use self::{
     monitor::{MonitorInfo, VideoModeInfo},
 };
 use crate::{
-    dom::doc::{NativeDoc, WindowDocument},
+    dom::{WindowDocument, shared::doc::SharedDocument},
     window::util::{parse_dimension, parse_window_buttons},
 };
 use napi::{
@@ -264,8 +264,8 @@ impl NativeWindow {
     }
 }
 
-/// Internal helper: build a WindowDocument from a DocHandle.
+/// Internal helper: build a WindowDocument from a document's shared state.
 #[cfg(feature = "native-window")]
-pub(crate) fn make_window_document(handle: &NativeDoc) -> Box<WindowDocument> {
-    Box::new(WindowDocument::new(handle.share_doc()))
+pub(crate) fn make_window_document(shared_doc: &Rc<SharedDocument>) -> Box<WindowDocument> {
+    Box::new(WindowDocument::new(Rc::clone(shared_doc)))
 }

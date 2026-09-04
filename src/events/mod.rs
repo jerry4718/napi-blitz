@@ -4,13 +4,16 @@
 
 pub mod base;
 
+// Module order matters for the `#[layer]` extends resolution: the parent
+// layer's struct must be expanded before the child's impl (the layer
+// registry is build-order dependent). List parents before their children.
+mod ui_event;
 mod composition_event;
 mod focus_event;
 mod input_event;
 mod keyboard_event;
 mod mouse_event;
 mod pointer_event;
-mod ui_event;
 mod wheel_event;
 
 pub(crate) use composition_event::CompositionEventLayer;

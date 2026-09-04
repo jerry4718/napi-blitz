@@ -1,14 +1,16 @@
 //! Per-document shared state, the blitz↔JS document adapter, and node
 //! wrapping.
 //!
-//! `SharedDoc` holds the `BaseDocument`, the switchable NodeCache, weak
+//! `SharedDocument` holds the `BaseDocument`, the switchable NodeCache, weak
 //! refs to the JS Document/Window, and the napi env captured at creation.
 //! `wrap_node` materializes a JS wrapper for a blitz node id by building
 //! the matching `#[layer]` chain (`new_from_chain`) and caching it; the
-//! GC finalizer weak-references `SharedDoc`.
+//! GC finalizer weak-references `SharedDocument`.
 
 // 4. Build the node chain by blitz node type + tag name.
-use crate::dom::{dispatch::JsEventHandler, shared::node_cache::NodeCache, wrap_node};
+use crate::dom::{
+    DocumentLayer, dispatch::JsEventHandler, shared::node_cache::NodeCache, wrap_node,
+};
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
@@ -20,7 +22,7 @@ use blitz::{
 use fontique::Blob;
 use napi::{Env, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::JsWeakRef;
+use napi_helpers::{JsWeakRef, inherits::with_own};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     rc::Rc,
@@ -37,7 +39,7 @@ pub struct DocHandleConfig {
     pub base_html: Option<String>,
 }
 
-// ── SharedDoc: per-document shared state ─────────────────────────────
+// ── SharedDocument: per-document shared state ─────────────────────────────
 
 /// Per-document shared state. Held inside `Rc` so that the window adapter
 /// and node wrappers can share it. The GC finalizer uses `Weak`.
@@ -51,9 +53,14 @@ pub struct SharedDocument {
     host_dirty: Cell<bool>,
     /// Weak ref to the JS Document object
     js_weak: RefCell<Option<JsWeakRef>>,
+    /// Weak ref to the JS Window object, for lifecycle dispatch.
+    js_window_ref: RefCell<Option<JsWeakRef>>,
     /// The napi env captured at document creation; blitz's
     /// `EventHandler` callbacks do not carry an `Env`.
     env: Cell<Option<Env>>,
+    /// Whether the document has already been attached to a window.
+    /// One document attaches to at most one window.
+    attached: Cell<bool>,
 }
 
 impl SharedDocument {
@@ -63,7 +70,20 @@ impl SharedDocument {
             host_dirty: Cell::new(false),
             node_cache: RefCell::new(NodeCache::new()),
             js_weak: RefCell::new(None),
+            js_window_ref: RefCell::new(None),
             env: Cell::new(None),
+            attached: Cell::new(false),
+        }
+    }
+
+    /// Claim the document for a window attach. `false` when it is already
+    /// attached; the same document can only back one window.
+    pub fn mark_attached(&self) -> bool {
+        if self.attached.get() {
+            false
+        } else {
+            self.attached.set(true);
+            true
         }
     }
 
@@ -108,6 +128,18 @@ impl SharedDocument {
     /// Register the JS Document object, retained weakly.
     pub fn js_weak(&self) -> Ref<'_, Option<JsWeakRef>> {
         self.js_weak.borrow()
+    }
+
+    /// Register the JS Window object, retained weakly; the lifecycle
+    /// dispatch resolves the window through this.
+    pub fn set_window_ref(&self, env: &Env, window: &Object) -> Result<()> {
+        *self.js_window_ref.borrow_mut() = Some(JsWeakRef::new(window, env)?);
+        Ok(())
+    }
+
+    /// Read the JS Window object's weak ref.
+    pub fn js_window_ref(&self) -> Ref<'_, Option<JsWeakRef>> {
+        self.js_window_ref.borrow()
     }
 }
 
@@ -323,4 +355,13 @@ pub fn create_document<'env>(
 
     let node_id = shared_doc.base().root_node().id;
     wrap_node(&shared_doc, &env, node_id)
+}
+
+/// Register the JS `Window` object for the document, retained weakly, so
+/// the Rust side can dispatch lifecycle events to it. Called from the JS
+/// `Window` constructor.
+#[napi]
+pub fn set_window_ref(env: Env, doc: Object, window: Object) -> Result<()> {
+    let shared_doc = with_own::<DocumentLayer, _>(&doc, |d| d.shared.clone())?;
+    shared_doc.set_window_ref(&env, &window)
 }

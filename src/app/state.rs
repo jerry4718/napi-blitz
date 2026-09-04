@@ -13,7 +13,7 @@ use napi::{Env, JsDeferred, Result, bindgen_prelude::Undefined};
 use winit::window::WindowId;
 
 use crate::{
-    dom::doc::SharedDoc,
+    dom::shared::doc::SharedDocument,
     renderer::CurrentRenderer,
     window::{NativeWindow, WindowState},
 };
@@ -33,7 +33,7 @@ pub(crate) struct WindowEntry {
     pub(crate) state: Rc<RefCell<WindowState>>,
     /// Shared doc, for dispatching shell events without downcasting
     /// `view.doc` (a `Box<dyn Document>`).
-    pub(crate) shared_doc: Rc<SharedDoc>,
+    pub(crate) shared_doc: Rc<SharedDocument>,
 }
 
 impl WindowEntry {
@@ -66,7 +66,7 @@ pub(crate) enum PendingRequest {
         state: WindowState,
         /// Shared doc, so the promoted `WindowEntry` can dispatch shell
         /// events to the JS `Window` object.
-        shared_doc: Rc<SharedDoc>,
+        shared_doc: Rc<SharedDocument>,
         deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
     },
     /// Tear down a requested closure (deferred past in-flight winit dispatch

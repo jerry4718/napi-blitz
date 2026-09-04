@@ -13,8 +13,6 @@
 //! lives in the per-instance `OwnDataRegistry` (see `napi-inherit`). Listeners
 //! are stored and dispatched in `event_target`.
 
-mod dispatch;
-
 mod event;
 mod event_target;
 mod message_event;

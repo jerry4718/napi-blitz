@@ -22,7 +22,7 @@
 
 use crate::{
     app::{handler::AppHandler, lifecycle::Lifecycle},
-    dom::doc::NativeDoc,
+    dom::DocumentLayer,
     window::{
         NativeWindow,
         monitor::{MonitorInfo, monitor_to_info},
@@ -36,6 +36,7 @@ use napi::{
     Env, Error, Result,
     bindgen_prelude::{Object, PromiseRaw, Undefined},
 };
+use napi_helpers::inherits::with_own;
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
 /// Result of one `pumpAppEvents` call.
@@ -70,17 +71,17 @@ impl NativeApp {
 
     /// Store a weak ref to the JS `BlitzApp` object so Rust can
     /// dispatch app-level lifecycle events (`window:open`,
-    /// `window:close`, `window:closed`) to it. Mirrors
-    /// `NativeDoc::set_window_ref`.
+    /// `window:close`, `window:closed`) to it.
     #[napi]
     pub fn set_app_ref(&self, env: Env, app: Object) -> Result<()> {
         self.lifecycle.set_app_ref(env, app)
     }
 
-    /// Attach a new window to the given document handle. The same handle
-    /// can only be attached to one window. The JS DocHandle keeps working
-    /// after this call (it shares state with the window via Rc<RefCell<...>>),
-    /// so JS can keep mutating the DOM after `openWindow`.
+    /// Attach a new window to the given document. The same document
+    /// handle can only be attached to one window. The JS Document keeps
+    /// working after this call (it shares state with the window via
+    /// Rc<RefCell<...>>), so JS can keep mutating the DOM after
+    /// `openWindow`.
     ///
     /// `options` maps directly to a winit `WindowAttributes`. If the
     /// document carries a `<title>` element, blitz's mutator-flush will
@@ -99,10 +100,11 @@ impl NativeApp {
     pub fn open_window(
         &self,
         env: Env,
-        doc: &mut NativeDoc,
+        doc: Object,
         options: Option<&WindowOptions>,
     ) -> Result<PromiseRaw<'_, NativeWindow>> {
-        self.lifecycle.open_window(env, doc, options)
+        let shared_doc = with_own::<DocumentLayer, _>(&doc, |d| d.shared.clone())?;
+        self.lifecycle.open_window(env, shared_doc, options)
     }
 
     /// Queue the given window for closure and return a promise that

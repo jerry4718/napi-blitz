@@ -56,7 +56,7 @@ use crate::{
         event_loop::EventLoopBox,
         state::{AppState, PendingRequest, WindowEntry},
     },
-    dom::doc::{NativeDoc, SharedDoc},
+    dom::shared::doc::SharedDocument,
     global,
     helpers::{JsWeakRef, dispatch_app_event, dispatch_window_event},
     renderer::CurrentRenderer,
@@ -107,7 +107,7 @@ impl Lifecycle {
 
     /// Store a weak ref to the JS `BlitzApp` object so Rust can dispatch
     /// app-level lifecycle events (`window:open`, `window:close`,
-    /// `window:closed`) to it. Mirrors `NativeDoc::set_window_ref`.
+    /// `window:closed`) to it.
     pub(crate) fn set_app_ref(&self, env: Env, app: Object) -> Result<()> {
         *self.js_app_ref.borrow_mut() = Some(JsWeakRef::new(&app, &env)?);
         Ok(())
@@ -139,7 +139,7 @@ impl Lifecycle {
     /// Dispatch the cancelable close request: `close` to the window and,
     /// independently, `window:close` to the app. A `preventDefault()` at
     /// either level vetoes the close. Returns `true` if it should proceed.
-    fn dispatch_close_request(&self, doc: &Rc<SharedDoc>, env: &Env) -> Result<bool> {
+    fn dispatch_close_request(&self, doc: &Rc<SharedDocument>, env: &Env) -> Result<bool> {
         let window_prevented = dispatch_window_event(doc, "close", true, env)?;
         let app_prevented = dispatch_app_event(&self.js_app_ref, "window:close", true, env)?;
         Ok(!window_prevented && !app_prevented)
@@ -147,24 +147,24 @@ impl Lifecycle {
 
     /// Dispatch the non-cancelable `closed` (window) and `window:closed`
     /// (app) notifications, after the teardown has completed.
-    fn notify_closed(&self, doc: &Rc<SharedDoc>, env: &Env) -> Result<()> {
+    fn notify_closed(&self, doc: &Rc<SharedDocument>, env: &Env) -> Result<()> {
         dispatch_window_event(doc, "closed", false, env)?;
         dispatch_app_event(&self.js_app_ref, "window:closed", false, env).map(|_| ())
     }
 
-    /// Build the pieces for a pending open from the JS `DocHandle`, so
-    /// `open_window` only has to create the promise and queue it.
+    /// Build the pieces for a pending open from the document's shared
+    /// state, so `open_window` only has to create the promise and queue
+    /// it.
     fn build_open_request(
-        doc: &mut NativeDoc,
+        shared_doc: &Rc<SharedDocument>,
         options: Option<&WindowOptions>,
-    ) -> Result<(WindowConfig<CurrentRenderer>, WindowState, Rc<SharedDoc>)> {
-        if !doc.mark_attached() {
+    ) -> Result<(WindowConfig<CurrentRenderer>, WindowState)> {
+        if !shared_doc.mark_attached() {
             return Err(Error::from_reason(
-                "DocHandle has already been attached to a window".to_string(),
+                "Document has already been attached to a window".to_string(),
             ));
         }
-        let shared_doc = doc.doc.clone();
-        let window_doc = make_window_document(doc);
+        let window_doc = make_window_document(shared_doc);
         let attributes = build_window_attributes(options)?;
         let config = WindowConfig::with_attributes(window_doc, CurrentRenderer::new(), attributes);
 
@@ -172,14 +172,14 @@ impl Lifecycle {
             window: None,
             closed: false,
         };
-        Ok((config, win_state, shared_doc))
+        Ok((config, win_state))
     }
 
     fn queue_open(
         &self,
         config: WindowConfig<CurrentRenderer>,
         state: WindowState,
-        shared_doc: Rc<SharedDoc>,
+        shared_doc: Rc<SharedDocument>,
         deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
     ) {
         self.state
@@ -194,8 +194,8 @@ impl Lifecycle {
         self.has_opened_window.set(true);
     }
 
-    /// Attach a new window to the given document handle. The same handle
-    /// can only be attached to one window. The JS DocHandle keeps working
+    /// Attach a new window to the given document. The same document can
+    /// only be attached to one window. The JS Document keeps working
     /// after this call (it shares state with the window via
     /// `Rc<RefCell<...>>`), so JS can keep mutating the DOM afterward.
     ///
@@ -212,10 +212,10 @@ impl Lifecycle {
     pub(crate) fn open_window(
         &self,
         env: Env,
-        doc: &mut NativeDoc,
+        shared_doc: Rc<SharedDocument>,
         options: Option<&WindowOptions>,
     ) -> Result<PromiseRaw<'_, NativeWindow>> {
-        let (config, win_state, shared_doc) = Self::build_open_request(doc, options)?;
+        let (config, win_state) = Self::build_open_request(&shared_doc, options)?;
         let (deferred, promise_obj) =
             env.create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
         let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
@@ -424,9 +424,9 @@ impl Lifecycle {
     /// Remove a live window and release its OS window. The single
     /// teardown path behind `drain_closing_windows`, `close_from_os`,
     /// and the shell `CloseWindow` event. Returns the window's
-    /// `SharedDoc` when a live window was removed, for the post-teardown
-    /// notification.
-    fn teardown_window(&self, window_id: WindowId) -> Option<Rc<SharedDoc>> {
+    /// `SharedDocument` when a live window was removed, for the
+    /// post-teardown notification.
+    fn teardown_window(&self, window_id: WindowId) -> Option<Rc<SharedDocument>> {
         let mut state = self.state.borrow_mut();
         state.windows.remove(&window_id).map(|mut entry| {
             entry.close();

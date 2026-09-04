@@ -4,15 +4,18 @@
 //! HTMLTextAreaElement`, plus `Text`, `Comment`, and
 //! `Document → HTMLDocument` nodes.
 
+// Module order matters for the `#[layer]` extends resolution: the parent
+// layer's struct must be expanded before the child's impl (the layer
+// registry is build-order dependent). List parents before their children.
+pub(crate) mod node;
 pub(crate) mod comment;
-pub(crate) mod document;
+pub(crate) mod text;
 pub(crate) mod element;
-pub(crate) mod html_document;
 pub(crate) mod html_element;
 pub(crate) mod html_input_element;
 pub(crate) mod html_textarea_element;
-pub(crate) mod node;
-pub(crate) mod text;
+pub(crate) mod document;
+pub(crate) mod html_document;
 
 pub use comment::CommentLayer;
 pub use document::DocumentLayer;

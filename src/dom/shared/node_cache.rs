@@ -131,7 +131,7 @@ impl Default for NodeCache {
 
 // ── Reference switching helpers ──────────────────────────────────────
 //
-// The subtree strong/weak switching helpers live on `SharedDoc` in
+// The subtree strong/weak switching helpers live on `SharedDocument` in
 // `doc.rs`.
 
 // ── Finalizer ────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ impl Finalize for NodeFinalizer {
     fn finalize(&self, env: Env) {
         // The finalizer only fires in weak mode, which means the node was
         // detached from the document. Try to upgrade the weak ref to the
-        // SharedDoc. If the document has already been dropped, its NodeCache
+        // SharedDocument. If the document has already been dropped, its NodeCache
         // and SwitchableRefs were dropped too.
         let Some(doc_rc) = self.shared_doc.upgrade() else {
             #[cfg(debug_assertions)]

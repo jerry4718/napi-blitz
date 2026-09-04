@@ -39,7 +39,7 @@ const AT_TARGET: u32 = 2;
 const BUBBLING_PHASE: u32 = 3;
 
 /// `EventHandler` impl that drives the three-phase dispatch from Rust.
-/// Holds a `Weak<SharedDoc>` so it doesn't conflict with `&mut self`
+/// Holds a `Weak<SharedDocument>` so it doesn't conflict with `&mut self`
 /// in `EventDriver::new(self, handler)`.
 pub struct JsEventHandler {
     pub doc: Weak<SharedDocument>,
