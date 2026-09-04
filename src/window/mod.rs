@@ -13,6 +13,7 @@
 pub(crate) mod handle;
 pub(crate) mod monitor;
 pub(crate) mod options;
+pub(crate) mod raf;
 pub(crate) mod util;
 
 use self::{
@@ -33,9 +34,10 @@ use crate::{
 use blitz::dom::DEFAULT_CSS;
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{BigInt, Object, PromiseRaw, Uint8Array, Undefined},
+    bindgen_prelude::{BigInt, FnArgs, Function, Object, PromiseRaw, Uint8Array, Undefined},
 };
 use napi_helpers::{
+    anything::Anything,
     discard_err,
     inherits::{Constructed, LayerRef, Super, proc::layer, require},
 };
@@ -389,6 +391,51 @@ impl WindowLayer {
     #[layer]
     pub fn close(&self) -> Result<PromiseRaw<'static, Undefined>> {
         self.lifecycle.request_close(self)
+    }
+
+    /// Register `callback` to run before the next redraw of this window;
+    /// returns a handle for `cancelAnimationFrame`. Registering while none
+    /// is pending requests a redraw, so a waiting callback is always
+    /// scheduled. Callbacks stay alive until they run, are cancelled, or
+    /// the window closes.
+    #[layer]
+    pub fn request_animation_frame(
+        &self,
+        env: &Env,
+        callback: Function<FnArgs<(f64,)>, Anything>,
+    ) -> Result<u32> {
+        let raf = {
+            let state = self.lifecycle.state();
+            state
+                .windows
+                .get(&self.window_id)
+                .map(|entry| Rc::clone(&entry.raf))
+                .ok_or_else(|| Error::from_reason("requestAnimationFrame: window is closed"))?
+        };
+        let was_idle = !raf.has_pending();
+        let handle = raf.push(env, callback)?;
+        if was_idle {
+            // The first pending callback is itself a frame request: ask
+            // winit for a redraw so it can run.
+            if let Some(entry) = self.lifecycle.state().windows.get(&self.window_id) {
+                entry.view.borrow().request_redraw();
+            }
+        }
+        Ok(handle)
+    }
+
+    /// Cancel a callback previously registered with
+    /// `requestAnimationFrame`; its reference is released here.
+    #[layer]
+    pub fn cancel_animation_frame(&self, env: &Env, handle: u32) -> Result<()> {
+        let state = self.lifecycle.state();
+        let entry = state
+            .windows
+            .get(&self.window_id)
+            .ok_or_else(|| Error::from_reason("cancelAnimationFrame: window is closed"))?;
+        entry.raf.cancel(handle);
+        let _ = env;
+        Ok(())
     }
 }
 

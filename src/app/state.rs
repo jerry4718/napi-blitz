@@ -12,7 +12,11 @@ use blitz::{
 use napi_helpers::deferred::Deferred;
 use winit::window::WindowId;
 
-use crate::{dom::shared::doc::SharedDocument, renderer::CurrentRenderer, window::WindowState};
+use crate::{
+    dom::shared::doc::SharedDocument,
+    renderer::CurrentRenderer,
+    window::{WindowState, raf::RafQueue},
+};
 
 /// A live window: the blitz `View` plus the JS-side `Window` handle
 /// that holds an `Arc<dyn Window>`. Dropping the view alone does not
@@ -30,10 +34,20 @@ pub(crate) struct WindowEntry {
     /// Shared doc, for dispatching shell events without downcasting
     /// `view.doc` (a `Box<dyn Document>`).
     pub(crate) shared_doc: Rc<SharedDocument>,
+    /// Pending `requestAnimationFrame` callbacks for this window's next
+    /// redraw frame. `Rc` so the event handler can clone the queue out,
+    /// drop the state borrow, and only then run callbacks (which re-enter
+    /// JS). `RafQueue` is itself interior-mutable (methods take `&self`),
+    /// so no `RefCell` layer is needed here.
+    pub(crate) raf: Rc<RafQueue>,
 }
 
 impl WindowEntry {
     pub(crate) fn close(&mut self) {
+        // The window is gone; no frame will run the queued callbacks, so
+        // release their strong references now (window close is the
+        // mandatory cleanup point for queued animation callbacks).
+        self.raf.clear();
         let mut state = self.state.borrow_mut();
         state.window = None;
         state.closed = true;

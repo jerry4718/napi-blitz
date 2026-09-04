@@ -15,6 +15,7 @@ import {
   WindowOptions,
 } from '@ylcc/napi-blitz'
 import { App } from './App.tsx'
+import { WINDOW_KEY } from './useWindow.ts'
 
 const BASE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -153,6 +154,8 @@ export async function bootstrap() {
   body.appendChild(mountEl)
 
   const vueApp = createApp(App);
+
+  vueApp.provide(WINDOW_KEY, window)
 
   vueApp.mount(mountEl)
 

@@ -98,13 +98,16 @@ export async function bootstrap() {
     console.log("renderFaces:", performance.now() - p0);
   }
 
-  // Animation loop; ends when the window closes (the pump loop exits on its
-  // own once every window is gone).
-  while (!win.closed) {
+  // Animation loop, driven by the window's redraw: the callback
+  // re-registers on every frame until the window is closed (the pump loop
+  // then exits on its own once every window is gone).
+  const tick = () => {
+    if (win.closed) return
     applyLevelChange()
     loop()
-    await new Promise((r) => setTimeout(r, 60))
+    win.requestAnimationFrame(tick)
   }
+  win.requestAnimationFrame(tick)
 }
 
 // ---------- Face DOM management ----------

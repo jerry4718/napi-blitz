@@ -65,7 +65,7 @@ use crate::{
     helpers::{dispatch_app_event, dispatch_window_event},
     renderer::CurrentRenderer,
     window::{
-        WindowLayer, WindowState, make_window_document, options::WindowOptions,
+        WindowLayer, WindowState, make_window_document, options::WindowOptions, raf::RafQueue,
         util::build_window_attributes,
     },
 };
@@ -94,6 +94,14 @@ pub(crate) struct Lifecycle {
 }
 
 impl Lifecycle {
+    /// The napi env the lifecycle dispatches JS on. Lifecycle exists only
+    /// on the main thread, so holding the env here is safe; winit
+    /// callbacks hold the lifecycle, so they reach the env through this
+    /// accessor instead of carrying a pointer of their own.
+    pub(crate) fn env(&self) -> &Env {
+        &self.env
+    }
+
     pub(crate) fn new(
         env: Env,
         proxy: BlitzShellProxy,
@@ -332,6 +340,7 @@ impl Lifecycle {
                 view: Rc::new(RefCell::new(view)),
                 state: shared.clone(),
                 shared_doc: Rc::clone(&shared_doc),
+                raf: Rc::new(RafQueue::new()),
             };
             self.state.borrow_mut().windows.insert(window_id, entry);
 

@@ -1088,6 +1088,19 @@ export declare class WindowClass extends EventTarget {
    * `close()` is idempotent.
    */
   close(): Promise<undefined>
+  /**
+   * Register `callback` to run before the next redraw of this window;
+   * returns a handle for `cancelAnimationFrame`. Registering while none
+   * is pending requests a redraw, so a waiting callback is always
+   * scheduled. Callbacks stay alive until they run, are cancelled, or
+   * the window closes.
+   */
+  requestAnimationFrame(callback: (arg0: number) => Anything): number
+  /**
+   * Cancel a callback previously registered with
+   * `requestAnimationFrame`; its reference is released here.
+   */
+  cancelAnimationFrame(handle: number): void
 }
 
 export type AttributesHandler =

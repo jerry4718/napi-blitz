@@ -10,6 +10,7 @@
 import {computed, defineComponent, onMounted, onUnmounted, PropType, ref} from 'vue'
 import { TriangleFace } from './sphere.ts'
 import {HTMLElement} from "@ylcc/napi-blitz";
+import { useWindow } from './useWindow.ts';
 
 const SPHERE_RADIUS_PX = 240
 const PERSPECTIVE = 800
@@ -24,8 +25,9 @@ export const Sphere3D = defineComponent({
     const angleX = ref(0)
     const angleY = ref(0)
 
-    // ---- rotation loop (setTimeout-based, works in Node.js) ----
-    let timerId: ReturnType<typeof setTimeout> | null = null
+    // ---- rotation loop, driven by the window's redraw (rAF) ----
+    const win = useWindow()
+    let frameId: number | null = null
     let lastTime = 0
 
     const loop = () => {
@@ -35,15 +37,15 @@ export const Sphere3D = defineComponent({
       // Rotate ~30° per second around Y, ~18° around X.
       angleX.value = (angleX.value + dt * 0.3) % (Math.PI * 2)
       angleY.value = (angleY.value + dt * 0.5) % (Math.PI * 2)
-      timerId = setTimeout(loop, 16)
+      frameId = win.requestAnimationFrame(loop)
     }
 
     onMounted(() => {
       lastTime = performance.now()
-      timerId = setTimeout(loop, 16)
+      frameId = win.requestAnimationFrame(loop)
     })
     onUnmounted(() => {
-      if (timerId !== null) clearTimeout(timerId)
+      if (frameId !== null) win.cancelAnimationFrame(frameId)
     })
 
     // ---- Build the CSS for each face ----

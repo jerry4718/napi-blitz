@@ -50,6 +50,40 @@ impl ApplicationHandler for AppHandler {
             return;
         }
 
+        // Occlusion pauses the window's animation frames; lifting it
+        // resumes them with a redraw request (hidden-window behavior).
+        if let WindowEvent::Occluded(occluded) = &event
+            && let Some(raf) = {
+                let state = self.lifecycle.state();
+                state.windows.get(&window_id).map(|e| Rc::clone(&e.raf))
+            }
+        {
+            let resume = !occluded && raf.has_pending();
+            raf.set_paused(*occluded);
+            if resume
+                && let Some(view) = {
+                    let state = self.lifecycle.state();
+                    state.windows.get(&window_id).map(|e| Rc::clone(&e.view))
+                }
+            {
+                view.borrow().request_redraw();
+            }
+        }
+
+        // Redraw: run the window's queued animation frame callbacks
+        // before the view renders, so their DOM changes land in this
+        // frame. The callbacks re-enter JS, so the queue handle is cloned
+        // out and no state borrow is held across the run.
+        if matches!(event, WindowEvent::RedrawRequested)
+            && let Some(raf) = {
+                let state = self.lifecycle.state();
+                state.windows.get(&window_id).map(|e| Rc::clone(&e.raf))
+            }
+        {
+            let callbacks = raf.take_pending();
+            raf.run(self.lifecycle.env(), callbacks);
+        }
+
         // Forward non-close events to the View's event handler.
         //
         // `handle_winit_event` may re-enter JS (click -> spawn ->
