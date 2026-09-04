@@ -42,6 +42,7 @@
   ],
   "napi": {
     "binaryName": "napi-blitz",
+    "dtsHeaderFile": "src-js/header.d.ts",
     "targets": [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",
@@ -102,7 +103,8 @@
     },
     "nodeArguments": [
       "--import",
-      "@oxc-node/core/register"
+      "@oxc-node/core/register",
+      "--expose-gc"
     ]
   },
   "packageManager": "pnpm@11.8.0"
