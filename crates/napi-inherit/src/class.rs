@@ -154,7 +154,7 @@ where
                     let i = idx.get();
                     let raw = set_ref.get_value(env)?;
                     let this_obj = raw;
-                    let result = match next_item(env.clone(), this_obj.into(), i)? {
+                    let result = match next_item(*env, this_obj.into(), i)? {
                         Some(value) => {
                             idx.set(i + 1);
                             let mut obj = Object::new(env)?;
@@ -191,15 +191,6 @@ fn wellknown_symbol<'env>(env: &'env Env, description: &str) -> Result<JsSymbol<
     let global = env.get_global()?;
     let sym_ctor: Object = global.get_named_property_unchecked("Symbol")?;
     sym_ctor.get_named_property(description)
-}
-
-/// Build a JS array from an iterator of napi-convertible items.
-fn build_array<'env, I: ToNapiValue>(env: &'env Env, list: Vec<I>) -> Result<Object<'env>> {
-    let mut arr = env.create_array(list.len() as u32)?;
-    for (i, v) in list.into_iter().enumerate() {
-        arr.set(i as u32, v)?;
-    }
-    unsafe { Object::from_napi_value(env.raw(), JsValue::raw(&arr)) }
 }
 
 /// A setter on the prototype (non-enumerable, configurable - WebIDL shape).

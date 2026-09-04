@@ -27,6 +27,9 @@ pub struct EventInit {
     pub composed: Option<bool>,
 }
 
+/// A lazily-resolved target producer; see [`DispatchTarget::Callable`].
+type TargetResolver = Box<dyn Fn(&Env) -> Result<Anything>>;
+
 /// A reference to the event's target (or current target).
 ///
 /// The target is not always a node: it can be any object (window, app,
@@ -34,32 +37,29 @@ pub struct EventInit {
 /// target is held either as a direct value, or as a callable that produces
 /// it lazily (cached after first resolution) — e.g. wrapping a node only when
 /// the JS side first reads `event.target`.
+#[derive(Default)]
 pub enum DispatchTarget {
     /// No target assigned.
+    #[default]
     None,
     /// A direct held value.
     Direct(Anything),
     /// Lazily produces the target; the result is cached after first resolve.
     Callable {
-        callable: Box<dyn Fn(&Env) -> Result<Anything>>,
+        callable: TargetResolver,
         cached: RefCell<Option<Anything>>,
     },
 }
 
-impl Default for DispatchTarget {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 impl DispatchTarget {
     /// Hold a JS value directly.
+    #[allow(dead_code)]
     pub fn from_value(v: Anything) -> Self {
         Self::Direct(v)
     }
 
     /// Resolve lazily via a callable; the produced value is cached.
-    pub fn from_callable(callable: Box<dyn Fn(&Env) -> Result<Anything>>) -> Self {
+    pub fn from_callable(callable: TargetResolver) -> Self {
         Self::Callable {
             callable,
             cached: RefCell::new(None),
@@ -95,6 +95,7 @@ pub struct EventState {
     pub canceled: bool,
     pub stop_propagation: bool,
     pub stop_immediate: bool,
+    #[allow(dead_code)]
     pub dispatching: bool,
 }
 
@@ -232,6 +233,7 @@ impl EventLayer {
 impl EventLayer {
     /// Fresh own block with default configuration, for Rust-side data-chain
     /// construction (the parent slot of derived event layers such as `UIEvent`).
+    #[allow(dead_code)]
     pub fn fresh() -> Self {
         Self {
             type_: String::new(),
@@ -266,6 +268,7 @@ impl EventLayer {
 
 /// Build an `Event` from native data (Rust-side construction, bypassing the
 /// JS `new` path).
+#[allow(dead_code)]
 pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
     let chain = LayerChain {
         own: EventLayer {

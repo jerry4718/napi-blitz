@@ -91,7 +91,7 @@ impl BlitzAppLayer {
                 },
             ),
         )?;
-        lifecycle.set_app_ref(app.clone())?;
+        lifecycle.set_app_ref(app)?;
         let app_ref = unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&app))? };
         Ok(app_ref)
     }
@@ -130,12 +130,8 @@ impl BlitzAppLayer {
     /// resolves once the native `View` has actually been torn down, or
     /// rejects if a `close` listener calls `preventDefault()`.
     #[layer]
-    pub fn close_window(
-        &self,
-        env: &Env,
-        window: Object,
-    ) -> Result<PromiseRaw<'static, Undefined>> {
-        with_own::<WindowLayer, _>(&window, |d| d.close(env))?
+    pub fn close_window(&self, window: Object) -> Result<PromiseRaw<'static, Undefined>> {
+        with_own::<WindowLayer, _>(&window, |d| d.close())?
     }
 
     /// List all available monitors with full metadata. Returns `[]` if

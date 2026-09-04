@@ -26,7 +26,7 @@ use crate::{
     window::util::{parse_dimension, parse_window_buttons},
 };
 use napi::{
-    Env, Error, Result,
+    Error, Result,
     bindgen_prelude::{BigInt, PromiseRaw, Uint8Array, Undefined},
 };
 use napi_helpers::{
@@ -60,6 +60,7 @@ pub(crate) struct WindowState {
 pub struct WindowLayer {
     pub(crate) window_id: WindowId,
     pub(crate) state: Rc<RefCell<WindowState>>,
+    #[allow(dead_code)]
     pub(crate) shared_doc: Rc<SharedDocument>,
     pub(crate) lifecycle: Rc<Lifecycle>,
     pub(crate) document: Anything,
@@ -320,7 +321,7 @@ impl WindowLayer {
     /// pump), or rejects if a `close` listener calls `preventDefault()`.
     /// `close()` is idempotent.
     #[layer]
-    pub fn close(&self, env: &Env) -> Result<PromiseRaw<'static, Undefined>> {
+    pub fn close(&self) -> Result<PromiseRaw<'static, Undefined>> {
         self.lifecycle.request_close(self)
     }
 }

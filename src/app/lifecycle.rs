@@ -54,6 +54,7 @@ use napi_helpers::{
     JsWeakRef,
     anything::Anything,
     deferred::Deferred,
+    discard_err,
     inherits::{layer_chain, new_from_chain},
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
@@ -312,7 +313,10 @@ impl Lifecycle {
             });
             if !allowed {
                 drop(view);
-                deferred.reject(&self.env, Error::from_reason("window open prevented"));
+                discard_err!(
+                    deferred.reject(&self.env, Error::from_reason("window open prevented")),
+                    "reject the window:open prevented promise"
+                );
                 continue;
             }
 
@@ -563,10 +567,10 @@ impl Lifecycle {
             //    safe. The cancelable close request (`window:close`)
             //    was already dispatched by `request_close`; here only
             //    the post-teardown notification remains.
-            if let Some(shared_doc) = shared_doc {
-                if let Err(e) = self.notify_closed(&shared_doc) {
-                    eprintln!("napi-blitz: drain_closing_windows: notify_closed failed: {e}");
-                }
+            if let Some(shared_doc) = shared_doc
+                && let Err(e) = self.notify_closed(&shared_doc)
+            {
+                eprintln!("napi-blitz: drain_closing_windows: notify_closed failed: {e}");
             }
 
             // 3. Fulfil the `close_window` promise after the

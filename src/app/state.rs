@@ -9,7 +9,6 @@ use blitz::{
     shell::{View, WindowConfig},
     traits::shell::DummyShellProvider,
 };
-use napi::Result;
 use napi_helpers::deferred::Deferred;
 use winit::window::WindowId;
 

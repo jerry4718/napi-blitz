@@ -41,7 +41,7 @@ fn build_event<'env>(
 
 /// Dispatch the event through the receiver's `EventTargetLayer` slot.
 fn dispatch_to(target: &Object, event: &Object, env: &Env) -> Result<()> {
-    let _ = with_own::<EventTargetLayer, _>(target, |d| d.dispatch_event(env, event.clone()))?;
+    let _ = with_own::<EventTargetLayer, _>(target, |d| d.dispatch_event(env, *event))?;
     Ok(())
 }
 
@@ -57,9 +57,7 @@ pub(crate) fn dispatch_window_event(
         .ok_or_else(|| Error::new(Status::GenericFailure, "no window to dispatch to"))?;
     let event = build_event(env, event_type, false, cancelable)?;
     dispatch_to(&window, &event, env)?;
-    Ok(with_own::<EventLayer, _>(&event, |d| {
-        d.state_ref().canceled
-    })?)
+    with_own::<EventLayer, _>(&event, |d| d.state_ref().canceled)
 }
 
 /// Dispatch a lifecycle event to the JS `BlitzApp` object resolved from
@@ -78,7 +76,5 @@ pub(crate) fn dispatch_app_event(
         .ok_or_else(|| Error::new(Status::GenericFailure, "no app to dispatch to"))?;
     let event = build_event(env, event_type, false, cancelable)?;
     dispatch_to(&app, &event, env)?;
-    Ok(with_own::<EventLayer, _>(&event, |d| {
-        d.state_ref().canceled
-    })?)
+    with_own::<EventLayer, _>(&event, |d| d.state_ref().canceled)
 }

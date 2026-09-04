@@ -131,7 +131,7 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        Ok(to_anything(wrap_node(&self.shared, env, node_id)?, env)?)
+        to_anything(wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer]
@@ -142,7 +142,7 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        Ok(to_anything(wrap_node(&self.shared, env, node_id)?, env)?)
+        to_anything(wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer]
@@ -153,7 +153,7 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        Ok(to_anything(wrap_node(&self.shared, env, node_id)?, env)?)
+        to_anything(wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer(getter)]

@@ -32,6 +32,10 @@ impl Deferred {
     }
 
     /// Settle the promise with a JS value (`raw`).
+    ///
+    /// `raw` is a `napi_value` handle from a trusted caller; it is only
+    /// forwarded to the napi layer, not dereferenced here.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn resolve(&self, env: &Env, raw: sys::napi_value) -> Result<()> {
         let Some(deferred) = self.deferred.take() else {
             return Ok(());

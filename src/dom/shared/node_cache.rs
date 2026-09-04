@@ -175,6 +175,7 @@ impl Finalize for NodeFinalizer {
 
         if is_detached {
             #[cfg(debug_assertions)]
+            #[allow(unused_variables)]
             let node_tree = da::node_tree_string(Some(hint_node), 1, 4);
 
             let cache = doc.node_cache();
@@ -208,6 +209,7 @@ pub fn cleanup_detached_subtree(
     env: &Env,
 ) {
     #[cfg(debug_assertions)]
+    #[allow(unused_variables)]
     let doc_id = doc.id();
     let mut top = node_id;
     while let Some(p) = doc.get_node(top).and_then(|n| n.parent) {

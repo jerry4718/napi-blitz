@@ -143,7 +143,7 @@ impl NodeLayer {
     /// `node.contains(other)` — true for the node itself and its
     /// descendants. Non-`Node` arguments are false, per spec.
     #[layer]
-    fn contains(&self, env: &Env, other: Object) -> Result<bool> {
+    fn contains(&self, other: Object) -> Result<bool> {
         let Ok(other_id) = with_own::<NodeLayer, _>(&other, |n| n.node_id) else {
             return Ok(false);
         };
@@ -205,10 +205,7 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, child_id, env)?;
-        Ok(to_anything(
-            wrap_node(&self.shared_doc, env, child_id)?,
-            env,
-        )?)
+        to_anything(wrap_node(&self.shared_doc, env, child_id)?, env)
     }
 
     #[layer]
@@ -238,10 +235,7 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, node_id, env)?;
-        Ok(to_anything(
-            wrap_node(&self.shared_doc, env, node_id)?,
-            env,
-        )?)
+        to_anything(wrap_node(&self.shared_doc, env, node_id)?, env)
     }
 
     /// `parent.removeChild(child)` — detach `child` and return it.
@@ -258,7 +252,7 @@ impl NodeLayer {
         drop(mutator);
         drop(base);
         self.shared_doc.mark_host_dirty();
-        Ok(to_anything(child, env)?)
+        to_anything(child, env)
     }
 
     #[layer]
@@ -298,10 +292,7 @@ impl NodeLayer {
         // The new node is now in document -> strong.
         self.shared_doc
             .make_in_document_subtree_strong(node_id, node_id, env)?;
-        Ok(to_anything(
-            wrap_node(&self.shared_doc, env, node_id)?,
-            env,
-        )?)
+        to_anything(wrap_node(&self.shared_doc, env, node_id)?, env)
     }
 
     #[layer]
@@ -316,16 +307,13 @@ impl NodeLayer {
         } else {
             let mut base = self.shared_doc.base_mut();
             let Some(data) = base.get_node(self.node_id).map(|node| node.data.clone()) else {
-                return Ok(to_anything(
-                    wrap_node(&self.shared_doc, env, self.node_id)?,
-                    env,
-                )?);
+                return to_anything(wrap_node(&self.shared_doc, env, self.node_id)?, env);
             };
             let clone_id = base.create_node(data);
             drop(base);
             clone_id
         };
         self.shared_doc.mark_host_dirty();
-        Ok(to_anything(wrap_node(&self.shared_doc, env, new_id)?, env)?)
+        to_anything(wrap_node(&self.shared_doc, env, new_id)?, env)
     }
 }

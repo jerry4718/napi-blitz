@@ -15,6 +15,7 @@ use napi::{
 use napi_helpers::{
     Deferred,
     anything::{Anything, OtherRef},
+    discard_err,
     inherits::{Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own},
 };
 use parley::{
@@ -117,10 +118,17 @@ impl FontFaceSetLayer {
 
         if let Err(err) = self.register_font(&bytes, &family, &weight, &style, &stretch) {
             let reason = err.reason.clone();
-            with_own::<FontFaceLayer, _>(&face, |f| f.mark_error(env, err))?;
+            with_own::<FontFaceLayer, _>(&face, |f| {
+                discard_err!(f.mark_error(err), "FontFaceSet.add: mark face error");
+            })?;
             return Err(Error::new(Status::GenericFailure, reason));
         }
-        with_own::<FontFaceLayer, _>(&face, |f| f.mark_loaded(env, face_raw))?;
+        with_own::<FontFaceLayer, _>(&face, |f| {
+            discard_err!(
+                f.mark_loaded(env, face_raw),
+                "FontFaceSet.add: mark face loaded"
+            );
+        })?;
 
         self.faces
             .borrow_mut()
@@ -250,7 +258,9 @@ impl FontFaceSetLayer {
             ),
         )?;
         let raw = JsValue::raw(&set);
-        with_own::<FontFaceSetLayer, _>(&set, |d| d.ready_promise.resolve(env, raw))?;
+        with_own::<FontFaceSetLayer, _>(&set, |d| {
+            discard_err!(d.ready_promise.resolve(env, raw), "resolve ready promise");
+        })?;
         Ok(set)
     }
 

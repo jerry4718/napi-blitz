@@ -18,7 +18,5 @@ mod custom_event;
 mod message_event;
 mod event_target;
 
-pub use custom_event::*;
 pub use event::*;
 pub use event_target::*;
-pub use message_event::*;

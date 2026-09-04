@@ -39,6 +39,7 @@ pub struct ListenerEntry {
     pub event_type: String,
     pub callback: OtherRef,
     pub capture: bool,
+    #[allow(dead_code)]
     pub passive: bool,
     pub once: bool,
     pub removed: bool,
@@ -90,9 +91,9 @@ impl EventTargetLayer {
     /// `addEventListener(type, callback, options?)`, where `options` is an
     /// `AddEventListenerOptions` object or a `useCapture` boolean.
     #[layer]
-    fn add_event_listener<'env>(
+    fn add_event_listener(
         &self,
-        env: &'env Env,
+        env: &Env,
         event_type: String,
         callback: Anything,
         options: Option<Either<AddEventListenerOptions, bool>>,

@@ -399,11 +399,11 @@ pub fn create_document<'env>(
     base.resolve(0.0);
 
     let shared_doc = Rc::new(SharedDocument::new(base));
-    shared_doc.set_env(env.clone());
+    shared_doc.set_env(*env);
 
     let fonts = FontFaceSetLayer::init(env, fonts_ctx)?;
     shared_doc.set_fonts(env, &fonts)?;
 
     let node_id = shared_doc.base().root_node().id;
-    wrap_node(&shared_doc, &env, node_id)
+    wrap_node(&shared_doc, env, node_id)
 }

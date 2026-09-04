@@ -40,6 +40,7 @@ pub struct ElementState {}
 pub struct ElementLayer {
     pub(crate) node_id: NodeId,
     pub(crate) shared_doc: Rc<SharedDocument>,
+    #[allow(dead_code)]
     pub(crate) state: ElementState,
 }
 
