@@ -257,7 +257,7 @@ pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, env: &'a Env, node_id: NodeId) -> Resu
             return Ok(existing);
         }
         let chain = layer_chain!(
-            wintertc_events::event_target::EventTargetLayer::fresh(),
+            EventTargetLayer::fresh(),
             NodeLayer {
                 node_id,
                 doc: doc.clone(),

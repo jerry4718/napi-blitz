@@ -3,7 +3,6 @@
 use blitz::traits::events::{BlitzWheelDelta, BlitzWheelEvent};
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use std::mem::ManuallyDrop;
 use wintertc_events::event::EventInit;
 
 use crate::events::mouse_event::MouseEventLayer;
@@ -59,12 +58,4 @@ impl WheelEventLayer {
             },
         ))
     }
-}
-
-pub struct X<T> {
-    x: ManuallyDrop<T>,
-}
-
-impl X<WheelEventLayer> {
-    pub fn xxx() {}
 }

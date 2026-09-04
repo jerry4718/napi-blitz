@@ -784,13 +784,16 @@ fn gen_extend_layer_impl(
     self_ty: &Ident,
     js_name: &str,
     parent_ty: &Option<Type>,
-    ctor_name: &Ident,
+    ctor_f: &syn::ImplItemFn,
     build: &BuildParams,
-    full_params_ty: &Vec<Box<Type>>,
     members: &[MemberFn],
     consts: &[(String, syn::Expr)],
-    ctor_ret_is_result: bool,
 ) -> TokenStream2 {
+    let ctor_name = &ctor_f.sig.ident;
+    let ctor_ret_is_result = match &ctor_f.sig.output {
+        ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
+        ReturnType::Default => false,
+    };
     let parent_tokens = match parent_ty {
         Some(ty) => quote! { #ty },
         None => quote! { napi_helpers::inherits::RootLayer },
@@ -807,6 +810,7 @@ fn gen_extend_layer_impl(
     // parameters (ancestors' first). The generated `build` only destructures
     // it and forwards to the user's build, which receives the injected
     // `env` / `sup` handles and drives `sup.call` itself.
+    let full_params_ty: Vec<Type> = build.params().into_iter().map(|(_, t)| *t).collect();
     let total = full_params_ty.len();
     let binds: Vec<Ident> = (0..total).map(|i| format_ident!("p{}", i)).collect();
     let args_tuple_ty = match total {
@@ -1000,7 +1004,6 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     // constructor arguments, ancestors' first. They feed both the TS
     // constructor signature and `LayerBuild::Args`.
     let ts_params: Vec<(Ident, Box<Type>)> = ctor_build.params();
-    let full_params_ty: Vec<Box<Type>> = ts_params.iter().map(|(_, t)| t.clone()).collect();
     napi_fns.push(member_napi_fn(
         &ctor_f,
         MemberKind::Constructor,
@@ -1046,27 +1049,17 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
 
     let parent_ty = parent_ann;
 
-    let ctor_ret_is_result = match &ctor_f.sig.output {
-        ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
-        ReturnType::Default => false,
-    };
     let extend_layer = gen_extend_layer_impl(
         &self_ty,
         &meta.js_name,
         &parent_ty,
-        &ctor_name_of(&ctor_f),
+        &ctor_f,
         &ctor_build,
-        &full_params_ty,
         &members,
         &consts,
-        ctor_ret_is_result,
     );
     let register = gen_register(&self_ty, &meta.js_name);
     Ok(quote! { #i #extend_layer #register })
-}
-
-fn ctor_name_of(f: &syn::ImplItemFn) -> Ident {
-    f.sig.ident.clone()
 }
 
 fn expand(attr: TokenStream2, input: TokenStream2) -> syn::Result<TokenStream2> {

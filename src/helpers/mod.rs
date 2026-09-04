@@ -7,4 +7,3 @@ pub(crate) use napi_helpers::Finalize;
 pub(crate) use napi_helpers::JsWeakRef;
 pub(crate) use napi_helpers::SwitchableRef;
 pub(crate) use napi_helpers::discard_err;
-pub(crate) use napi_helpers::finalize_trampoline;
