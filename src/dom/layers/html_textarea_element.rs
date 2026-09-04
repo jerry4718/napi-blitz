@@ -9,19 +9,19 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
 use crate::{
     layers::html_element::HTMLElementLayer,
-    shared::{doc::SharedDoc, ops::make_qual_name},
+    shared::{doc::SharedDocument, ops::make_qual_name},
 };
 
 /// Own block of the `HTMLTextAreaElement` class.
 #[layer(js_name = "HTMLTextAreaElement")]
 pub struct HTMLTextAreaElementLayer {
     pub(crate) node_id: NodeId,
-    pub(crate) doc: Rc<SharedDoc>,
+    pub(crate) shared_doc: Rc<SharedDocument>,
 }
 
 impl HTMLTextAreaElementLayer {
     fn value_of(&self) -> String {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(node) = base.get_node(self.node_id) else {
             return String::new();
         };
@@ -36,7 +36,7 @@ impl HTMLTextAreaElementLayer {
     }
 
     fn apply_value(&self, value: String) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         let qual = make_qual_name("value", None);
         if !crate::shared::ops::set_detached_attribute(
             &mut base,
@@ -50,17 +50,17 @@ impl HTMLTextAreaElementLayer {
         }
         drop(base);
 
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         base.with_text_input(self.node_id, |mut driver| {
             driver.editor.set_text(&value);
             driver.refresh_layout();
         });
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     fn focused_of(&self) -> bool {
-        self.doc.base.borrow().get_focussed_node_id() == Some(self.node_id)
+        self.shared_doc.base().get_focussed_node_id() == Some(self.node_id)
     }
 }
 

@@ -34,7 +34,7 @@ use wintertc_events::{
     event_target::EventTargetLayer,
 };
 
-use crate::shared::doc::{SharedDoc, wrap_node};
+use crate::shared::doc::{SharedDocument, wrap_node};
 
 const CAPTURING_PHASE: u32 = 1;
 const AT_TARGET: u32 = 2;
@@ -44,7 +44,7 @@ const BUBBLING_PHASE: u32 = 3;
 /// Holds a `Weak<SharedDoc>` so it doesn't conflict with `&mut self`
 /// in `EventDriver::new(self, handler)`.
 pub struct JsEventHandler {
-    pub doc: Weak<SharedDoc>,
+    pub doc: Weak<SharedDocument>,
 }
 
 /// Normalize the event target: if it's an `AnonymousBlock` (blitz internal
@@ -109,7 +109,7 @@ impl JsEventHandler {
         event: &mut DomEvent,
         doc: &mut dyn BlitzDocument,
         event_state: &mut EventState,
-        shared_doc: &Rc<SharedDoc>,
+        shared_doc: &Rc<SharedDocument>,
         env: &Env,
     ) -> Result<()> {
         // 1. Build the event layer instance for the payload.
@@ -192,7 +192,7 @@ impl JsEventHandler {
         }
 
         // 10. Sweep stale cache entries periodically.
-        shared_doc.node_cache.borrow_mut().sweep(env);
+        shared_doc.node_cache_mut().sweep(env);
 
         Ok(())
     }
@@ -204,11 +204,11 @@ impl JsEventHandler {
         node_id: NodeId,
         event: &Object,
         phase: u32,
-        doc: &Rc<SharedDoc>,
+        shared_doc: &Rc<SharedDocument>,
         env: &Env,
     ) -> bool {
         // 1. Wrap the node (NodeCache lookup or create).
-        let node = match wrap_node(doc, env, node_id) {
+        let node = match wrap_node(shared_doc, env, node_id) {
             Ok(n) => n,
             Err(e) => {
                 eprintln!("napi-blitz-dom: wrap_node failed for node {node_id}: {e}");
@@ -218,7 +218,7 @@ impl JsEventHandler {
 
         // 2. Set lazy currentTarget + eventPhase on the event state.
         {
-            let doc_clone = doc.clone();
+            let doc_clone = shared_doc.clone();
             let _ = with_own_mut::<EventLayer, _>(event, |d| {
                 let s = d.state_mut();
                 s.phase = phase;

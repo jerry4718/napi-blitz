@@ -21,5 +21,5 @@ pub use html_document::HTMLDocumentLayer;
 pub use html_element::HTMLElementLayer;
 pub use html_input_element::HTMLInputElementLayer;
 pub use html_textarea_element::HTMLTextAreaElementLayer;
-pub use node::{NodeLayer, NodeState};
+pub use node::NodeLayer;
 pub use text::TextLayer;

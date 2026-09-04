@@ -21,7 +21,7 @@ use std::{collections::HashMap, rc::Weak};
 use blitz::dom::{BaseDocument, NodeId};
 use napi::{Env, Result, bindgen_prelude::Object};
 
-use crate::shared::doc::SharedDoc;
+use crate::shared::doc::SharedDocument;
 use napi_helpers::{Finalize, SwitchableRef};
 
 /// Switchable-reference cache: `blitz_node_id -> SwitchableRef`.
@@ -55,11 +55,17 @@ impl NodeCache {
         obj: &Object,
         env: &Env,
         strong: bool,
-        doc_weak: Weak<SharedDoc>,
+        shared_doc: Weak<SharedDocument>,
     ) -> Result<()> {
-        let sref = SwitchableRef::new(obj, env, strong)?;
-        sref.add_finalizer(env, NodeFinalizer { node_id, doc_weak })?;
-        self.entries.insert(node_id, sref);
+        let switchable_ref = SwitchableRef::new(obj, env, strong)?;
+        switchable_ref.add_finalizer(
+            env,
+            NodeFinalizer {
+                node_id,
+                shared_doc,
+            },
+        )?;
+        self.entries.insert(node_id, switchable_ref);
         Ok(())
     }
 
@@ -132,7 +138,7 @@ impl Default for NodeCache {
 
 struct NodeFinalizer {
     node_id: NodeId,
-    doc_weak: Weak<SharedDoc>,
+    shared_doc: Weak<SharedDocument>,
 }
 
 impl Finalize for NodeFinalizer {
@@ -141,7 +147,7 @@ impl Finalize for NodeFinalizer {
         // detached from the document. Try to upgrade the weak ref to the
         // SharedDoc. If the document has already been dropped, its NodeCache
         // and SwitchableRefs were dropped too.
-        let Some(doc_rc) = self.doc_weak.upgrade() else {
+        let Some(doc_rc) = self.shared_doc.upgrade() else {
             #[cfg(debug_assertions)]
             println!("[finalize] node_id={} doc_rc was None", self.node_id);
             return;
@@ -149,9 +155,9 @@ impl Finalize for NodeFinalizer {
 
         let doc = &*doc_rc;
 
-        doc.node_cache.borrow_mut().remove(self.node_id);
+        doc.node_cache_mut().remove(self.node_id);
 
-        let mut doc_mut = doc.base.borrow_mut();
+        let mut doc_mut = doc.base_mut();
 
         #[cfg(debug_assertions)]
         let doc_id = doc_mut.id();
@@ -171,7 +177,7 @@ impl Finalize for NodeFinalizer {
             #[cfg(debug_assertions)]
             let node_tree = da::node_tree_string(Some(hint_node), 1, 4);
 
-            let cache = doc.node_cache.borrow();
+            let cache = doc.node_cache();
             if !has_live_descendant(&doc_mut, &cache, self.node_id, &env) {
                 drop(cache);
                 #[cfg(debug_assertions)]
@@ -188,7 +194,7 @@ impl Finalize for NodeFinalizer {
             }
         }
 
-        cleanup_detached_subtree(&mut doc_mut, &doc.node_cache.borrow(), self.node_id, &env);
+        cleanup_detached_subtree(&mut doc_mut, &doc.node_cache(), self.node_id, &env);
     }
 }
 

@@ -10,7 +10,7 @@ use napi_helpers::inherits::{Constructed, Super, proc::layer};
 use crate::{
     layers::html_element::HTMLElementLayer,
     shared::{
-        doc::SharedDoc,
+        doc::SharedDocument,
         ops::{make_qual_name, remove_detached_attribute, set_detached_attribute},
     },
 };
@@ -19,12 +19,12 @@ use crate::{
 #[layer(js_name = "HTMLInputElement")]
 pub struct HTMLInputElementLayer {
     pub(crate) node_id: NodeId,
-    pub(crate) doc: Rc<SharedDoc>,
+    pub(crate) shared_doc: Rc<SharedDocument>,
 }
 
 impl HTMLInputElementLayer {
     fn value_of(&self) -> Result<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(node) = base.get_node(self.node_id) else {
             return Ok(String::new());
         };
@@ -40,7 +40,7 @@ impl HTMLInputElementLayer {
     }
 
     fn apply_value(&self, value: String) {
-        let mut state = self.doc.base.borrow_mut();
+        let mut state = self.shared_doc.base_mut();
         let qual = make_qual_name("value", None);
         if !set_detached_attribute(&mut state, self.node_id, qual.clone(), &value) {
             let mut mutator = state.mutate();
@@ -49,17 +49,17 @@ impl HTMLInputElementLayer {
         }
         drop(state);
 
-        let mut state = self.doc.base.borrow_mut();
+        let mut state = self.shared_doc.base_mut();
         state.with_text_input(self.node_id, |mut driver| {
             driver.editor.set_text(&value);
             driver.refresh_layout();
         });
         drop(state);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     fn checked_of(&self) -> bool {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(node) = base.get_node(self.node_id) else {
             return false;
         };
@@ -74,14 +74,14 @@ impl HTMLInputElementLayer {
 
     fn apply_checked(&self, checked: bool) {
         {
-            let mut base = self.doc.base.borrow_mut();
+            let mut base = self.shared_doc.base_mut();
             if let Some(node) = base.get_node_mut(self.node_id)
                 && let Some(el) = node.element_data_mut()
             {
                 el.special_data = blitz::dom::node::SpecialElementData::CheckboxInput(checked);
             }
         }
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         let qual = make_qual_name("checked", None);
         if checked {
             if !set_detached_attribute(&mut base, self.node_id, qual.clone(), "") {
@@ -92,11 +92,11 @@ impl HTMLInputElementLayer {
             remove_detached_attribute(&mut base, self.node_id, &qual);
         }
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     fn focused_of(&self) -> bool {
-        self.doc.base.borrow().get_focussed_node_id() == Some(self.node_id)
+        self.shared_doc.base().get_focussed_node_id() == Some(self.node_id)
     }
 }
 

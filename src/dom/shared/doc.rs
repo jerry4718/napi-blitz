@@ -7,45 +7,27 @@
 //! the matching `#[layer]` chain (`new_from_chain`) and caching it; the
 //! GC finalizer weak-references `SharedDoc`.
 
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    sync::Arc,
-    task::Context as TaskContext,
-};
-
-use crate::{
-    dispatch::JsEventHandler,
-    layers::{
-        comment::CommentLayer,
-        document::DocumentLayer,
-        element::ElementLayer,
-        html_document::HTMLDocumentLayer,
-        html_element::HTMLElementLayer,
-        html_input_element::HTMLInputElementLayer,
-        html_textarea_element::HTMLTextAreaElementLayer,
-        node::{NodeLayer, NodeState},
-        text::TextLayer,
-    },
-    shared::node_cache::NodeCache,
-};
+// 4. Build the node chain by blitz node type + tag name.
+pub(crate) use crate::shared::wrap_node::wrap_node;
+use crate::{dispatch::JsEventHandler, shared::node_cache::NodeCache};
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,
-        DocumentConfig, EventDriver, FontContext, NodeData, NodeId, local_name, node::NodeKind,
+        DocumentConfig, EventDriver, FontContext, NodeId,
     },
     html::{DocumentHtmlParser, HtmlProvider},
     traits::events::UiEvent,
 };
-use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
+use fontique::Blob;
+use napi::{Env, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-// 4. Build the node chain by blitz node type + tag name.
-use napi_helpers::{
-    JsWeakRef,
-    inherits::{layer_chain, new_from_chain},
+use napi_helpers::JsWeakRef;
+use std::{
+    cell::{Cell, Ref, RefCell, RefMut},
+    rc::Rc,
+    sync::Arc,
+    task::Context as TaskContext,
 };
-use parley::fontique::Blob;
-use wintertc_events::event_target::EventTargetLayer;
 
 const DEFAULT_HTML: &str = "<!DOCTYPE html><html><head></head><body></body></html>";
 
@@ -60,41 +42,46 @@ pub struct DocHandleConfig {
 
 /// Per-document shared state. Held inside `Rc` so that the window adapter
 /// and node wrappers can share it. The GC finalizer uses `Weak`.
-pub struct SharedDoc {
+pub struct SharedDocument {
     /// The document tree.
-    pub base: RefCell<BaseDocument>,
-    /// Host-dirty flag: JS mutated the DOM, window needs redraw.
-    host_dirty: Cell<bool>,
+    base: RefCell<BaseDocument>,
     /// Switchable-reference cache: blitz_node_id -> SwitchableRef.
     /// In-document nodes are strong (prevent GC); detached nodes are weak.
-    pub node_cache: RefCell<NodeCache>,
+    node_cache: RefCell<NodeCache>,
+    /// Host-dirty flag: JS mutated the DOM, window needs redraw.
+    host_dirty: Cell<bool>,
     /// Weak ref to the JS Document object
-    pub js_document_ref: RefCell<Option<JsWeakRef>>,
-    /// Weak ref to the JS Window object, for forwarding pointer events.
-    pub js_window_ref: RefCell<Option<JsWeakRef>>,
+    js_weak: RefCell<Option<JsWeakRef>>,
     /// The napi env captured at document creation; blitz's
     /// `EventHandler` callbacks do not carry an `Env`.
     env: Cell<Option<Env>>,
 }
 
-impl SharedDoc {
+impl SharedDocument {
     pub fn new(base: BaseDocument) -> Self {
         Self {
             base: RefCell::new(base),
             host_dirty: Cell::new(false),
             node_cache: RefCell::new(NodeCache::new()),
-            js_document_ref: RefCell::new(None),
-            js_window_ref: RefCell::new(None),
+            js_weak: RefCell::new(None),
             env: Cell::new(None),
         }
     }
 
-    pub fn set_env(&self, env: Env) {
-        self.env.set(Some(env));
+    pub fn base(&self) -> Ref<'_, BaseDocument> {
+        self.base.borrow()
     }
 
-    pub fn env(&self) -> Option<Env> {
-        self.env.get()
+    pub fn base_mut(&self) -> RefMut<'_, BaseDocument> {
+        self.base.borrow_mut()
+    }
+
+    pub fn node_cache(&self) -> Ref<'_, NodeCache> {
+        self.node_cache.borrow()
+    }
+
+    pub fn node_cache_mut(&self) -> RefMut<'_, NodeCache> {
+        self.node_cache.borrow_mut()
     }
 
     pub fn mark_host_dirty(&self) {
@@ -105,12 +92,32 @@ impl SharedDoc {
         self.host_dirty.replace(false)
     }
 
+    pub fn set_env(&self, env: Env) {
+        self.env.set(Some(env));
+    }
+
+    pub fn env(&self) -> Option<Env> {
+        self.env.get()
+    }
+
+    /// Register the JS Document object, retained weakly.
+    pub fn set_js_weak(&self, env: &Env, document: &Object) -> Result<()> {
+        *self.js_weak.borrow_mut() = Some(JsWeakRef::new(document, env)?);
+        Ok(())
+    }
+
+    /// Register the JS Document object, retained weakly.
+    pub fn js_weak(&self) -> Ref<'_, Option<JsWeakRef>> {
+        self.js_weak.borrow()
+    }
+}
+
+impl SharedDocument {
     // ── Reference switching ───────────────────────────────────────────
 
     /// Check if a node is in the document using the blitz internal flag.
     pub fn is_in_document(&self, node_id: NodeId) -> bool {
-        self.base
-            .borrow()
+        self.base()
             .get_node(node_id)
             .is_some_and(|node| node.flags.is_in_document())
     }
@@ -119,10 +126,9 @@ impl SharedDoc {
     ///
     /// **Caller must ensure `node_id` is in the document.**
     fn make_subtree_strong(&self, node_id: NodeId, env: &Env) -> Result<()> {
-        self.node_cache.borrow_mut().make_strong(node_id, env)?;
+        self.node_cache_mut().make_strong(node_id, env)?;
         let child_ids: Vec<NodeId> = self
-            .base
-            .borrow()
+            .base()
             .get_node(node_id)
             .map(|n| n.children.to_vec())
             .unwrap_or_default();
@@ -134,10 +140,9 @@ impl SharedDoc {
 
     /// Recursively switch all cached nodes in a subtree to weak refs.
     fn make_subtree_weak(&self, node_id: NodeId, env: &Env) -> Result<()> {
-        self.node_cache.borrow_mut().make_weak(node_id, env)?;
+        self.node_cache_mut().make_weak(node_id, env)?;
         let child_ids: Vec<NodeId> = self
-            .base
-            .borrow()
+            .base()
             .get_node(node_id)
             .map(|n| n.children.to_vec())
             .unwrap_or_default();
@@ -175,7 +180,7 @@ impl SharedDoc {
     /// Collect, weaken, and detach all children of `node_id`.
     pub fn detach_children(&self, node_id: NodeId, env: &Env) -> Result<()> {
         let children: Vec<NodeId> = {
-            let base = self.base.borrow();
+            let base = self.base();
             base.get_node(node_id)
                 .map(|n| n.children.iter().copied().collect())
                 .unwrap_or_default()
@@ -183,7 +188,7 @@ impl SharedDoc {
         for child_id in &children {
             self.make_in_document_subtree_weak(*child_id, env)?;
         }
-        let mut base = self.base.borrow_mut();
+        let mut base = self.base_mut();
         let mut mutator = base.mutate();
         for child_id in &children {
             mutator.remove_node(*child_id);
@@ -193,230 +198,85 @@ impl SharedDoc {
         Ok(())
     }
 
-    /// Register the JS Document object, retained weakly.
-    pub fn set_document_ref(&self, env: &Env, document: &Object) -> Result<()> {
-        *self.js_document_ref.borrow_mut() = Some(JsWeakRef::new(document, env)?);
-        Ok(())
-    }
-}
-
-// ── wrap_node: materialize a JS wrapper for a blitz node ─────────────
-
-/// Return the cached JS wrapper for `node_id`, or build the matching
-/// `#[layer]` chain via `new_from_chain` and cache it.
-///
-/// Document nodes resolve to (and register) the JS Document object.
-pub fn wrap_node<'a>(doc: &Rc<SharedDoc>, env: &'a Env, node_id: NodeId) -> Result<Object<'a>> {
-    // 1. Return an existing JS wrapper only after confirming that the
-    //    underlying DOM node still exists.
-    if let Some(cached) = doc.node_cache.borrow().get(node_id, env) {
-        return Ok(cached);
-    }
-
-    // 2. Read the node metadata. Invalid or stale ids must not fall
-    //    through to chain building as a made-up nodeType.
-    let (node_kind, qual_name) = {
-        let base = doc.base.borrow();
-        let node = base.get_node(node_id).ok_or_else(|| {
-            Error::new(
-                Status::GenericFailure,
-                format!("No DOM node found for node_id={node_id}"),
-            )
-        })?;
-
-        match &node.data {
-            NodeData::Document(_) => (NodeKind::Document, None),
-            NodeData::Element(el) => (NodeKind::Element, Some(el.name.clone())),
-            NodeData::Text(_) => (NodeKind::Text, None),
-            NodeData::Comment { .. } => (NodeKind::Comment, None),
-            _ => {
-                return Err(Error::new(
-                    Status::GenericFailure,
-                    format!("Unsupported DOM node type for node_id={node_id}"),
-                ));
+    /// Pre-order DFS over the document tree, starting from the given node
+    /// (inclusive). `pred` decides which node ids are collected.
+    pub fn dfs<F>(&self, root: NodeId, pred: F) -> Vec<NodeId>
+    where
+        F: Fn(&blitz::dom::Node) -> bool,
+    {
+        let state = self.base();
+        let mut out = Vec::new();
+        let mut stack: Vec<NodeId> = vec![root];
+        while let Some(id) = stack.pop() {
+            let Some(node) = state.get_node(id) else {
+                continue;
+            };
+            if pred(node) {
+                out.push(id);
+            }
+            for &child in node.children.iter().rev() {
+                stack.push(child);
             }
         }
-    };
-
-    // 3. Document node: resolve to the JS Document object, creating and
-    //    registering it on first access.
-    if let NodeKind::Document = node_kind {
-        if let Some(existing) = doc
-            .js_document_ref
-            .borrow()
-            .as_ref()
-            .and_then(|weak| weak.get_value(env))
-        {
-            doc.node_cache.borrow_mut().insert(
-                node_id,
-                &existing,
-                env,
-                true,
-                Rc::downgrade(doc),
-            )?;
-            return Ok(existing);
-        }
-        let chain = layer_chain!(
-            EventTargetLayer::fresh(),
-            NodeLayer {
-                node_id,
-                doc: doc.clone(),
-                state: NodeState::default(),
-            },
-            DocumentLayer { doc: doc.clone() },
-            HTMLDocumentLayer {},
-        );
-        let document = new_from_chain::<HTMLDocumentLayer>(env, chain)?;
-        doc.set_document_ref(env, &document)?;
-        doc.node_cache
-            .borrow_mut()
-            .insert(node_id, &document, env, true, Rc::downgrade(doc))?;
-        return Ok(document);
+        out
     }
 
-    let js_node = match node_kind {
-        NodeKind::Element => match qual_name.map(|qn| qn.local) {
-            Some(local_name!("input")) => new_from_chain::<HTMLInputElementLayer>(
-                env,
-                layer_chain!(
-                    EventTargetLayer::fresh(),
-                    NodeLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: NodeState::default(),
-                    },
-                    ElementLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: crate::layers::element::ElementState::default(),
-                    },
-                    HTMLElementLayer {},
-                    HTMLInputElementLayer {
-                        node_id,
-                        doc: doc.clone(),
-                    },
-                ),
-            )?,
-            Some(local_name!("textarea")) => new_from_chain::<HTMLTextAreaElementLayer>(
-                env,
-                layer_chain!(
-                    EventTargetLayer::fresh(),
-                    NodeLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: NodeState::default(),
-                    },
-                    ElementLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: crate::layers::element::ElementState::default(),
-                    },
-                    HTMLElementLayer {},
-                    HTMLTextAreaElementLayer {
-                        node_id,
-                        doc: doc.clone(),
-                    },
-                ),
-            )?,
-            _ => new_from_chain::<HTMLElementLayer>(
-                env,
-                layer_chain!(
-                    EventTargetLayer::fresh(),
-                    NodeLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: NodeState::default(),
-                    },
-                    ElementLayer {
-                        node_id,
-                        doc: doc.clone(),
-                        state: crate::layers::element::ElementState::default(),
-                    },
-                    HTMLElementLayer {},
-                ),
-            )?,
-        },
-        NodeKind::Text => new_from_chain::<TextLayer>(
-            env,
-            layer_chain!(
-                EventTargetLayer::fresh(),
-                NodeLayer {
-                    node_id,
-                    doc: doc.clone(),
-                    state: NodeState::default(),
-                },
-                TextLayer {},
-            ),
-        )?,
-        NodeKind::Comment => new_from_chain::<CommentLayer>(
-            env,
-            layer_chain!(
-                EventTargetLayer::fresh(),
-                NodeLayer {
-                    node_id,
-                    doc: doc.clone(),
-                    state: NodeState::default(),
-                },
-                CommentLayer {},
-            ),
-        )?,
-        _ => {
-            return Err(Error::new(
-                Status::GenericFailure,
-                format!("No layer for node_kind {node_kind:?} (node_id={node_id})"),
-            ));
+    pub fn find_first<F>(&self, pred: F) -> Option<NodeId>
+    where
+        F: Fn(&blitz::dom::Node) -> bool,
+    {
+        let state = self.base();
+        let mut stack: Vec<NodeId> = vec![state.root_node().id];
+        while let Some(id) = stack.pop() {
+            let node = state.get_node(id)?;
+            if pred(node) {
+                return Some(id);
+            }
+            for &child in node.children.iter().rev() {
+                stack.push(child);
+            }
         }
-    };
-
-    // 5. Determine initial reference strength: strong if the node is
-    //    currently in the document tree, weak otherwise.
-    let strong = doc.is_in_document(node_id);
-
-    // 6. Cache the JS wrapper with the determined strength.
-    doc.node_cache
-        .borrow_mut()
-        .insert(node_id, &js_node, env, strong, Rc::downgrade(doc))?;
-
-    Ok(js_node)
+        None
+    }
 }
 
 // ── WindowDocument: blitz Document adapter ────────────────────────────
 
 pub struct WindowDocument {
-    pub doc: Rc<SharedDoc>,
+    pub shared_doc: Rc<SharedDocument>,
 }
 
 impl WindowDocument {
-    pub fn new(doc: Rc<SharedDoc>) -> Self {
-        Self { doc }
+    pub fn new(doc: Rc<SharedDocument>) -> Self {
+        Self { shared_doc: doc }
     }
 }
 
 impl BlitzDocument for WindowDocument {
     fn inner(&self) -> DocGuard<'_> {
-        let borrow = self.doc.base.borrow();
+        let borrow = self.shared_doc.base();
         DocGuard::RefCell(borrow)
     }
 
     fn inner_mut(&mut self) -> DocGuardMut<'_> {
-        let borrow = self.doc.base.borrow_mut();
+        let borrow = self.shared_doc.base_mut();
         DocGuardMut::RefCell(borrow)
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = JsEventHandler {
-            doc: Rc::downgrade(&self.doc),
+            doc: Rc::downgrade(&self.shared_doc),
         };
         let mut driver = EventDriver::new(self, handler);
         driver.handle_ui_event(event);
     }
 
     fn poll(&mut self, _task_context: Option<TaskContext>) -> bool {
-        self.doc.take_host_dirty()
+        self.shared_doc.take_host_dirty()
     }
 
     fn id(&self) -> usize {
-        self.doc.base.borrow().id()
+        self.shared_doc.base().id()
     }
 }
 
@@ -459,9 +319,9 @@ pub fn create_document<'env>(
     }
     base.resolve(0.0);
 
-    let doc = Rc::new(SharedDoc::new(base));
-    doc.set_env(env.clone());
+    let shared_doc = Rc::new(SharedDocument::new(base));
+    shared_doc.set_env(env.clone());
 
-    let node_id = doc.base.borrow().root_node().id;
-    wrap_node(&doc, &env, node_id)
+    let node_id = shared_doc.base().root_node().id;
+    wrap_node(&shared_doc, &env, node_id)
 }

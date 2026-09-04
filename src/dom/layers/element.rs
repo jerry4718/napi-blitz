@@ -14,7 +14,7 @@ use style::properties::PropertyId;
 use crate::{
     layers::node::NodeLayer,
     shared::{
-        doc::{SharedDoc, wrap_node},
+        doc::{SharedDocument, wrap_node},
         ops::{
             AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
             set_detached_attribute, to_anything,
@@ -32,7 +32,7 @@ pub struct ElementState {}
 #[layer(js_name = "Element")]
 pub struct ElementLayer {
     pub(crate) node_id: NodeId,
-    pub(crate) doc: Rc<SharedDoc>,
+    pub(crate) shared_doc: Rc<SharedDocument>,
     pub(crate) state: ElementState,
 }
 
@@ -54,7 +54,7 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn tag_name(&self) -> Option<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .and_then(|n| n.element_data())
             .map(|el| el.name.local.to_string())
@@ -62,7 +62,7 @@ impl ElementLayer {
 
     #[layer]
     fn get_attribute(&self, name: String) -> Option<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let node = base.get_node(self.node_id)?;
         node.attr(blitz::dom::LocalName::from(name.as_str()))
             .map(|s| s.to_string())
@@ -70,7 +70,7 @@ impl ElementLayer {
 
     #[layer]
     fn get_attributes(&self) -> Vec<AttrInit> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(node) = base.get_node(self.node_id) else {
             return Vec::new();
         };
@@ -89,39 +89,39 @@ impl ElementLayer {
 
     #[layer]
     fn set_attribute(&mut self, name: String, value: String, namespace: Option<String>) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         let name = make_qual_name(&name, namespace.as_deref());
         if set_detached_attribute(&mut base, self.node_id, name.clone(), &value) {
             drop(base);
-            self.doc.mark_host_dirty();
+            self.shared_doc.mark_host_dirty();
             return;
         }
         let mut mutator = base.mutate();
         mutator.set_attribute(self.node_id, name, &value);
         drop(mutator);
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer]
     fn remove_attribute(&mut self, name: String, namespace: Option<String>) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         let name = make_qual_name(&name, namespace.as_deref());
         if remove_detached_attribute(&mut base, self.node_id, &name) {
             drop(base);
-            self.doc.mark_host_dirty();
+            self.shared_doc.mark_host_dirty();
             return;
         }
         let mut mutator = base.mutate();
         mutator.clear_attribute(self.node_id, name);
         drop(mutator);
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer]
     fn get_style_property(&self, name: String) -> Option<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let element_data = base.get_node(self.node_id)?.element_data()?;
         let block = element_data.style_attribute.as_ref()?;
         let property_id = PropertyId::parse_enabled_for_all_content(&name).ok()?;
@@ -135,25 +135,25 @@ impl ElementLayer {
 
     #[layer]
     fn set_style_property(&mut self, name: String, value: String) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         mark_inline_style_mutated(&mut base, self.node_id);
         base.set_style_property(self.node_id, &name, &value);
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer]
     fn remove_style_property(&mut self, name: String) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         mark_inline_style_mutated(&mut base, self.node_id);
         base.remove_style_property(self.node_id, &name);
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer]
     fn get_style_property_names(&self) -> Vec<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(element_data) = base.get_node(self.node_id).and_then(|n| n.element_data()) else {
             return Vec::new();
         };
@@ -171,7 +171,7 @@ impl ElementLayer {
 
     #[layer]
     fn get_style_attribute(&self) -> String {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let Some(element_data) = base.get_node(self.node_id).and_then(|n| n.element_data()) else {
             return String::new();
         };
@@ -187,18 +187,18 @@ impl ElementLayer {
 
     #[layer]
     fn set_inner_html(&mut self, html: String, env: &Env) {
-        self.doc.detach_children(self.node_id, env).ok();
-        let mut base = self.doc.base.borrow_mut();
+        self.shared_doc.detach_children(self.node_id, env).ok();
+        let mut base = self.shared_doc.base_mut();
         let mut mutator = base.mutate();
         mutator.set_inner_html(self.node_id, &html);
         drop(mutator);
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer(getter)]
     fn inner_html(&self) -> Option<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let node = base.get_node(self.node_id)?;
         let mut out = String::new();
         for &child_id in &node.children {
@@ -211,14 +211,14 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn outer_html(&self) -> Option<String> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id).map(|node| node.outer_html())
     }
 
     #[layer]
     fn query_selector(&self, selector: String, env: &Env) -> Result<Option<Anything>> {
         let result_id = {
-            let base = self.doc.base.borrow();
+            let base = self.shared_doc.base();
             let selector_list = base
                 .try_parse_selector_list(&selector)
                 .map_err(|err| Error::from_reason(format!("query_selector: {err:?}")))?;
@@ -236,7 +236,10 @@ impl ElementLayer {
             result.map(|node| node.id)
         };
         match result_id {
-            Some(id) => Ok(Some(to_anything(wrap_node(&self.doc, env, id)?, env)?)),
+            Some(id) => Ok(Some(to_anything(
+                wrap_node(&self.shared_doc, env, id)?,
+                env,
+            )?)),
             None => Ok(None),
         }
     }
@@ -244,7 +247,7 @@ impl ElementLayer {
     #[layer]
     fn query_selector_all(&self, selector: String, env: &Env) -> Result<Vec<Anything>> {
         let ids: Vec<blitz::dom::NodeId> = {
-            let base = self.doc.base.borrow();
+            let base = self.shared_doc.base();
             let selector_list = base
                 .try_parse_selector_list(&selector)
                 .map_err(|err| Error::from_reason(format!("query_selector_all: {err:?}")))?;
@@ -263,14 +266,14 @@ impl ElementLayer {
         };
         let mut out = Vec::new();
         for id in ids {
-            out.push(to_anything(wrap_node(&self.doc, env, id)?, env)?);
+            out.push(to_anything(wrap_node(&self.shared_doc, env, id)?, env)?);
         }
         Ok(out)
     }
 
     #[layer]
     fn get_bounding_client_rect(&self) -> Option<crate::shared::ops::DomRect> {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         let node = base.get_node(self.node_id)?;
         let pos = node.absolute_position(0.0, 0.0);
         let layout = node.final_layout();
@@ -288,7 +291,7 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn scroll_top(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| n.scroll_offset().y)
             .unwrap_or(0.0)
@@ -296,18 +299,18 @@ impl ElementLayer {
 
     #[layer(setter)]
     fn set_scroll_top(&mut self, value: f64) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         if let Some(node) = base.get_node_mut(self.node_id) {
             let offset = node.scroll_offset_mut();
             offset.y = value;
         }
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer(getter)]
     fn scroll_left(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| n.scroll_offset().x)
             .unwrap_or(0.0)
@@ -315,18 +318,18 @@ impl ElementLayer {
 
     #[layer(setter)]
     fn set_scroll_left(&mut self, value: f64) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         if let Some(node) = base.get_node_mut(self.node_id) {
             let offset = node.scroll_offset_mut();
             offset.x = value;
         }
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 
     #[layer(getter)]
     fn scroll_height(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| {
                 let layout = n.final_layout();
@@ -337,7 +340,7 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn scroll_width(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| {
                 let layout = n.final_layout();
@@ -348,7 +351,7 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn client_height(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| n.final_layout().content_box_height() as f64)
             .unwrap_or(0.0)
@@ -356,7 +359,7 @@ impl ElementLayer {
 
     #[layer(getter)]
     fn client_width(&self) -> f64 {
-        let base = self.doc.base.borrow();
+        let base = self.shared_doc.base();
         base.get_node(self.node_id)
             .map(|n| n.final_layout().content_box_width() as f64)
             .unwrap_or(0.0)
@@ -364,15 +367,15 @@ impl ElementLayer {
 
     #[layer]
     fn focus(&mut self) -> bool {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         base.set_focus_to(self.node_id)
     }
 
     #[layer]
     fn blur(&mut self) {
-        let mut base = self.doc.base.borrow_mut();
+        let mut base = self.shared_doc.base_mut();
         base.clear_focus();
         drop(base);
-        self.doc.mark_host_dirty();
+        self.shared_doc.mark_host_dirty();
     }
 }
