@@ -10,8 +10,8 @@ use std::{any::TypeId, ffi::CString, ptr};
 use napi::{
     Env, Error, JsError, JsValue, Property, PropertyAttributes, Result, Status,
     bindgen_prelude::{
-        FromNapiValue, Function, FunctionCallContext, JsObjectValue, Object, This, ToNapiValue,
-        Unknown,
+        FnArgs, FromNapiValue, Function, FunctionCallContext, JsObjectValue, Object, This,
+        ToNapiValue, TupleFromSliceValues,
     },
     check_status, sys,
 };
@@ -262,11 +262,9 @@ fn construct<T: ExtendLayer>(env_raw: sys::napi_env, info: sys::napi_callback_in
     let env = Env::from(env_raw);
     let mut this_obj = unsafe { Object::from_napi_value(env_raw, this) }?;
     attach_registry::<T>(&mut this_obj)?;
-    let args: Vec<Unknown> = argv[..argc]
-        .iter()
-        .map(|raw| unsafe { Unknown::from_napi_value(env_raw, *raw) })
-        .collect::<Result<Vec<_>>>()?;
-    T::emit_own(&env, &this_obj, &args)
+    let args =
+        unsafe { <T::Args as TupleFromSliceValues>::from_slice_values(env_raw, &argv[..argc]) }?;
+    T::emit_own(&env, &this_obj, FnArgs::from(args))
 }
 
 // ── spec-shaped constructor/prototype wiring ─────────────────────────────

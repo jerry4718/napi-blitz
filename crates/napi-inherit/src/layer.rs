@@ -11,12 +11,9 @@
 
 use std::marker::PhantomData;
 
-use napi::{
-    Env, Result,
-    bindgen_prelude::{Object, Unknown},
-};
-
 use crate::{own::set_own_block, registry::HasClassRef};
+use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, TupleFromSliceValues};
+use napi::{Env, Result, bindgen_prelude::Object};
 
 /// Compile-time layout of a layer's own data inside the per-instance
 /// `OwnDataRegistry`. `RootLayer` is the chain terminator with `DEPTH = 0`;
@@ -58,10 +55,26 @@ pub trait LayerDef: Sized + 'static {
 /// dispatches the method's typed arguments out of the raw JS slice, calls
 /// `sup`, and hands `env` / `this` to the method (which may be a JS subclass
 /// instance).
+/// Constructor argument tuple for a layer chain. `TupleFromSliceValues`
+/// parses it from the raw JS argument slice at the top-level entry; the
+/// blanket impl additionally requires `FnArgs<Self>: JsValuesTupleIntoVec`,
+/// so `sup.call` can serialize the args back to raw JS values when the
+/// parent constructor runs on the JS side.
+pub trait LayerArgs: TupleFromSliceValues {}
+
+impl<T> LayerArgs for T
+where
+    T: TupleFromSliceValues,
+    FnArgs<T>: JsValuesTupleIntoVec,
+{
+}
+
 pub trait LayerBuild: LayerDef + Sized + 'static {
+    type Args: LayerArgs;
+
     fn build<'env>(
         env: &'env Env,
-        args: &[Unknown<'env>],
+        args: FnArgs<Self::Args>,
         sup: Super<'_, 'env, Self::Parent>,
     ) -> Result<Constructed<Self>>;
 }
@@ -72,9 +85,11 @@ pub trait LayerComposed: Sized + 'static {
 
     const CLASS_NAME: &'static str;
 
+    type Args: LayerArgs;
+
     fn build<'env>(
         env: &'env Env,
-        args: &[Unknown<'env>],
+        args: FnArgs<Self::Args>,
         sup: Super<'_, 'env, Self::Parent>,
     ) -> Result<Constructed<Self>>;
 
@@ -101,9 +116,11 @@ impl<T: LayerComposed> LayerDef for T {
 }
 
 impl<T: LayerComposed> LayerBuild for T {
+    type Args = T::Args;
+
     fn build<'env>(
         env: &'env Env,
-        args: &[Unknown<'env>],
+        args: FnArgs<Self::Args>,
         sup: Super<'_, 'env, Self::Parent>,
     ) -> Result<Constructed<Self>> {
         <T as LayerComposed>::build(env, args, sup)
@@ -116,9 +133,14 @@ pub trait EmitOwn: 'static {
     /// `T::Chain` is `LayerChain<T>`.
     type Chain;
 
+    /// The full constructor argument tuple for this chain (parent args
+    /// first, root's own last). `RootLayer` is `()` - the chain terminator
+    /// takes no arguments. Values arrive already type-parsed via `FnArgs`.
+    type Args;
+
     /// JS `new` path: build each layer's own data from the constructor
     /// arguments and write it onto the instance.
-    fn emit_own<'env>(env: &'env Env, this: &Object<'env>, args: &[Unknown<'env>]) -> Result<()>;
+    fn emit_own<'env>(env: &'env Env, this: &Object<'env>, args: FnArgs<Self::Args>) -> Result<()>;
 
     /// Write an existing data chain onto the instance, parent layer first.
     fn populate_chain<'env>(env: &'env Env, this: &Object<'env>, chain: Self::Chain) -> Result<()>;
@@ -130,12 +152,9 @@ pub struct RootLayer;
 
 impl EmitOwn for RootLayer {
     type Chain = ();
+    type Args = ();
 
-    fn emit_own<'env>(
-        _env: &'env Env,
-        _this: &Object<'env>,
-        _args: &[Unknown<'env>],
-    ) -> Result<()> {
+    fn emit_own<'env>(_env: &'env Env, _this: &Object<'env>, _args: FnArgs<()>) -> Result<()> {
         Ok(())
     }
 
@@ -157,8 +176,9 @@ pub struct LayerChain<T: ExtendLayer> {
 
 impl<T: LayerDef + LayerBuild> EmitOwn for T {
     type Chain = LayerChain<T>;
+    type Args = <T as LayerBuild>::Args;
 
-    fn emit_own<'env>(env: &'env Env, this: &Object<'env>, args: &[Unknown<'env>]) -> Result<()> {
+    fn emit_own<'env>(env: &'env Env, this: &Object<'env>, args: FnArgs<Self::Args>) -> Result<()> {
         let sup = Super::<T::Parent> {
             instance: this,
             env,
@@ -189,7 +209,7 @@ pub struct Super<'a, 'env, P: EmitOwn> {
 impl<'a, 'env, P: EmitOwn> Super<'a, 'env, P> {
     /// Construct the parent layers now. Once this returns, every ancestor
     /// layer's own block is visible on the instance.
-    pub fn call(self, parent_args: &[Unknown<'env>]) -> Result<SuperDone<'a, 'env>> {
+    pub fn call(self, parent_args: FnArgs<P::Args>) -> Result<SuperDone<'a, 'env>> {
         P::emit_own(self.env, self.instance, parent_args)?;
         Ok(SuperDone {
             this: self.instance,
