@@ -146,10 +146,10 @@ impl LayerAttrs {
             };
             match name.as_str() {
                 "js_name" => {
-                    if let syn::Expr::Lit(expr) = &nv.value {
-                        if let Lit::Str(s) = &expr.lit {
-                            out.js_name = Some(s.value());
-                        }
+                    if let syn::Expr::Lit(expr) = &nv.value
+                        && let Lit::Str(s) = &expr.lit
+                    {
+                        out.js_name = Some(s.value());
                     }
                 }
                 "parent" => match &nv.value {
@@ -192,20 +192,19 @@ fn field_flags(attrs: &mut Vec<Attribute>) -> (bool, bool) {
         if !a.path().is_ident("layer") {
             return true;
         }
-        if let Meta::List(list) = &a.meta {
-            if let Ok(nested) =
+        if let Meta::List(list) = &a.meta
+            && let Ok(nested) =
                 syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
                     .parse2(list.tokens.clone())
-            {
-                for meta in nested {
-                    if let Meta::Path(p) = meta {
-                        if let Some(i) = p.get_ident() {
-                            match i.to_string().as_str() {
-                                "getter" => getter = true,
-                                "setter" => setter = true,
-                                _ => {}
-                            }
-                        }
+        {
+            for meta in nested {
+                if let Meta::Path(p) = meta
+                    && let Some(i) = p.get_ident()
+                {
+                    match i.to_string().as_str() {
+                        "getter" => getter = true,
+                        "setter" => setter = true,
+                        _ => {}
                     }
                 }
             }
@@ -230,22 +229,21 @@ impl MemberKind {
                 return true;
             }
             let mut kind = MemberKind::Method;
-            if let Meta::List(list) = &a.meta {
-                if let Ok(nested) =
+            if let Meta::List(list) = &a.meta
+                && let Ok(nested) =
                     syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated
                         .parse2(list.tokens.clone())
-                {
-                    for meta in nested {
-                        if let Meta::Path(p) = meta {
-                            if let Some(i) = p.get_ident() {
-                                kind = match i.to_string().as_str() {
-                                    "constructor" => MemberKind::Constructor,
-                                    "getter" => MemberKind::Getter,
-                                    "setter" => MemberKind::Setter,
-                                    _ => kind,
-                                };
-                            }
-                        }
+            {
+                for meta in nested {
+                    if let Meta::Path(p) = meta
+                        && let Some(i) = p.get_ident()
+                    {
+                        kind = match i.to_string().as_str() {
+                            "constructor" => MemberKind::Constructor,
+                            "getter" => MemberKind::Getter,
+                            "setter" => MemberKind::Setter,
+                            _ => kind,
+                        };
                     }
                 }
             }
@@ -374,7 +372,7 @@ fn build_class_def(s: &ItemStruct, js_name: &str, fields: &[FieldMeta]) -> NapiS
 /// constructor parameter (ancestor's or this layer's own, in argument
 /// order), or one of the injected handles (`env`, `sup`).
 enum BuildArg {
-    Param(Ident, Type),
+    Param(Ident, Box<Type>),
     Env,
     Sup,
 }
@@ -386,7 +384,7 @@ struct BuildParams {
 
 impl BuildParams {
     /// The real constructor parameters, injected handles removed.
-    fn params(&self) -> Vec<(Ident, Type)> {
+    fn params(&self) -> Vec<(Ident, Box<Type>)> {
         self.args
             .iter()
             .filter_map(|a| match a {
@@ -403,7 +401,7 @@ fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
         let FnArg::Typed(pat) = a else { continue };
         let is = |expected: &str| {
             type_last_ident(&pat.ty)
-                .map(|i| i.to_string() == expected)
+                .map(|i| i == expected)
                 .unwrap_or(false)
         };
         if is("Env") {
@@ -415,7 +413,7 @@ fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
                 syn::Pat::Ident(pi) => pi.ident.clone(),
                 _ => format_ident!("p{}", args.len()),
             };
-            args.push(BuildArg::Param(name, (*pat.ty).clone()));
+            args.push(BuildArg::Param(name, Box::from((*pat.ty).clone())));
         }
     }
     BuildParams { args }
@@ -424,7 +422,7 @@ fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
 fn member_napi_fn(
     f: &syn::ImplItemFn,
     kind: MemberKind,
-    ts_params: &[(Ident, Type)],
+    ts_params: &[(Ident, Box<Type>)],
     parent: &Ident,
     parent_js: &str,
 ) -> NapiFn {
@@ -443,7 +441,7 @@ fn member_napi_fn(
                         subpat: None,
                     })),
                     colon_token: Default::default(),
-                    ty: Box::new(ty.clone()),
+                    ty: Box::new(*ty.clone()),
                 })),
                 ts_arg_type: None,
             })
@@ -596,11 +594,11 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         let FnArg::Typed(pat) = a else { continue };
         let is_this = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
             && type_last_ident(&pat.ty)
-                .map(|i| i.to_string() == "Object")
+                .map(|i| i == "Object")
                 .unwrap_or(false);
         let is_env = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "env")
             && type_last_ident(&pat.ty)
-                .map(|i| i.to_string() == "Env")
+                .map(|i| i == "Env")
                 .unwrap_or(false);
         if is_this {
             has_this = true;
@@ -621,9 +619,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         .iter()
         .map(|(i, ty)| {
             let bind = format_ident!("a{}", i);
-            let is_option = type_last_ident(ty)
-                .map(|i| i.to_string() == "Option")
-                .unwrap_or(false);
+            let is_option = type_last_ident(ty).map(|i| i == "Option").unwrap_or(false);
             if is_option {
                 quote! {
                     let #bind: #ty = if #i < ctx.length() {
@@ -639,9 +635,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         .collect::<Vec<_>>();
 
     let ret_is_result = match &f.sig.output {
-        ReturnType::Type(_, ty) => type_last_ident(ty)
-            .map(|i| i.to_string() == "Result")
-            .unwrap_or(false),
+        ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
         ReturnType::Default => false,
     };
     let result_tail = if ret_is_result {
@@ -776,18 +770,32 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
     }
 }
 
-fn gen_extend_layer_impl(
-    self_ty: &Ident,
-    js_name: &str,
-    parent_ty: &Option<Type>,
-    ctor_name: &Ident,
-    build: &BuildParams,
-    full_params_ty: &[Type],
-    fields: &[FieldMember],
-    members: &[MemberFn],
-    consts: &[(String, syn::Expr)],
+struct ExtendLayerCtx<'a> {
+    self_ty: &'a Ident,
+    js_name: &'a str,
+    parent_ty: &'a Option<Type>,
+    ctor_name: &'a Ident,
+    build: &'a BuildParams,
+    full_params_ty: &'a [Type],
+    fields: &'a [FieldMember],
+    members: &'a [MemberFn],
+    consts: &'a [(String, syn::Expr)],
     ctor_ret_is_result: bool,
-) -> TokenStream2 {
+}
+
+fn gen_extend_layer_impl(ctx: ExtendLayerCtx) -> TokenStream2 {
+    let ExtendLayerCtx {
+        self_ty,
+        js_name,
+        parent_ty,
+        ctor_name,
+        build,
+        full_params_ty,
+        fields,
+        members,
+        consts,
+        ctor_ret_is_result,
+    } = ctx;
     let parent_tokens = match parent_ty {
         Some(ty) => quote! { #ty },
         None => quote! { napi_inherit::layer::RootLayer },
@@ -1010,18 +1018,16 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
                     });
                 }
             }
-            ImplItem::Const(c) => {
-                if c.attrs.iter().any(|a| a.path().is_ident("layer")) {
-                    // The const is emitted as a JS static value, so the Rust
-                    // impl never reads it; keep the item (callers may still
-                    // reference it in Rust) but silence the dead_code lint.
-                    c.attrs.retain(|a| !a.path().is_ident("layer"));
-                    c.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
-                    // Static constants keep their Rust name verbatim: JS
-                    // convention is already UPPER_SNAKE (to_camel would mangle
-                    // `BASE_CONST` into `BASECONST`).
-                    consts.push((c.ident.to_string(), c.expr.clone()));
-                }
+            ImplItem::Const(c) if c.attrs.iter().any(|a| a.path().is_ident("layer")) => {
+                // The const is emitted as a JS static value, so the Rust
+                // impl never reads it; keep the item (callers may still
+                // reference it in Rust) but silence the dead_code lint.
+                c.attrs.retain(|a| !a.path().is_ident("layer"));
+                c.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
+                // Static constants keep their Rust name verbatim: JS
+                // convention is already UPPER_SNAKE (to_camel would mangle
+                // `BASE_CONST` into `BASECONST`).
+                consts.push((c.ident.to_string(), c.expr.clone()));
             }
             _ => {}
         }
@@ -1036,8 +1042,8 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     // The build signature's real parameters are the whole chain's
     // constructor arguments, ancestors' first. They feed both the TS
     // constructor signature and `LayerBuild::Args`.
-    let ts_params: Vec<(Ident, Type)> = ctor_build.params();
-    let full_params_ty: Vec<Type> = ts_params.iter().map(|(_, t)| t.clone()).collect();
+    let ts_params: Vec<(Ident, Box<Type>)> = ctor_build.params();
+    let full_params_ty: Vec<Type> = ts_params.iter().map(|(_, t)| (**t).clone()).collect();
     let ancestors: Vec<Type> = ancestor_chain(&meta);
     napi_fns.push(member_napi_fn(
         &ctor_f,
@@ -1084,23 +1090,21 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         .collect();
 
     let ctor_ret_is_result = match &ctor_f.sig.output {
-        ReturnType::Type(_, ty) => type_last_ident(ty)
-            .map(|i| i.to_string() == "Result")
-            .unwrap_or(false),
+        ReturnType::Type(_, ty) => type_last_ident(ty).map(|i| i == "Result").unwrap_or(false),
         ReturnType::Default => false,
     };
-    let extend_layer = gen_extend_layer_impl(
-        &self_ty,
-        &meta.js_name,
-        &parent_ty,
-        &ctor_name_of(&ctor_f),
-        &ctor_build,
-        &full_params_ty,
-        &fields,
-        &members,
-        &consts,
+    let extend_layer = gen_extend_layer_impl(ExtendLayerCtx {
+        self_ty: &self_ty,
+        js_name: &meta.js_name,
+        parent_ty: &parent_ty,
+        ctor_name: &ctor_name_of(&ctor_f),
+        build: &ctor_build,
+        full_params_ty: &full_params_ty,
+        fields: &fields,
+        members: &members,
+        consts: &consts,
         ctor_ret_is_result,
-    );
+    });
     let register = gen_register(&self_ty, &meta.js_name, &ancestors);
     Ok(quote! { #i #extend_layer #register })
 }
