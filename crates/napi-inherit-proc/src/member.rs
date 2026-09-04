@@ -143,14 +143,14 @@ impl Member {
             MemberKind::Generator => {
                 quote! {
                     napi_helpers::inherits::define_generator(env, proto, "iterator", |env, this, index| {
-                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))
+                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))#result_tail
                     })?;
                 }
             }
             MemberKind::AsyncGenerator => {
                 quote! {
                     napi_helpers::inherits::define_generator(env, proto, "asyncIterator", |env, this, index| {
-                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))
+                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))#result_tail
                     })?;
                 }
             }

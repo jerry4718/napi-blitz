@@ -27,6 +27,7 @@ use blitz::{
 };
 use napi::{Env, Result, bindgen_prelude::Object};
 use napi_helpers::inherits::{LayerRef, with_own, with_own_mut};
+use napi_helpers::native_log;
 
 const CAPTURING_PHASE: u32 = 1;
 const AT_TARGET: u32 = 2;
@@ -85,7 +86,7 @@ impl EventHandler for JsEventHandler {
         // The dispatch pipeline is best-effort: a napi boundary failure is
         // logged and dropped, the event is simply not delivered further.
         if let Err(e) = self.dispatch(chain, event, doc, event_state, &shared_doc, &env) {
-            eprintln!("napi-blitz-dom: event dispatch failed: {e}");
+            native_log!("napi-blitz-dom: event dispatch failed: {e}");
         }
     }
 }
@@ -203,7 +204,7 @@ impl JsEventHandler {
         let node = match wrap_node(shared_doc, env, node_id) {
             Ok(n) => n,
             Err(e) => {
-                eprintln!("napi-blitz-dom: wrap_node failed for node {node_id}: {e}");
+                native_log!("napi-blitz-dom: wrap_node failed for node {node_id}: {e}");
                 return false;
             }
         };
@@ -224,7 +225,7 @@ impl JsEventHandler {
         // 3. Invoke the receiver's listener dispatch (`EventTargetLayer`
         //    slot on its chain), then read the event flags.
         if let Err(e) = with_own::<EventTargetLayer, _>(&node, |d| d.dispatch_event(env, *event)) {
-            eprintln!("napi-blitz-dom: dispatch_event failed on node {node_id}: {e}");
+            native_log!("napi-blitz-dom: dispatch_event failed on node {node_id}: {e}");
             return false;
         }
         with_own::<EventLayer, _>(event, |d| {

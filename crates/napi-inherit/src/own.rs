@@ -15,55 +15,46 @@ use std::any::Any;
 use std::cell::RefCell;
 
 use napi::{
-    Env, Error, Result, Status,
-    bindgen_prelude::{FromNapiValue, JsObjectValue, JsValue, Object, Unknown},
+    Error, Result, Status,
+    bindgen_prelude::{JsObjectValue, Object},
 };
 
 use crate::layer::{ExtendLayer, OwnBlock};
-
-/// Parse one constructor argument at `idx` from the `Unknown` slice into `T`.
-/// Used by the generated `ExtendLayer::build` to convert the constructor's
-/// declared parameter list from raw JS values.
-pub fn arg_from_napi<T: FromNapiValue>(env: &Env, args: &[Unknown], idx: usize) -> Result<T> {
-    let Some(v) = args.get(idx) else {
-        return Err(Error::new(
-            Status::GenericFailure,
-            format!("missing constructor arg {idx}"),
-        ));
-    };
-    unsafe { T::from_napi_value(env.raw(), JsValue::raw(v)) }
-}
 
 /// The per-instance own-data store. One slice slot per real layer in the
 /// chain (RootLayer takes none); `IDX` addresses a layer's slot directly, so
 /// there is no bounds check or growth logic - the slice is sized to the leaf
 /// layer's `DEPTH` at attach time.
 pub struct OwnDataRegistry {
-    slots: Box<[RefCell<Box<dyn Any>>]>,
+    slots: Box<[RefCell<Option<Box<dyn Any>>>]>,
 }
 
 impl OwnDataRegistry {
     /// Build a registry sized for a chain ending at `T` (the leaf layer).
     /// `slots.len() = T::DEPTH` is a compile-time constant, so the whole
-    /// slice is allocated in one shot.
+    /// slice is allocated in one shot. Slots start empty; `set_slot_for`
+    /// fills them layer by layer during construction.
     fn new<T: ExtendLayer + OwnBlock>() -> Self {
         let slots = (0..T::DEPTH)
-            .map(|_| RefCell::new(Box::new(()) as Box<dyn Any>))
+            .map(|_| RefCell::new(None))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self { slots }
     }
 
+    /// Write `T`'s data into its slot. `T::IDX` is a compile-time constant
+    /// and a registry is always sized for the chain `T` is constructed on,
+    /// so this is a plain slice assignment with no bounds check.
     #[inline]
-    fn set<T: ExtendLayer + OwnBlock>(&self, data: T) {
-        *self.slots[T::IDX].borrow_mut() = Box::new(data);
+    fn set_slot_for<T: ExtendLayer + OwnBlock>(&self, data: T) {
+        *self.slots[T::IDX].borrow_mut() = Some(Box::new(data));
     }
 
     /// Resolve the `RefCell` for `T`'s slot. Fails if `T::IDX` is out of
     /// range (the receiver was built for a shorter chain - e.g. a child
     /// layer's getter invoked on a parent-only instance).
     #[inline]
-    fn slot_for<T: ExtendLayer + OwnBlock>(&self) -> Result<&RefCell<Box<dyn Any>>> {
+    fn slot_for<T: ExtendLayer + OwnBlock>(&self) -> Result<&RefCell<Option<Box<dyn Any>>>> {
         self.slots.get(T::IDX).ok_or_else(|| {
             Error::new(
                 Status::GenericFailure,
@@ -75,26 +66,33 @@ impl OwnDataRegistry {
     #[inline]
     fn with<T: ExtendLayer + OwnBlock, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         let slot = self.slot_for::<T>()?.borrow();
-        let data = slot.downcast_ref::<T>().ok_or_else(|| {
-            Error::new(
-                Status::GenericFailure,
-                format!("{}: own block missing or type mismatch", T::CLASS_NAME),
-            )
-        })?;
+        let Some(any) = slot.as_deref() else {
+            return Err(slot_error::<T>("not constructed"));
+        };
+        let data = any
+            .downcast_ref::<T>()
+            .ok_or_else(|| slot_error::<T>("type mismatch"))?;
         Ok(f(data))
     }
 
     #[inline]
     fn with_mut<T: ExtendLayer + OwnBlock, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R> {
         let mut slot = self.slot_for::<T>()?.borrow_mut();
-        let data = slot.downcast_mut::<T>().ok_or_else(|| {
-            Error::new(
-                Status::GenericFailure,
-                format!("{}: own block missing or type mismatch", T::CLASS_NAME),
-            )
-        })?;
+        let Some(any) = slot.as_deref_mut() else {
+            return Err(slot_error::<T>("not constructed"));
+        };
+        let data = any
+            .downcast_mut::<T>()
+            .ok_or_else(|| slot_error::<T>("type mismatch"))?;
         Ok(f(data))
     }
+}
+
+fn slot_error<T: ExtendLayer + OwnBlock>(reason: &str) -> Error {
+    Error::new(
+        Status::GenericFailure,
+        format!("{}: own block {reason}", T::CLASS_NAME),
+    )
 }
 
 /// Attach a fresh `OwnDataRegistry` to `this` via `napi_wrap`. Sized for the
@@ -108,6 +106,7 @@ pub fn attach_registry<T: ExtendLayer + OwnBlock>(this: &mut Object) -> Result<(
 
 /// Borrow the instance's `OwnDataRegistry`. Shared access is enough: each
 /// slot is interior-mutable through its own `RefCell`.
+#[inline]
 fn own_registry<'a>(this: &'a Object<'_>) -> Result<&'a OwnDataRegistry> {
     this.unwrap::<OwnDataRegistry>()
         .map(|r| r as &OwnDataRegistry)
@@ -119,11 +118,11 @@ fn own_registry<'a>(this: &'a Object<'_>) -> Result<&'a OwnDataRegistry> {
         })
 }
 
-/// Write a layer's data into its slot. `T::IDX` is a compile-time constant,
-/// so this is a plain slice assignment with no bounds check.
+/// Write a layer's data into its slot.
+#[inline]
 pub fn set_own_block<T: ExtendLayer + OwnBlock>(this: &Object, data: T) -> Result<()> {
     let registry = own_registry(this)?;
-    registry.set::<T>(data);
+    registry.set_slot_for::<T>(data);
     Ok(())
 }
 

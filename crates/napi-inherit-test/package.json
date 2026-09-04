@@ -37,7 +37,8 @@
     "timeout": "2m",
     "workerThreads": false,
     "environmentVariables": {
-      "TS_NODE_PROJECT": "./tsconfig.json"
+      "TS_NODE_PROJECT": "./tsconfig.json",
+      "RUST_BACKTRACE": "full"
     },
     "nodeArguments": ["--import", "@oxc-node/core/register"]
   }

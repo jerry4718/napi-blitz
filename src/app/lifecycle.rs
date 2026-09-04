@@ -56,6 +56,7 @@ use napi_helpers::{
     deferred::Deferred,
     discard_err,
     inherits::{LayerRef, from_chain},
+    native_log,
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
 
@@ -306,7 +307,7 @@ impl Lifecycle {
             // hold a state borrow: the dispatch re-enters JS and the
             // listener may call back into `NativeApp`.
             let allowed = self.dispatch_open_request().unwrap_or_else(|e| {
-                eprintln!(
+                native_log!(
                     "napi-blitz: drain_opening_windows: open request failed, treating open as confirmed: {e}"
                 );
                 true
@@ -363,12 +364,12 @@ impl Lifecycle {
             match build {
                 Ok(raw) => {
                     if let Err(e) = deferred.resolve(&self.env, raw) {
-                        eprintln!("napi-blitz: drain_opening_windows: resolve failed: {e}");
+                        native_log!("napi-blitz: drain_opening_windows: resolve failed: {e}");
                     }
                 }
                 Err(e) => {
                     if let Err(re) = deferred.reject(&self.env, e) {
-                        eprintln!("napi-blitz: drain_opening_windows: reject failed: {re}");
+                        native_log!("napi-blitz: drain_opening_windows: reject failed: {re}");
                     }
                 }
             }
@@ -378,7 +379,7 @@ impl Lifecycle {
             // state borrow: JS re-entry into `open_window` /
             // `request_close` is safe.
             if let Err(e) = self.notify_opened() {
-                eprintln!("napi-blitz: drain_opening_windows: notify_opened failed: {e}");
+                native_log!("napi-blitz: drain_opening_windows: notify_opened failed: {e}");
             }
         }
     }
@@ -518,7 +519,7 @@ impl Lifecycle {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => {
-                eprintln!("napi-blitz: close_from_os: close request failed: {e}");
+                native_log!("napi-blitz: close_from_os: close request failed: {e}");
                 return;
             }
         }
@@ -528,7 +529,7 @@ impl Lifecycle {
         }
 
         if let Err(e) = self.notify_closed(&shared_doc) {
-            eprintln!("napi-blitz: close_from_os: notify_closed failed: {e}");
+            native_log!("napi-blitz: close_from_os: notify_closed failed: {e}");
         }
     }
 
@@ -566,7 +567,7 @@ impl Lifecycle {
             if let Some(shared_doc) = shared_doc
                 && let Err(e) = self.notify_closed(&shared_doc)
             {
-                eprintln!("napi-blitz: drain_closing_windows: notify_closed failed: {e}");
+                native_log!("napi-blitz: drain_closing_windows: notify_closed failed: {e}");
             }
 
             // 3. Fulfil the `close_window` promise after the
@@ -576,11 +577,11 @@ impl Lifecycle {
             if let Err(e) =
                 check_status!(unsafe { sys::napi_get_undefined(self.env.raw(), &mut raw) })
             {
-                eprintln!("napi-blitz: drain_closing_windows: get_undefined failed: {e}");
+                native_log!("napi-blitz: drain_closing_windows: get_undefined failed: {e}");
                 continue;
             }
             if let Err(e) = deferred.resolve(&self.env, raw) {
-                eprintln!("napi-blitz: drain_closing_windows: resolve failed: {e}");
+                native_log!("napi-blitz: drain_closing_windows: resolve failed: {e}");
             }
         }
     }
@@ -640,7 +641,7 @@ impl Lifecycle {
                     PendingRequest::Close { .. } => n - 1,
                 });
         if outstanding < 0 {
-            eprintln!(
+            native_log!(
                 "napi-blitz: outstanding_windows: negative count ({outstanding}), clamping to zero"
             );
             0

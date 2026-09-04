@@ -5,7 +5,7 @@
 //! `constructor` / `prototype` properties, and links the prototype chain to
 //! the parent class (`Object.setPrototypeOf`).
 
-use std::{any::TypeId, ffi::CString, ptr};
+use std::{any::TypeId, cell::RefCell, ffi::CStr, ptr};
 
 use napi::{
     Env, Error, JsError, JsSymbol, JsValue, Property, PropertyAttributes, Result, Status,
@@ -93,6 +93,28 @@ pub fn new_from_chain<T: ExtendLayer>(env: &Env, chain: LayerChain<T>) -> Result
 
 // ── member-definition helpers used by define_members implementations ─────
 
+/// Run a JS-invoked callback, turning a panic into a JS-visible error
+/// instead of letting it unwind across the `extern "C"` trampoline into
+/// `rtabort` (which kills the process without even printing the message).
+fn catch_panic<R>(f: impl FnOnce() -> Result<R>) -> Result<R> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        Err(Error::new(
+            Status::GenericFailure,
+            format!("rust panic: {}", panic_payload_message(&payload)),
+        ))
+    })
+}
+
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_owned()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_owned()
+    }
+}
+
 /// A getter on the prototype (non-enumerable, configurable - WebIDL shape).
 /// The closure's `this` arrives as an `Object`.
 pub fn define_getter<R, F>(proto: &mut Object, name: &str, getter: F) -> Result<()>
@@ -102,7 +124,7 @@ where
 {
     let prop = Property::new()
         .with_utf8_name(name)?
-        .with_getter_closure(getter)
+        .with_getter_closure(move |env, this| catch_panic(|| getter(env, this)))
         .with_property_attributes(PropertyAttributes::Configurable);
     proto.define_properties(&[prop])?;
     Ok(())
@@ -123,7 +145,7 @@ where
     let sym = wellknown_symbol(env, description)?;
     let prop = Property::new()
         .with_name(env, sym)?
-        .with_getter_closure(getter)
+        .with_getter_closure(move |env, this| catch_panic(|| getter(env, this)))
         .with_property_attributes(PropertyAttributes::Configurable);
     proto.define_properties(&[prop])?;
     Ok(())
@@ -145,38 +167,42 @@ where
     let iter_fn: Function<'_, (), ObjectRef<false>> = env.create_function_from_closure(
         "[Symbol.iterator]",
         move |ctx: FunctionCallContext| -> Result<ObjectRef<false>> {
-            let this: This = ctx.this()?;
-            let set_ref: ObjectRef<false> =
-                unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&this)) }?;
-            let idx = std::rc::Rc::new(std::cell::Cell::new(0u32));
-            let next_item = next_item.clone();
-            let next: Function<'_, (), Object> = ctx.env.create_function_from_closure(
-                "next",
-                move |next_ctx: FunctionCallContext| -> Result<Object> {
-                    let env = next_ctx.env;
-                    let i = idx.get();
-                    let raw = set_ref.get_value(env)?;
-                    let this_obj = raw;
-                    let result = match next_item(*env, this_obj.into(), i)? {
-                        Some(value) => {
-                            idx.set(i + 1);
-                            let mut obj = Object::new(env)?;
-                            obj.set("value", value)?;
-                            obj.set("done", false)?;
-                            obj
-                        }
-                        None => {
-                            let mut obj = Object::new(env)?;
-                            obj.set("done", true)?;
-                            obj
-                        }
-                    };
-                    Ok(result)
-                },
-            )?;
-            let mut iter = Object::new(ctx.env)?;
-            iter.set_named_property("next", next)?;
-            unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&iter)) }
+            catch_panic(|| {
+                let this: This = ctx.this()?;
+                let set_ref: ObjectRef<false> =
+                    unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&this)) }?;
+                let idx = std::rc::Rc::new(std::cell::Cell::new(0u32));
+                let next_item = next_item.clone();
+                let next: Function<'_, (), Object> = ctx.env.create_function_from_closure(
+                    "next",
+                    move |next_ctx: FunctionCallContext| -> Result<Object> {
+                        catch_panic(|| {
+                            let env = next_ctx.env;
+                            let i = idx.get();
+                            let raw = set_ref.get_value(env)?;
+                            let this_obj = raw;
+                            let result = match next_item(*env, this_obj.into(), i)? {
+                                Some(value) => {
+                                    idx.set(i + 1);
+                                    let mut obj = Object::new(env)?;
+                                    obj.set("value", value)?;
+                                    obj.set("done", false)?;
+                                    obj
+                                }
+                                None => {
+                                    let mut obj = Object::new(env)?;
+                                    obj.set("done", true)?;
+                                    obj
+                                }
+                            };
+                            Ok(result)
+                        })
+                    },
+                )?;
+                let mut iter = Object::new(ctx.env)?;
+                iter.set_named_property("next", next)?;
+                unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&iter)) }
+            })
         },
     )?;
     let prop = Property::new()
@@ -205,7 +231,7 @@ where
 {
     let prop = Property::new()
         .with_utf8_name(name)?
-        .with_setter_closure(setter)
+        .with_setter_closure(move |env, this, v: V| catch_panic(|| setter(env, this, v)))
         .with_property_attributes(PropertyAttributes::Configurable);
     proto.define_properties(&[prop])?;
     Ok(())
@@ -219,7 +245,7 @@ where
 {
     let prop = Property::new()
         .with_utf8_name(name)?
-        .with_getter_closure(move |env, _this: This| getter(env))
+        .with_getter_closure(move |env, _this: This| catch_panic(|| getter(env)))
         .with_property_attributes(PropertyAttributes::Configurable);
     ctor.define_properties(&[prop])?;
     Ok(())
@@ -233,7 +259,7 @@ where
 {
     let prop = Property::new()
         .with_utf8_name(name)?
-        .with_setter_closure(move |env, _this: This, v: V| setter(env, v))
+        .with_setter_closure(move |env, _this: This, v: V| catch_panic(|| setter(env, v)))
         .with_property_attributes(PropertyAttributes::Configurable);
     ctor.define_properties(&[prop])?;
     Ok(())
@@ -245,7 +271,8 @@ where
     Return: ToNapiValue,
     F: 'static + Fn(FunctionCallContext) -> Result<Return>,
 {
-    let f: Function<'_, (), Return> = env.create_function_from_closure(name, method)?;
+    let f: Function<'_, (), Return> =
+        env.create_function_from_closure(name, move |ctx| catch_panic(|| method(ctx)))?;
     let prop = Property::new()
         .with_utf8_name(name)?
         .with_value(&f)
@@ -282,7 +309,8 @@ where
     Return: ToNapiValue,
     F: 'static + Fn(FunctionCallContext) -> Result<Return>,
 {
-    let f: Function<'_, (), Return> = env.create_function_from_closure(name, method)?;
+    let f: Function<'_, (), Return> =
+        env.create_function_from_closure(name, move |ctx| catch_panic(|| method(ctx)))?;
     let prop = Property::new()
         .with_utf8_name(name)?
         .with_value(&f)
@@ -300,7 +328,7 @@ unsafe extern "C" fn constructor_callback<T: ExtendLayer>(
 where
     <T as LayerBuild>::Args: FromNapiValue,
 {
-    match construct::<T>(env, info) {
+    match catch_panic(|| construct::<T>(env, info)) {
         // Returning undefined lets `new` fall back to the engine-created `this`.
         Ok(()) => ptr::null_mut(),
         Err(e) => {
@@ -409,25 +437,103 @@ fn define_constructor_props(ctor: &mut Object, proto: &mut Object) -> Result<()>
 fn set_prototype(env: &Env, obj: &Object, proto: &Object) -> Result<()> {
     call_object_static(
         env.raw(),
-        "setPrototypeOf",
+        c"setPrototypeOf",
         &[JsValue::raw(obj), JsValue::raw(proto)],
     )?;
     Ok(())
 }
 
-/// `Object.create(proto)`.
+/// `Object.create(proto)`, with the `Object` constructor and its `create`
+/// method resolved once per env: node wraps and event factories go through
+/// here on every dispatch.
 fn object_create<'env>(env: &'env Env, proto: &Object<'env>) -> Result<Object<'env>> {
     let env_raw = env.raw();
-    let raw = call_object_static(env_raw, "create", &[JsValue::raw(proto)])?;
-    unsafe { Object::from_napi_value(env_raw, raw) }
+    let (ctor, create) = object_statics(env)?;
+    let argv = [JsValue::raw(proto)];
+    let mut result = ptr::null_mut();
+    check_status!(
+        unsafe {
+            sys::napi_call_function(
+                env_raw,
+                JsValue::raw(&ctor),
+                JsValue::raw(&create),
+                argv.len(),
+                argv.as_ptr(),
+                &mut result,
+            )
+        },
+        "call Object.create failed"
+    )?;
+    unsafe { Object::from_napi_value(env_raw, result) }
+}
+
+/// Per-env handles of the `Object` constructor and its `create` method.
+struct ObjectStatics {
+    env: sys::napi_env,
+    object_ctor: ObjectRef<false>,
+    create: ObjectRef<false>,
+}
+
+thread_local! {
+    /// thread_local because napi_ref handles belong to the thread that
+    /// created them; the env check rebuilds the entry if a thread ever
+    /// hosts more than one env. The refs are never deleted - they root
+    /// process-lifetime builtins, the same trade the class registry makes.
+    static OBJECT_STATICS: RefCell<Option<ObjectStatics>> = const { RefCell::new(None) };
+}
+
+/// Resolve (Object constructor, Object.create) for `env`, from the cache
+/// when it matches.
+fn object_statics(env: &Env) -> Result<(Object<'_>, Object<'_>)> {
+    let env_raw = env.raw();
+    OBJECT_STATICS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.as_ref().is_none_or(|s| s.env != env_raw) {
+            *cache = Some(resolve_object_statics(env)?);
+        }
+        let entry = cache.as_ref().unwrap();
+        Ok((
+            entry.object_ctor.get_value(env)?,
+            entry.create.get_value(env)?,
+        ))
+    })
+}
+
+fn resolve_object_statics(env: &Env) -> Result<ObjectStatics> {
+    let env_raw = env.raw();
+    let mut global = ptr::null_mut();
+    check_status!(
+        unsafe { sys::napi_get_global(env_raw, &mut global) },
+        "get global failed"
+    )?;
+    let mut object_ctor = ptr::null_mut();
+    check_status!(
+        unsafe {
+            sys::napi_get_named_property(env_raw, global, c"Object".as_ptr(), &mut object_ctor)
+        },
+        "get Object constructor failed"
+    )?;
+    let mut create = ptr::null_mut();
+    check_status!(
+        unsafe {
+            sys::napi_get_named_property(env_raw, object_ctor, c"create".as_ptr(), &mut create)
+        },
+        "get Object.create failed"
+    )?;
+    unsafe {
+        Ok(ObjectStatics {
+            env: env_raw,
+            object_ctor: ObjectRef::from_napi_value(env_raw, object_ctor)?,
+            create: ObjectRef::from_napi_value(env_raw, create)?,
+        })
+    }
 }
 
 fn call_object_static(
     env_raw: sys::napi_env,
-    name: &str,
+    name: &CStr,
     argv: &[sys::napi_value],
 ) -> Result<sys::napi_value> {
-    let name_c = CString::new(name)?;
     let mut global = ptr::null_mut();
     check_status!(
         unsafe { sys::napi_get_global(env_raw, &mut global) },
@@ -442,8 +548,9 @@ fn call_object_static(
     )?;
     let mut method = ptr::null_mut();
     check_status!(
-        unsafe { sys::napi_get_named_property(env_raw, object_ctor, name_c.as_ptr(), &mut method) },
-        "get Object.{name} failed"
+        unsafe { sys::napi_get_named_property(env_raw, object_ctor, name.as_ptr(), &mut method) },
+        "get Object.{} failed",
+        name.to_string_lossy()
     )?;
     let mut result = ptr::null_mut();
     check_status!(
@@ -457,7 +564,8 @@ fn call_object_static(
                 &mut result,
             )
         },
-        "call Object.{name} failed"
+        "call Object.{} failed",
+        name.to_string_lossy()
     )?;
     Ok(result)
 }

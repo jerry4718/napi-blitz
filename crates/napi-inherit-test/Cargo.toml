@@ -13,6 +13,8 @@ napi = { workspace = true, features = ["napi6"] }
 # intermediate JSONL gets rendered into `index.d.ts`.
 napi-derive = { workspace = true, features = ["type-def"] }
 napi-helpers = { workspace = true }
+# TEMP DIAGNOSTIC for the SIGABRT hunt: fd-2 probing in the panic hook.
+libc = "0.2"
 
 [build-dependencies]
 napi-build = "2"

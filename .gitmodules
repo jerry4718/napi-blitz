@@ -4,3 +4,6 @@
 [submodule "external/taffy"]
 	path = external/taffy
 	url = https://github.com/jerry4718/taffy.git
+[submodule "external/napi-rs"]
+	path = external/napi-rs
+	url = https://github.com/jerry4718/napi-rs.git

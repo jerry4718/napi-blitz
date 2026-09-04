@@ -12,6 +12,8 @@
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
+use napi_helpers::native_log;
+
 fn main() -> ! {
     let mut args = std::env::args().skip(1);
     let mut cwd: Option<String> = None;
@@ -20,7 +22,7 @@ fn main() -> ! {
     while let Some(a) = args.next() {
         if a == "--cwd" {
             cwd = args.next().or_else(|| {
-                eprintln!("node-proxy: --cwd requires a value");
+                native_log!("node-proxy: --cwd requires a value");
                 std::process::exit(1);
             });
         } else {
@@ -34,6 +36,6 @@ fn main() -> ! {
         cmd.current_dir(dir);
     }
     let err = cmd.exec();
-    eprintln!("node-proxy: failed to exec node: {err}");
+    native_log!("node-proxy: failed to exec node: {err}");
     std::process::exit(1);
 }

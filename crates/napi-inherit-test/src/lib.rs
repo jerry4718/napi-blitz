@@ -14,3 +14,19 @@ extern crate napi_derive;
 mod generator_chain;
 mod manual_chain;
 mod proc_chain;
+
+// The ava worker's stderr/stdout are socketpairs that node attaches at
+// startup via `pipe.open`, which sets O_NONBLOCK. With concurrent output
+// forwarding the buffer can fill, and a Rust `eprintln!` write then fails
+// with EAGAIN - the panic that crosses the napi FFI boundary aborts the
+// process (SIGABRT). Keep the descriptors blocking so a full buffer waits
+// for the host to consume it instead.
+#[module_init]
+fn restore_blocking_stdio() {
+    for fd in [1, 2] {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags != -1 {
+            unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
+        }
+    }
+}

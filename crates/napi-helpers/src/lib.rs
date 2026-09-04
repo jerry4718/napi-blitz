@@ -3,9 +3,9 @@
 
 pub mod anything;
 pub mod deferred;
-mod err;
 pub mod finalize;
 pub mod js_weak_ref;
+pub mod log;
 pub mod proxy;
 pub mod switchable_ref;
 

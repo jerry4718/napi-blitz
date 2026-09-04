@@ -17,10 +17,9 @@ use std::{
 };
 
 use napi_helpers::inherits::{
-    Constructed, LayerAccessors, LayerChain, LayerComposed, RootLayer, Super, build_class,
-    define_getter, define_method, define_setter, define_static_getter, define_static_method,
-    define_static_setter, define_static_value, from_chain, new_from_chain, require, with_own,
-    with_own_mut,
+    Constructed, LayerAccessors, LayerComposed, RootLayer, Super, build_class, define_getter,
+    define_method, define_setter, define_static_getter, define_static_method, define_static_setter,
+    define_static_value, from_chain, require, with_own, with_own_mut,
 };
 
 /// Backing store for the static `counter` accessor pair.

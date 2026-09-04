@@ -12,6 +12,7 @@ use crate::{
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
 use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer, with_own};
+use napi_helpers::native_log;
 
 #[napi(js_name = "NodeTypes")]
 mod node_types {
@@ -250,7 +251,7 @@ impl NodeLayer {
         let child_id = with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
         // Switch to weak before removing, while parent chain is intact.
         if let Err(e) = self.shared_doc.make_in_document_subtree_weak(child_id, env) {
-            eprintln!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
+            native_log!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
         }
         let mut base = self.shared_doc.base_mut();
         let mut mutator = base.mutate();
@@ -268,7 +269,7 @@ impl NodeLayer {
             .shared_doc
             .make_in_document_subtree_weak(self.node_id, env)
         {
-            eprintln!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
+            native_log!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
         }
         let mut base = self.shared_doc.base_mut();
         let mut mutator = base.mutate();
@@ -287,7 +288,7 @@ impl NodeLayer {
             .shared_doc
             .make_in_document_subtree_weak(removed_id, env)
         {
-            eprintln!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
+            native_log!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
         }
         let mut base = self.shared_doc.base_mut();
         let mut mutator = base.mutate();

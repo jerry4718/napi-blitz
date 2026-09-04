@@ -1,15 +1,16 @@
 //! `#[layer(generator)]` / `#[layer(async_generator)]` end-to-end case:
 //! every iteration step calls back into Rust, so values are read from the
 //! instance at loop time (a mid-loop push is visible) and each callback
-//! `eprintln!`s its index on the Rust side.
+//! logs its index on the Rust side.
 
 use std::cell::RefCell;
 
-use napi::Result;
 use napi::bindgen_prelude::{FnArgs, Object};
+use napi::{Error, Result};
 use napi_derive::napi;
 
 use napi_helpers::inherits::{Constructed, RootLayer, Super, from_chain, proc::layer};
+use napi_helpers::native_log;
 
 #[layer]
 pub struct GenSourceLayer {
@@ -32,23 +33,34 @@ impl GenSourceLayer {
     }
 
     #[layer(generator)]
-    fn values(&self, index: u32) -> Option<u32> {
-        let v = self.items.borrow().get(index as usize).copied();
-        eprintln!("[rust] values(index={}) -> {:?}", index, v);
+    fn values(&self, index: u32) -> Result<Option<u32>> {
+        let v = self
+            .items
+            .try_borrow()
+            .map_err(|e| Error::from_reason(e.to_string()))
+            .map(|r| r.get(index as usize).copied());
+        native_log!("[rust] values(index={}) -> {:?}", index, v);
         v
     }
 
     #[layer(async_generator)]
-    fn async_values(&self, index: u32) -> Option<u32> {
-        let v = self.items.borrow().get(index as usize).copied();
-        eprintln!("[rust] async_values(index={}) -> {:?}", index, v);
+    fn async_values(&self, index: u32) -> Result<Option<u32>> {
+        let v = self
+            .items
+            .try_borrow()
+            .map_err(|e| Error::from_reason(e.to_string()))
+            .map(|r| r.get(index as usize).copied());
+        native_log!("[rust] async_values(index={}) -> {:?}", index, v);
         v
     }
 
     #[layer(method)]
-    fn push(&self, v: u32) {
-        eprintln!("[rust] push({})", v);
-        self.items.borrow_mut().push(v);
+    fn push(&self, v: u32) -> Result<()> {
+        native_log!("[rust] push({})", v);
+        self.items
+            .try_borrow_mut()
+            .map_err(|e| Error::from_reason(e.to_string()))
+            .map(|mut r| r.push(v))
     }
 }
 
