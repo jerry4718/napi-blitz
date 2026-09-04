@@ -39,6 +39,7 @@ export const App = defineComponent({
             // Drop the child from our registry once it dies — whether
             // by user X-click, programmatic close, or app shutdown.
             child.addEventListener('closed', () => {
+                console.log("closed")
                 children.value = children.value.filter((w) => w !== child)
             })
         }

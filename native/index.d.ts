@@ -398,6 +398,12 @@ export interface RegisterFontOptions {
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
+
+/**
+ * Register the JS-side `pumpAppLoop(app, options)` function that runs the
+ * async pump loop, so `BlitzApp.pumpLoop` can forward to it.
+ */
+export declare function setPumpAppLoop(pumpAppLoop: object): void
 export declare class AttributesHandlerClass {
   constructor()
   /** The `get` trap: the attribute's value, or `undefined` when absent. */
@@ -459,6 +465,19 @@ export declare class BlitzAppClass extends EventTarget {
   primaryMonitor(): MonitorInfo | null
   /** Pump pending winit events for at most `millis` milliseconds. */
   pumpAppEvents(millis: number): PumpResult
+  /**
+   * Whether a pump loop is currently running, read from the loop object
+   * the JS side returned for the latest `pumpLoop` call. The handle is
+   * held weakly, so a collected handle reports `false`.
+   */
+  get pumping(): boolean
+  /**
+   * Start the async pump loop. The loop itself lives in JS (the bundle
+   * registers `pumpAppLoop`), so this only forwards to it and keeps the
+   * returned loop object for the `pumping` getter.
+   * @deprecated
+   */
+  pumpLoop(options?: object | undefined | null): Anything
 }
 
 /** Own block of the `CharacterData` class. */
@@ -537,7 +556,10 @@ export declare class DocumentClass extends Node {
 /**
  * Own block of the `Element` class. Carries its own `node_id`/`doc` copy
  * (they never change once assigned) so the members here don't need to
- * re-materialize the parent `NodeLayer` slot on every call.
+ * re-materialize the parent `NodeLayer` slot on every call. The style and
+ * attributes proxies live here so their lifetime is the wrapper's own:
+ * no document-level cache pins them, and identity is stable for as long
+ * as the wrapper is alive.
  */
 export declare class ElementClass extends Node {
   constructor(type: string, init?: undefined | undefined | null)
@@ -587,13 +609,13 @@ export declare class ElementClass extends Node {
   blur(): void
   /**
    * `element.style` — the CSSOM `CSSStyleDeclaration` Proxy over the
-   * inline style block. The proxy is cached per element, so repeated
+   * inline style block. The proxy is cached on the wrapper, so repeated
    * reads return the same object.
    */
   get style(): Anything
   /**
    * `element.attributes` — the NamedNodeMap-ish Proxy over the content
-   * attributes. Cached like `style`.
+   * attributes. Cached on the wrapper like `style`.
    */
   get attributes(): Anything
 }

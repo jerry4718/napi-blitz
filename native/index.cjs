@@ -711,6 +711,7 @@ module.exports.pickFiles = nativeBinding.pickFiles
 module.exports.pickFolder = nativeBinding.pickFolder
 module.exports.pickFolders = nativeBinding.pickFolders
 module.exports.saveFile = nativeBinding.saveFile
+module.exports.setPumpAppLoop = nativeBinding.setPumpAppLoop
 module.exports.AttributesHandlerClass = nativeBinding.AttributesHandlerClass
 module.exports.BlitzAppClass = nativeBinding.BlitzAppClass
 module.exports.CharacterDataClass = nativeBinding.CharacterDataClass

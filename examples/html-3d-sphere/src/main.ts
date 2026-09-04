@@ -2,7 +2,6 @@ import {
   BlitzApp,
   HTMLElement as BlitzHTMLElement,
   HTMLDocument,
-  Node as BlitzNode,
   WindowOptions,
 } from '@ylcc/napi-blitz'
 import { generateIcosaSphere, type TriangleFace, type Vec3 } from './sphere.ts'
