@@ -3,7 +3,7 @@
 //! Holds the registered listeners in its own block (a `RefCell<Vec<..>>`
 //! so the list can be mutated from within a dispatched callback).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::EventLayer;
 use napi::{
@@ -185,6 +185,38 @@ unsafe fn same_callback(
 #[layer]
 pub struct EventTargetLayer {
     listeners: RefCell<Vec<ListenerEntry>>,
+    /// Nesting depth of `dispatch_event` on this target. Guards tombstone
+    /// compaction: only the outermost dispatch may shrink the list, because
+    /// each dispatch walk freezes `total` and indexes the Vec directly.
+    dispatching: Cell<u32>,
+}
+
+/// Dispatch depth guard: increments the depth on entry and compacts
+/// listener tombstones on drop, but only when the outermost dispatch ends
+/// (`drop` runs on every exit path, including `?` early returns).
+struct DispatchGuard<'a> {
+    dispatching: &'a Cell<u32>,
+    listeners: &'a RefCell<Vec<ListenerEntry>>,
+}
+
+impl<'a> DispatchGuard<'a> {
+    fn enter(dispatching: &'a Cell<u32>, listeners: &'a RefCell<Vec<ListenerEntry>>) -> Self {
+        dispatching.set(dispatching.get() + 1);
+        Self {
+            dispatching,
+            listeners,
+        }
+    }
+}
+
+impl Drop for DispatchGuard<'_> {
+    fn drop(&mut self) {
+        let depth = self.dispatching.get() - 1;
+        self.dispatching.set(depth);
+        if depth == 0 {
+            self.listeners.borrow_mut().retain(|l| !l.removed);
+        }
+    }
 }
 
 impl EventTargetLayer {
@@ -194,6 +226,7 @@ impl EventTargetLayer {
     pub fn fresh() -> Self {
         Self {
             listeners: RefCell::new(Vec::new()),
+            dispatching: Cell::new(0),
         }
     }
 }
@@ -207,6 +240,7 @@ impl EventTargetLayer {
             done,
             Self {
                 listeners: RefCell::new(Vec::new()),
+                dispatching: Cell::new(0),
             },
         ))
     }
@@ -280,7 +314,9 @@ impl EventTargetLayer {
                 // Same (type, callback, capture, kind) quadruple — a duplicate
                 // registration. `on<event> = fn` and
                 // `addEventListener(event, fn)` may coexist for one function,
-                // so the registry kind disambiguates.
+                // so the registry kind disambiguates. `removed` entries are
+                // skipped: a listener removed mid-dispatch is re-registrable
+                // (verified against Chrome for both plain and once listeners).
                 if unsafe { same_callback(env, callback_value, &l.callback) }? {
                     return Ok(());
                 }
@@ -299,6 +335,11 @@ impl EventTargetLayer {
         let callback_for_js = unsafe { Anything::from_napi_value(env.raw(), callback_value)? };
         insert_js_listener(env, this, callback_for_js, spec)?;
 
+        // Always push a fresh entry. Never resurrect a `removed` slot: a
+        // resurrected slot sits inside the frozen `total` of an ongoing walk
+        // and would fire for the current event, while Chrome does not fire
+        // listeners registered mid-dispatch. Tombstones are compacted by the
+        // dispatch guard on the outermost dispatch.
         self.listeners.borrow_mut().push(ListenerEntry {
             event_type,
             callback,
@@ -342,11 +383,14 @@ impl EventTargetLayer {
             None => false,
         };
 
-        // Remove the exact (type, callback, capture) basic entry and release
-        // its JS-side registry anchor. `removeEventListener` never touches
-        // attribute entries (`on<event> = fn`), which are cleared by the
-        // attribute setter path.
-        let (removed_callback, removed_kind) = {
+        // Mark the entry removed instead of shrinking the Vec: dispatch
+        // walks the list by index against a `total` frozen at dispatch
+        // start, so a mid-dispatch `Vec::remove` would skew the cursor
+        // (elements shift left and later indices go out of bounds). The
+        // `removed` flag is skipped by dispatch and tombstones are
+        // compacted by the dispatcher's tail `retain`, or reused by a
+        // re-registration.
+        let (raw, removed_kind) = {
             let mut listeners = self.listeners.borrow_mut();
             let Some(index) = listeners.iter().position(|l| {
                 !l.removed
@@ -357,12 +401,12 @@ impl EventTargetLayer {
             }) else {
                 return Ok(());
             };
-            let entry = listeners.remove(index);
-            let kind = entry.callback.kind().to_string();
-            (entry.callback, kind)
+            listeners[index].removed = true;
+            let callback = &listeners[index].callback;
+            (callback.raw_value(env).ok(), callback.kind().to_string())
         };
 
-        if let Ok(raw) = removed_callback.raw_value(env) {
+        if let Some(raw) = raw {
             let callback_for_js = unsafe { Anything::from_napi_value(env.raw(), raw)? };
             let spec = ListenerSpec {
                 r#type: event_type,
@@ -384,6 +428,10 @@ impl EventTargetLayer {
     /// back from its `EventLayer` state. `pub` so the Rust dispatch driver
     /// (`napi-blitz-dom`) can invoke it directly.
     pub fn dispatch_event(&self, this: &Object, env: &Env, event: Object) -> Result<bool> {
+        // Tombstone compaction runs when the outermost dispatch ends
+        // (see `DispatchGuard`), never under a nested walk.
+        let _guard = DispatchGuard::enter(&self.dispatching, &self.listeners);
+
         let event_type = with_own::<EventLayer, _>(&event, |d| d.type_name())?;
         let event_value = unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&event))? };
 
@@ -415,6 +463,18 @@ impl EventTargetLayer {
                     listeners[idx].callback.raw_value(env)?,
                 )
             };
+            // A once listener is removed *before* its callback runs
+            // (Chrome-verified): a re-registration of the same callback from
+            // inside the callback then finds the slot removed, passes the
+            // duplicate check, and takes effect for the next event.
+            if once {
+                self.listeners.borrow_mut()[idx].removed = true;
+                let kind = {
+                    let listeners = self.listeners.borrow();
+                    listeners[idx].callback.kind()
+                };
+                once_fired.push((callback, kind));
+            }
             if callback_kind {
                 let object = Object::from_raw(env.raw(), callback);
                 let handle_event: Function<FnArgs<(Anything,)>, Anything> =
@@ -426,23 +486,11 @@ impl EventTargetLayer {
                 };
                 let _ = function.call(FnArgs::from((event_value.clone(),)));
             }
-            if once {
-                self.listeners.borrow_mut()[idx].removed = true;
-                let kind = {
-                    let listeners = self.listeners.borrow();
-                    listeners[idx].callback.kind()
-                };
-                once_fired.push((callback, kind));
-            }
             cursor = idx + 1;
         }
 
-        // Drop once-fired entries left behind by the walk and release their
-        // JS-side registry anchors.
-        {
-            let mut listeners = self.listeners.borrow_mut();
-            listeners.retain(|l| !l.removed);
-        }
+        // Release the JS-side registry anchors of once-fired listeners;
+        // the tombstone compaction itself runs in `DispatchGuard::drop`.
         for (callback, kind) in once_fired {
             let callback_for_js = unsafe { Anything::from_napi_value(env.raw(), callback)? };
             let spec = ListenerSpec {
