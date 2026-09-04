@@ -55,7 +55,7 @@ use napi_helpers::{
     anything::Anything,
     deferred::Deferred,
     discard_err,
-    inherits::{layer_chain, new_from_chain},
+    inherits::{LayerRef, layer_chain, new_from_chain},
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
 
@@ -340,9 +340,7 @@ impl Lifecycle {
                     .as_ref()
                     .and_then(|w| w.get_value(&self.env))
                 {
-                    Some(obj) => unsafe {
-                        Anything::from_napi_value(self.env.raw(), JsValue::raw(&obj))?
-                    },
+                    Some(obj) => LayerRef::new(&obj, &self.env)?,
                     None => return Err(Error::from_reason("document is gone")),
                 };
                 let window_obj = new_from_chain::<WindowLayer>(

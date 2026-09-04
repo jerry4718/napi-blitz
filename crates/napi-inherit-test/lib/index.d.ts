@@ -29,9 +29,9 @@ export declare function makeInheritLeafFromChain(): object
 export declare function makeProcLeafFromChain(): object
 export declare class GenSourceClass {
   constructor(label: string)
+  push(v: number): void
   [Symbol.iterator](): IterableIterator<number>
   [Symbol.asyncIterator](): AsyncIterableIterator<number>
-  push(v: number): void
 }
 
 export declare class InheritBaseClass {

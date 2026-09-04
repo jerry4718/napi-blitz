@@ -13,10 +13,11 @@ use napi::{
     bindgen_prelude::{FnArgs, Object},
 };
 use napi_derive::napi;
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, LayerChain, RootLayer, Super, new_from_chain, proc::layer},
+use napi_helpers::inherits::{
+    Constructed, LayerChain, LayerRef, RootLayer, Super, new_from_chain, proc::layer,
 };
+
+use crate::events::base::EventTargetLayer;
 
 /// `dictionary EventInit { boolean bubbles = false; boolean cancelable = false; boolean composed = false; }`
 #[napi(object)]
@@ -28,33 +29,34 @@ pub struct EventInit {
 }
 
 /// A lazily-resolved target producer; see [`DispatchTarget::Callable`].
-type TargetResolver = Box<dyn Fn(&Env) -> Result<Anything>>;
+type TargetResolver = Box<dyn Fn(&Env) -> Result<LayerRef<EventTargetLayer>>>;
 
 /// A reference to the event's target (or current target).
 ///
-/// The target is not always a node: it can be any object (window, app,
-/// element), and it may not be materialized yet when dispatch starts. So the
-/// target is held either as a direct value, or as a callable that produces
-/// it lazily (cached after first resolution) — e.g. wrapping a node only when
-/// the JS side first reads `event.target`.
+/// The target is not always a node: it can be any object on an
+/// `EventTarget` chain (window, app, element), and it may not be
+/// materialized yet when dispatch starts. So the target is held either as
+/// a direct value, or as a callable that produces it lazily (cached after
+/// first resolution) — e.g. wrapping a node only when the JS side first
+/// reads `event.target`.
 #[derive(Default)]
 pub enum DispatchTarget {
     /// No target assigned.
     #[default]
     None,
     /// A direct held value.
-    Direct(Anything),
+    Direct(LayerRef<EventTargetLayer>),
     /// Lazily produces the target; the result is cached after first resolve.
     Callable {
         callable: TargetResolver,
-        cached: RefCell<Option<Anything>>,
+        cached: RefCell<Option<LayerRef<EventTargetLayer>>>,
     },
 }
 
 impl DispatchTarget {
     /// Hold a JS value directly.
     #[allow(dead_code)]
-    pub fn from_value(v: Anything) -> Self {
+    pub fn from_value(v: LayerRef<EventTargetLayer>) -> Self {
         Self::Direct(v)
     }
 
@@ -66,19 +68,20 @@ impl DispatchTarget {
         }
     }
 
-    /// Produce the target JS value (null when unset). Resolving a `Callable`
-    /// caches its result.
-    pub fn resolve(&self, env: &Env) -> Result<Anything> {
+    /// Produce the target (None when unset). Resolving a `Callable` caches
+    /// its result; the cached `LayerRef` is handed out by clone, so each
+    /// read shares one `napi_ref` instead of creating a fresh one.
+    pub fn resolve(&self, env: &Env) -> Result<Option<LayerRef<EventTargetLayer>>> {
         match self {
-            Self::None => Ok(Anything::Null),
-            Self::Direct(v) => Ok(v.clone()),
+            Self::None => Ok(None),
+            Self::Direct(v) => Ok(Some(v.clone())),
             Self::Callable { callable, cached } => {
                 if let Some(c) = cached.borrow().as_ref() {
-                    return Ok(c.clone());
+                    return Ok(Some(c.clone()));
                 }
                 let v = callable(env)?;
                 *cached.borrow_mut() = Some(v.clone());
-                Ok(v)
+                Ok(Some(v))
             }
         }
     }
@@ -177,14 +180,16 @@ impl EventLayer {
     }
 
     /// `event.target` — resolves the target only when read.
-    #[layer(getter)]
-    fn target(&self, env: &Env) -> Result<Anything> {
+    // event.rs expands before event_target.rs registers the layer, so the
+    // automatic `LayerRef<L>` mapping cannot resolve the JS name here.
+    #[layer(getter, ts_return_type = "EventTarget | null")]
+    fn target(&self, env: &Env) -> Result<Option<LayerRef<EventTargetLayer>>> {
         self.state.target.resolve(env)
     }
 
     /// `event.currentTarget` — the current receiver during dispatch.
-    #[layer(getter)]
-    fn current_target(&self, env: &Env) -> Result<Anything> {
+    #[layer(getter, ts_return_type = "EventTarget | null")]
+    fn current_target(&self, env: &Env) -> Result<Option<LayerRef<EventTargetLayer>>> {
         self.state.current_target.resolve(env)
     }
 
@@ -224,8 +229,8 @@ impl EventLayer {
 
     /// `event.composedPath()`. Placeholder: the dispatch chain is populated
     /// by the dispatch side.
-    #[layer]
-    fn composed_path(&self) -> Vec<Anything> {
+    #[layer(ts_return_type = "Array<EventTarget>")]
+    fn composed_path(&self) -> Vec<LayerRef<EventTargetLayer>> {
         Vec::new()
     }
 }

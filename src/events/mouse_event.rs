@@ -1,15 +1,12 @@
 //! `MouseEvent` layer — parent of Wheel/Pointer.
 
 use crate::events::{
-    base::{DispatchTarget, EventInit},
+    base::{DispatchTarget, EventInit, EventTargetLayer},
     ui_event::UIEventLayer,
 };
 use blitz::traits::events::{BlitzPointerEvent, MouseEventButton};
 use napi::{Env, Result, bindgen_prelude::FnArgs};
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, Super, proc::layer},
-};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 
 /// Own block of the `MouseEvent` class.
 #[layer]
@@ -112,7 +109,7 @@ impl MouseEventLayer {
     }
 
     #[layer(getter)]
-    fn related_target(&self, env: &Env) -> Result<Anything> {
+    fn related_target(&self, env: &Env) -> Result<Option<LayerRef<EventTargetLayer>>> {
         self.related_target.resolve(env)
     }
 }

@@ -6,6 +6,12 @@
 //! block, so instance identity is preserved (no re-wrapping). `L` only
 //! fixes the declared class at compile time - no layer data is copied. The
 //! macro maps `LayerRef<L>` to the layer's JS class name in the TS defs.
+//!
+//! TODO: Add `FromNapiRef`/`FromNapiMutRef` for `&L` / `&mut L` so that
+//! layer methods can receive typed layer references as arguments. The
+//! runtime would use `napi_unwrap` to reach the own block and expose it as
+//! `&'static L` / `&'static mut L` (mirroring napi-rs's class borrows).
+//! This is deferred until a concrete use case appears.
 
 use std::{marker::PhantomData, ptr, rc::Rc};
 

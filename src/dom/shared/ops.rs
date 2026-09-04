@@ -93,10 +93,3 @@ pub(crate) fn remove_detached_attribute(
     element.attrs.remove(name);
     true
 }
-
-/// Turn a JS `Object` into an owned [`Anything`] (a strong napi
-/// reference) so a `#[layer]` method can hand it to the macro closure
-/// without borrowing the `env` parameter.
-pub fn to_anything(node: Object, env: &Env) -> Result<Anything> {
-    unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&node)) }
-}

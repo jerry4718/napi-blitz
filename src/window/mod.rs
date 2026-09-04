@@ -21,7 +21,7 @@ use self::{
 };
 use crate::{
     app::lifecycle::Lifecycle,
-    dom::{WindowDocument, shared::doc::SharedDocument},
+    dom::{WindowDocument, layers::html_document::HTMLDocumentLayer, shared::doc::SharedDocument},
     events::base::EventTargetLayer,
     window::util::{parse_dimension, parse_window_buttons},
 };
@@ -29,10 +29,7 @@ use napi::{
     Error, Result,
     bindgen_prelude::{BigInt, PromiseRaw, Uint8Array, Undefined},
 };
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, Super, proc::layer},
-};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -63,7 +60,7 @@ pub struct WindowLayer {
     #[allow(dead_code)]
     pub(crate) shared_doc: Rc<SharedDocument>,
     pub(crate) lifecycle: Rc<Lifecycle>,
-    pub(crate) document: Anything,
+    pub(crate) document: LayerRef<HTMLDocumentLayer>,
 }
 
 impl WindowLayer {
@@ -91,7 +88,7 @@ impl WindowLayer {
 
     /// The HTMLDocument painted in this window.
     #[layer(getter)]
-    fn document(&self) -> Anything {
+    fn document(&self) -> LayerRef<HTMLDocumentLayer> {
         self.document.clone()
     }
 

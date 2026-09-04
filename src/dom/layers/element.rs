@@ -8,7 +8,7 @@ use blitz::dom::{NodeId, local_name};
 use napi::{Env, Error, Result};
 use napi_helpers::{
     anything::Anything,
-    inherits::{Constructed, Super, from_chain, proc::layer},
+    inherits::{Constructed, LayerRef, Super, from_chain, proc::layer},
     proxy::new_proxy,
 };
 use style::properties::PropertyId;
@@ -23,7 +23,7 @@ use crate::dom::{
         doc::SharedDocument,
         ops::{
             AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
-            set_detached_attribute, to_anything,
+            set_detached_attribute,
         },
         wrap_node,
     },
@@ -188,7 +188,7 @@ impl ElementLayer {
     /// `element.getElementsByTagName` — tag-matching descendants in tree
     /// order. Tag comparison is ASCII case-insensitive per the HTML spec.
     #[layer]
-    fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<Anything> {
+    fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<LayerRef<ElementLayer>> {
         let doc = self.shared_doc.clone();
         let name = name.to_ascii_lowercase();
         let self_id = self.node_id;
@@ -199,14 +199,18 @@ impl ElementLayer {
                         .is_element_with_tag_name(&blitz::dom::LocalName::from(name.as_str())))
         });
         ids.into_iter()
-            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
     /// `element.getElementsByClassName` — descendants whose `class`
     /// attribute contains the exact token.
     #[layer]
-    fn get_elements_by_class_name(&self, class_name: String, env: &Env) -> Vec<Anything> {
+    fn get_elements_by_class_name(
+        &self,
+        class_name: String,
+        env: &Env,
+    ) -> Vec<LayerRef<ElementLayer>> {
         let doc = self.shared_doc.clone();
         let self_id = self.node_id;
         let ids = doc.dfs(self_id, |n| {
@@ -216,7 +220,7 @@ impl ElementLayer {
                     .unwrap_or(false)
         });
         ids.into_iter()
-            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
@@ -240,7 +244,11 @@ impl ElementLayer {
     }
 
     #[layer]
-    fn query_selector(&self, selector: String, env: &Env) -> Result<Option<Anything>> {
+    fn query_selector(
+        &self,
+        selector: String,
+        env: &Env,
+    ) -> Result<Option<LayerRef<ElementLayer>>> {
         let result_id = {
             let base = self.shared_doc.base();
             let selector_list = base
@@ -260,8 +268,8 @@ impl ElementLayer {
             result.map(|node| node.id)
         };
         match result_id {
-            Some(id) => Ok(Some(to_anything(
-                wrap_node(&self.shared_doc, env, id)?,
+            Some(id) => Ok(Some(LayerRef::new(
+                &wrap_node(&self.shared_doc, env, id)?,
                 env,
             )?)),
             None => Ok(None),
@@ -269,7 +277,11 @@ impl ElementLayer {
     }
 
     #[layer]
-    fn query_selector_all(&self, selector: String, env: &Env) -> Result<Vec<Anything>> {
+    fn query_selector_all(
+        &self,
+        selector: String,
+        env: &Env,
+    ) -> Result<Vec<LayerRef<ElementLayer>>> {
         let ids: Vec<blitz::dom::NodeId> = {
             let base = self.shared_doc.base();
             let selector_list = base
@@ -290,7 +302,7 @@ impl ElementLayer {
         };
         let mut out = Vec::new();
         for id in ids {
-            out.push(to_anything(wrap_node(&self.shared_doc, env, id)?, env)?);
+            out.push(LayerRef::new(&wrap_node(&self.shared_doc, env, id)?, env)?);
         }
         Ok(out)
     }

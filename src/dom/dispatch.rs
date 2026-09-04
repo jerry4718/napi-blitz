@@ -25,14 +25,8 @@ use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
     traits::events::{DomEvent, EventState},
 };
-use napi::{
-    Env, JsValue, Result,
-    bindgen_prelude::{FromNapiValue, Object},
-};
-use napi_helpers::{
-    anything::Anything,
-    inherits::{with_own, with_own_mut},
-};
+use napi::{Env, Result, bindgen_prelude::Object};
+use napi_helpers::inherits::{LayerRef, with_own, with_own_mut};
 
 const CAPTURING_PHASE: u32 = 1;
 const AT_TARGET: u32 = 2;
@@ -128,7 +122,7 @@ impl JsEventHandler {
             with_own_mut::<EventLayer, _>(&event_obj, |d| {
                 d.state_mut().target = DispatchTarget::from_callable(Box::new(move |env| {
                     let node = wrap_node(&doc_clone, env, target_nid)?;
-                    to_anything(node, env)
+                    LayerRef::new(&node, env)
                 }));
             })?;
         }
@@ -222,7 +216,7 @@ impl JsEventHandler {
                 s.phase = phase;
                 s.current_target = DispatchTarget::from_callable(Box::new(move |env| {
                     let node = wrap_node(&doc_clone, env, node_id)?;
-                    to_anything(node, env)
+                    LayerRef::new(&node, env)
                 }));
             });
         }
@@ -239,9 +233,4 @@ impl JsEventHandler {
         })
         .unwrap_or(false)
     }
-}
-
-/// Wrap a JS Object into an `Anything` for the lazy `DispatchTarget`.
-fn to_anything(node: Object, env: &Env) -> Result<Anything> {
-    unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&node)) }
 }

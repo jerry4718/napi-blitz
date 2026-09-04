@@ -8,12 +8,9 @@ use std::rc::Rc;
 use crate::events::base::EventTargetLayer;
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, Super, proc::layer, with_own},
-};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer, with_own};
 
-use crate::dom::shared::{doc::SharedDocument, ops::to_anything, wrap_node};
+use crate::dom::shared::{doc::SharedDocument, wrap_node};
 
 const NODE_TYPE_ELEMENT: u32 = 1;
 const NODE_TYPE_TEXT: u32 = 3;
@@ -56,7 +53,7 @@ impl NodeLayer {
     }
 
     #[layer(getter)]
-    fn parent_node(&self, env: &Env) -> Result<Option<Anything>> {
+    fn parent_node(&self, env: &Env) -> Result<Option<LayerRef<NodeLayer>>> {
         let Some(parent_id) = self
             .shared_doc
             .base()
@@ -66,11 +63,11 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, parent_id)?;
-        Ok(Some(to_anything(node, env)?))
+        Ok(Some(LayerRef::new(&node, env)?))
     }
 
     #[layer(getter)]
-    fn first_child(&self, env: &Env) -> Result<Option<Anything>> {
+    fn first_child(&self, env: &Env) -> Result<Option<LayerRef<NodeLayer>>> {
         let Some(child_id) = self
             .shared_doc
             .base()
@@ -80,11 +77,11 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, child_id)?;
-        Ok(Some(to_anything(node, env)?))
+        Ok(Some(LayerRef::new(&node, env)?))
     }
 
     #[layer(getter)]
-    fn last_child(&self, env: &Env) -> Result<Option<Anything>> {
+    fn last_child(&self, env: &Env) -> Result<Option<LayerRef<NodeLayer>>> {
         let Some(child_id) = self
             .shared_doc
             .base()
@@ -94,11 +91,11 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, child_id)?;
-        Ok(Some(to_anything(node, env)?))
+        Ok(Some(LayerRef::new(&node, env)?))
     }
 
     #[layer(getter)]
-    fn next_sibling(&self, env: &Env) -> Result<Option<Anything>> {
+    fn next_sibling(&self, env: &Env) -> Result<Option<LayerRef<NodeLayer>>> {
         let Some(sibling_id) = ({
             let base = self.shared_doc.base();
             base.get_node(self.node_id)
@@ -108,11 +105,11 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, sibling_id)?;
-        Ok(Some(to_anything(node, env)?))
+        Ok(Some(LayerRef::new(&node, env)?))
     }
 
     #[layer(getter)]
-    fn previous_sibling(&self, env: &Env) -> Result<Option<Anything>> {
+    fn previous_sibling(&self, env: &Env) -> Result<Option<LayerRef<NodeLayer>>> {
         let Some(sibling_id) = ({
             let base = self.shared_doc.base();
             base.get_node(self.node_id)
@@ -122,11 +119,11 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, sibling_id)?;
-        Ok(Some(to_anything(node, env)?))
+        Ok(Some(LayerRef::new(&node, env)?))
     }
 
     #[layer(getter)]
-    fn child_nodes(&self, env: &Env) -> Result<Vec<Anything>> {
+    fn child_nodes(&self, env: &Env) -> Result<Vec<LayerRef<NodeLayer>>> {
         let children: Vec<NodeId> = self
             .shared_doc
             .base()
@@ -135,7 +132,7 @@ impl NodeLayer {
             .unwrap_or_default();
         let mut out = Vec::with_capacity(children.len());
         for id in children {
-            out.push(to_anything(wrap_node(&self.shared_doc, env, id)?, env)?);
+            out.push(LayerRef::new(&wrap_node(&self.shared_doc, env, id)?, env)?);
         }
         Ok(out)
     }
@@ -195,7 +192,7 @@ impl NodeLayer {
     }
 
     #[layer]
-    fn append_child(&mut self, env: &Env, child: Object) -> Result<Anything> {
+    fn append_child(&mut self, env: &Env, child: Object) -> Result<LayerRef<NodeLayer>> {
         let child_id = with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
         let mut base = self.shared_doc.base_mut();
         let mut mutator = base.mutate();
@@ -205,7 +202,7 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, child_id, env)?;
-        to_anything(wrap_node(&self.shared_doc, env, child_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared_doc, env, child_id)?, env)
     }
 
     #[layer]
@@ -214,7 +211,7 @@ impl NodeLayer {
         env: &Env,
         node: Object,
         anchor: Option<Object>,
-    ) -> Result<Anything> {
+    ) -> Result<LayerRef<NodeLayer>> {
         let node_id = with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
         let anchor_id = match &anchor {
             Some(a) => Some(with_own::<NodeLayer, _>(a, |d| d.node_id)?),
@@ -235,12 +232,12 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, node_id, env)?;
-        to_anything(wrap_node(&self.shared_doc, env, node_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared_doc, env, node_id)?, env)
     }
 
     /// `parent.removeChild(child)` — detach `child` and return it.
     #[layer]
-    fn remove_child(&mut self, env: &Env, child: Object) -> Result<Anything> {
+    fn remove_child(&mut self, env: &Env, child: Object) -> Result<LayerRef<NodeLayer>> {
         let child_id = with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
         // Switch to weak before removing, while parent chain is intact.
         if let Err(e) = self.shared_doc.make_in_document_subtree_weak(child_id, env) {
@@ -252,7 +249,7 @@ impl NodeLayer {
         drop(mutator);
         drop(base);
         self.shared_doc.mark_host_dirty();
-        to_anything(child, env)
+        LayerRef::new(&child, env)
     }
 
     #[layer]
@@ -273,7 +270,7 @@ impl NodeLayer {
     }
 
     #[layer]
-    fn replace_with(&mut self, env: &Env, node: Object) -> Result<Anything> {
+    fn replace_with(&mut self, env: &Env, node: Object) -> Result<LayerRef<NodeLayer>> {
         let removed_id = self.node_id;
         let node_id = with_own::<NodeLayer, _>(&node, |d| d.node_id)?;
         // Switch the removed node to weak before detaching, while parent chain is intact.
@@ -292,11 +289,11 @@ impl NodeLayer {
         // The new node is now in document -> strong.
         self.shared_doc
             .make_in_document_subtree_strong(node_id, node_id, env)?;
-        to_anything(wrap_node(&self.shared_doc, env, node_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared_doc, env, node_id)?, env)
     }
 
     #[layer]
-    fn clone_node(&self, env: &Env, deep: bool) -> Result<Anything> {
+    fn clone_node(&self, env: &Env, deep: bool) -> Result<LayerRef<NodeLayer>> {
         let new_id = if deep {
             let mut base = self.shared_doc.base_mut();
             let mut mutator = base.mutate();
@@ -307,13 +304,13 @@ impl NodeLayer {
         } else {
             let mut base = self.shared_doc.base_mut();
             let Some(data) = base.get_node(self.node_id).map(|node| node.data.clone()) else {
-                return to_anything(wrap_node(&self.shared_doc, env, self.node_id)?, env);
+                return LayerRef::new(&wrap_node(&self.shared_doc, env, self.node_id)?, env);
             };
             let clone_id = base.create_node(data);
             drop(base);
             clone_id
         };
         self.shared_doc.mark_host_dirty();
-        to_anything(wrap_node(&self.shared_doc, env, new_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared_doc, env, new_id)?, env)
     }
 }

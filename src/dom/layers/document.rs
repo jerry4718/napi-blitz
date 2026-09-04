@@ -4,16 +4,13 @@ use std::rc::Rc;
 
 use blitz::dom::{Attribute as BlitzAttribute, LocalName, Node, local_name};
 use napi::{Env, Error, Result};
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, Super, proc::layer},
-};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 
 use crate::dom::{
-    layers::node::NodeLayer,
+    layers::{comment::CommentLayer, element::ElementLayer, node::NodeLayer, text::TextLayer},
     shared::{
         doc::SharedDocument,
-        ops::{AttrInit, make_qual_name, to_anything},
+        ops::{AttrInit, make_qual_name},
         wrap_node,
     },
 };
@@ -52,23 +49,34 @@ impl DocumentLayer {
     }
 
     #[layer]
-    fn query_selector(&self, selector: String, env: &Env) -> Result<Option<Anything>> {
+    fn query_selector(
+        &self,
+        selector: String,
+        env: &Env,
+    ) -> Result<Option<LayerRef<ElementLayer>>> {
         let state = self.shared.base();
         match state.query_selector(&selector) {
-            Ok(Some(id)) => Ok(Some(to_anything(wrap_node(&self.shared, env, id)?, env)?)),
+            Ok(Some(id)) => Ok(Some(LayerRef::new(
+                &wrap_node(&self.shared, env, id)?,
+                env,
+            )?)),
             Ok(None) => Ok(None),
             Err(err) => Err(Error::from_reason(format!("query_selector: {err:?}"))),
         }
     }
 
     #[layer]
-    fn query_selector_all(&self, selector: String, env: &Env) -> Result<Vec<Anything>> {
+    fn query_selector_all(
+        &self,
+        selector: String,
+        env: &Env,
+    ) -> Result<Vec<LayerRef<ElementLayer>>> {
         let state = self.shared.base();
         match state.query_selector_all(&selector) {
             Ok(ids) => {
                 let mut result = Vec::new();
                 for id in ids {
-                    result.push(to_anything(wrap_node(&self.shared, env, id)?, env)?);
+                    result.push(LayerRef::new(&wrap_node(&self.shared, env, id)?, env)?);
                 }
                 Ok(result)
             }
@@ -77,25 +85,29 @@ impl DocumentLayer {
     }
 
     #[layer]
-    fn get_element_by_id(&self, id: String, env: &Env) -> Option<Anything> {
+    fn get_element_by_id(&self, id: String, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let node_id = self.shared.base().get_element_by_id(&id)?;
-        to_anything(wrap_node(&self.shared, env, node_id).ok()?, env).ok()
+        LayerRef::new(&wrap_node(&self.shared, env, node_id).ok()?, env).ok()
     }
 
     #[layer]
-    fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<Anything> {
+    fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<LayerRef<ElementLayer>> {
         let doc = self.shared.clone();
         // Tag matching is ASCII case-insensitive per the HTML spec.
         let name = name.to_ascii_lowercase();
         let root = doc.base().root_node().id;
         let ids = doc.dfs(root, |n| name == "*" || is_element_with_tag(n, &name));
         ids.into_iter()
-            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
     #[layer]
-    fn get_elements_by_class_name(&self, class_name: String, env: &Env) -> Vec<Anything> {
+    fn get_elements_by_class_name(
+        &self,
+        class_name: String,
+        env: &Env,
+    ) -> Vec<LayerRef<ElementLayer>> {
         let doc = self.shared.clone();
         let root = doc.base().root_node().id;
         let ids = doc.dfs(root, |n| {
@@ -104,7 +116,7 @@ impl DocumentLayer {
                 .unwrap_or(false)
         });
         ids.into_iter()
-            .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
     }
 
@@ -115,7 +127,7 @@ impl DocumentLayer {
         namespace: Option<String>,
         attrs: Option<Vec<AttrInit>>,
         env: &Env,
-    ) -> Result<Anything> {
+    ) -> Result<LayerRef<ElementLayer>> {
         let mut state = self.shared.base_mut();
         let mut mutator = state.mutate();
         let qn = make_qual_name(&local_name, namespace.as_deref());
@@ -131,47 +143,47 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        to_anything(wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer]
-    fn create_text_node(&mut self, text: String, env: &Env) -> Result<Anything> {
+    fn create_text_node(&mut self, text: String, env: &Env) -> Result<LayerRef<TextLayer>> {
         let mut state = self.shared.base_mut();
         let mut mutator = state.mutate();
         let node_id = mutator.create_text_node(&text);
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        to_anything(wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer]
-    fn create_comment(&mut self, text: String, env: &Env) -> Result<Anything> {
+    fn create_comment(&mut self, text: String, env: &Env) -> Result<LayerRef<CommentLayer>> {
         let mut state = self.shared.base_mut();
         let mut mutator = state.mutate();
         let node_id = mutator.create_comment_node(&text);
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        to_anything(wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
     }
 
     #[layer(getter)]
-    fn document_element(&self, env: &Env) -> Option<Anything> {
+    fn document_element(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "html"))?;
-        to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
     }
 
     #[layer(getter)]
-    fn head(&self, env: &Env) -> Option<Anything> {
+    fn head(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "head"))?;
-        to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
     }
 
     #[layer(getter)]
-    fn body(&self, env: &Env) -> Option<Anything> {
+    fn body(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "body"))?;
-        to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
     }
 
     #[layer(getter)]

@@ -1,14 +1,11 @@
 //! `FocusEvent` layer — extends `UiEvent`.
 
 use crate::events::{
-    base::{DispatchTarget, EventInit},
+    base::{DispatchTarget, EventInit, EventTargetLayer},
     ui_event::UIEventLayer,
 };
 use napi::{Env, Result, bindgen_prelude::FnArgs};
-use napi_helpers::{
-    anything::Anything,
-    inherits::{Constructed, Super, proc::layer},
-};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 
 /// Own block of the `FocusEvent` class.
 #[layer]
@@ -37,7 +34,7 @@ impl FocusEventLayer {
     }
 
     #[layer(getter)]
-    fn related_target(&self, env: &Env) -> Result<Anything> {
+    fn related_target(&self, env: &Env) -> Result<Option<LayerRef<EventTargetLayer>>> {
         self.related_target.resolve(env)
     }
 }
