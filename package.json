@@ -1,6 +1,6 @@
 {
   "name": "@ylcc/napi-blitz",
-  "version": "0.3.220",
+  "version": "0.3.221",
   "description": "blitz napi bindings",
   "type": "module",
   "main": "dist/index.cjs",

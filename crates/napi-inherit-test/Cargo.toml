@@ -1,6 +1,6 @@
 [package]
 name = "napi-inherit-test"
-version = "0.3.220"
+version = "0.3.221"
 edition = "2024"
 
 [lib]
