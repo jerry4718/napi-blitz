@@ -45,11 +45,7 @@ use napi::{
     check_status, sys,
 };
 use napi_helpers::{
-    JsWeakRef,
-    anything::Anything,
-    deferred::Deferred,
-    discard_err,
-    inherits::{LayerRef, from_chain},
+    JsWeakRef, anything::Anything, deferred::Deferred, discard_err, inherits::from_chain,
     native_log,
 };
 use std::{
@@ -352,14 +348,6 @@ impl Lifecycle {
             // chain (a pure napi operation) and register the window ref
             // for lifecycle dispatch.
             let build = (|| -> Result<sys::napi_value> {
-                let document = match shared_doc
-                    .document_ref()
-                    .as_ref()
-                    .and_then(|r| r.get_value(&self.env))
-                {
-                    Some(obj) => LayerRef::new(&obj, &self.env)?,
-                    None => return Err(Error::from_reason("document is gone")),
-                };
                 let window_obj = from_chain!(
                     (WindowLayer, &self.env),
                     EventTargetLayer::fresh(),
@@ -368,7 +356,6 @@ impl Lifecycle {
                         state: shared,
                         shared_doc: Rc::clone(&shared_doc),
                         lifecycle: Rc::clone(&lifecycle),
-                        document,
                     },
                 )?;
                 shared_doc.set_window_ref(&self.env, &window_obj)?;

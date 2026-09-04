@@ -191,7 +191,21 @@ impl SharedDocument {
             r.make_weak(env)?;
         }
         let root_id = self.base().root_node().id;
-        self.make_subtree_weak(root_id, env)
+        self.make_subtree_weak(root_id, env)?;
+        #[cfg(debug_assertions)]
+        {
+            let (total, strong) = {
+                let cache = self.node_cache();
+                (cache.len(), cache.strong_count(env))
+            };
+            println!(
+                "[detach] doc_id={} entries={} strong_after_detach={}",
+                self.base().id(),
+                total,
+                strong
+            );
+        }
+        Ok(())
     }
 
     /// Strength predicate for caching a JS wrapper: wrappers are pinned

@@ -40,7 +40,7 @@ fn build_event<'env>(
 
 /// Dispatch the event through the receiver's `EventTargetLayer` slot.
 fn dispatch_to(target: &Object, event: &Object, env: &Env) -> Result<()> {
-    let _ = with_own::<EventTargetLayer, _>(target, |d| d.dispatch_event(env, *event))?;
+    let _ = with_own::<EventTargetLayer, _>(target, |d| d.dispatch_event(target, env, *event))?;
     Ok(())
 }
 

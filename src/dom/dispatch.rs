@@ -224,7 +224,9 @@ impl JsEventHandler {
 
         // 3. Invoke the receiver's listener dispatch (`EventTargetLayer`
         //    slot on its chain), then read the event flags.
-        if let Err(e) = with_own::<EventTargetLayer, _>(&node, |d| d.dispatch_event(env, *event)) {
+        if let Err(e) =
+            with_own::<EventTargetLayer, _>(&node, |d| d.dispatch_event(&node, env, *event))
+        {
             native_log!("napi-blitz-dom: dispatch_event failed on node {node_id}: {e}");
             return false;
         }

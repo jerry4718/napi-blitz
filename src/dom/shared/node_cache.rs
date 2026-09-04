@@ -110,6 +110,13 @@ impl NodeCache {
         self.entries.len()
     }
 
+    /// Number of entries currently pinned strong. Debug diagnostics only.
+    #[cfg(debug_assertions)]
+    pub fn strong_count(&self, env: &Env) -> usize {
+        let _ = env;
+        self.entries.values().filter(|r| r.is_strong()).count()
+    }
+
     /// Whether the cache is empty.
     #[allow(unused)]
     pub fn is_empty(&self) -> bool {
@@ -163,8 +170,14 @@ impl Finalize for NodeFinalizer {
         let doc_id = doc_mut.id();
 
         #[cfg(debug_assertions)]
+        let node_label = doc_mut
+            .get_node(self.node_id)
+            .map(|n| n.node_debug_str().replace('\n', ""))
+            .unwrap_or_else(|| "<gone>".into());
+
+        #[cfg(debug_assertions)]
         println!(
-            "[finalize] doc_id={doc_id} node_id={} NodeFinalizer::finalize",
+            "[finalize] doc_id={doc_id} node_id={} {node_label}",
             self.node_id
         );
 

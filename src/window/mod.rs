@@ -64,10 +64,8 @@ pub(crate) struct WindowState {
 pub struct WindowLayer {
     pub(crate) window_id: WindowId,
     pub(crate) state: Rc<RefCell<WindowState>>,
-    #[allow(dead_code)]
     pub(crate) shared_doc: Rc<SharedDocument>,
     pub(crate) lifecycle: Rc<Lifecycle>,
-    pub(crate) document: LayerRef<HTMLDocumentLayer>,
 }
 
 impl WindowLayer {
@@ -93,10 +91,19 @@ impl WindowLayer {
         ))
     }
 
-    /// The HTMLDocument painted in this window.
+    /// The HTMLDocument painted in this window. Resolved through the
+    /// shared document's two-state reference: strong while the window is
+    /// live, weak after teardown, so no strong edge is parked on the
+    /// window wrapper itself.
     #[layer(getter)]
-    fn document(&self) -> LayerRef<HTMLDocumentLayer> {
-        self.document.clone()
+    fn document(&self, env: &Env) -> Result<LayerRef<HTMLDocumentLayer>> {
+        let obj = self
+            .shared_doc
+            .document_ref()
+            .as_ref()
+            .and_then(|r| r.get_value(env))
+            .ok_or_else(|| Error::from_reason("document is gone"))?;
+        LayerRef::new(&obj, env)
     }
 
     /// Whether `close()` has run for this window.
@@ -183,7 +190,6 @@ impl WindowLayer {
         let document = wrap_node(&new_shared, env, node_id)?;
         let fresh_document = LayerRef::new(&document, env)?;
         self.shared_doc = Rc::clone(&new_shared);
-        self.document = fresh_document.clone();
         new_shared.set_window_ref(env, this)?;
         new_shared.attach_window(env)?;
         new_shared.mark_host_dirty();

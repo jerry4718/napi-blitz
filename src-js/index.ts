@@ -7,13 +7,11 @@
 // the DOM classes (Node, Element, Document, the event classes, ...), plus
 // `BlitzApp` and `Window` — both extend the layer `EventTarget`, so the
 // Rust side dispatches lifecycle events straight onto their layer slots.
-// The only JS-side logic left is the pump-loop driver in `./pump`.
+// The only JS-side logic left is the pump-loop driver in `./pump`; internal
+// bootstrap wiring (pump-loop injection, listener-registry registration)
+// lives in `./internal` and is deliberately absent from this surface.
 
-import {setPumpAppLoop} from "./native";
-import {pumpAppLoop} from "./pump";
-
-// Native `BlitzApp.pumpLoop` forwards to this function to run the loop.
-setPumpAppLoop(pumpAppLoop);
+import "./internal";
 
 export * from "./native";
 export * from "./pump";
