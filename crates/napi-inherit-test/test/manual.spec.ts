@@ -2,7 +2,7 @@
 // chain. Own file so ava runs it in parallel with the macro chain's entry.
 import test from "ava";
 
-import {buildInheritTestClasses, makeInheritLeafFromChain} from "../index.cjs";
+import {buildInheritTestClasses, makeInheritLeafFromChain} from "../out/index.cjs";
 
 import {registerChainCases} from "./chain-cases.ts";
 

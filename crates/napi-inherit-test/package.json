@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "napi build --platform --dts index.d.ts --js index.cjs",
+    "build": "napi build --platform --output-dir out --dts index.d.ts --js index.cjs",
     "test": "ava"
   },
   "dependencies": {
