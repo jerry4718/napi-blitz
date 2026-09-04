@@ -3,7 +3,3 @@
 mod events;
 
 pub(crate) use events::*;
-pub(crate) use napi_helpers::Finalize;
-pub(crate) use napi_helpers::JsWeakRef;
-pub(crate) use napi_helpers::SwitchableRef;
-pub(crate) use napi_helpers::discard_err;

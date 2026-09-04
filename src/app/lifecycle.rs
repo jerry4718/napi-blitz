@@ -47,7 +47,12 @@ use std::{
 use blitz::shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use napi::{
     Env, Error, JsDeferred, JsValue, Result,
-    bindgen_prelude::{Object, PromiseRaw, Undefined},
+    bindgen_prelude::{FromNapiValue, Object, ObjectRef, PromiseRaw, Undefined},
+};
+use napi_helpers::{
+    JsWeakRef,
+    anything::Anything,
+    inherits::{layer_chain, new_from_chain},
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
 
@@ -57,11 +62,12 @@ use crate::{
         state::{AppState, PendingRequest, WindowEntry},
     },
     dom::shared::doc::SharedDocument,
+    events::base::EventTargetLayer,
     global,
-    helpers::{JsWeakRef, dispatch_app_event, dispatch_window_event},
+    helpers::{dispatch_app_event, dispatch_window_event},
     renderer::CurrentRenderer,
     window::{
-        NativeWindow, WindowState, make_window_document, options::WindowOptions,
+        WindowLayer, WindowState, make_window_document, options::WindowOptions,
         util::build_window_attributes,
     },
 };
@@ -180,7 +186,7 @@ impl Lifecycle {
         config: WindowConfig<CurrentRenderer>,
         state: WindowState,
         shared_doc: Rc<SharedDocument>,
-        deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
+        deferred: JsDeferred<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>,
     ) {
         self.state
             .borrow_mut()
@@ -199,7 +205,7 @@ impl Lifecycle {
     /// after this call (it shares state with the window via
     /// `Rc<RefCell<...>>`), so JS can keep mutating the DOM afterward.
     ///
-    /// Returns a `Promise<NativeWindow>` that resolves once a
+    /// Returns a `Promise<Window>` that resolves once a
     /// `pump_app_events` call promotes the pending config to a live
     /// window (see `drain_opening_windows`). This method never drives
     /// the event loop itself: it only queues the request, which makes it
@@ -214,10 +220,10 @@ impl Lifecycle {
         env: Env,
         shared_doc: Rc<SharedDocument>,
         options: Option<&WindowOptions>,
-    ) -> Result<PromiseRaw<'_, NativeWindow>> {
+    ) -> Result<PromiseRaw<'static, ObjectRef>> {
         let (config, win_state) = Self::build_open_request(&shared_doc, options)?;
         let (deferred, promise_obj) =
-            env.create_deferred::<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>()?;
+            env.create_deferred::<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>()?;
         let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
 
         self.queue_open(config, win_state, shared_doc, deferred);
@@ -250,7 +256,11 @@ impl Lifecycle {
     /// and the promise is rejected. After a successful promotion the
     /// non-cancelable `window:opened` notification is dispatched once
     /// the promise resolves.
-    pub(crate) fn drain_opening_windows(&self, event_loop: &EventLoopBox) {
+    pub(crate) fn drain_opening_windows(
+        &self,
+        event_loop: &EventLoopBox,
+        lifecycle: Rc<Lifecycle>,
+    ) {
         let Some(opens) = self.drain_pending(|req| matches!(req, PendingRequest::Open { .. }))
         else {
             return;
@@ -259,6 +269,7 @@ impl Lifecycle {
         let proxy = self.proxy.clone();
 
         for req in opens {
+            let lifecycle = Rc::clone(&lifecycle);
             let PendingRequest::Open {
                 config,
                 state: win_state,
@@ -299,20 +310,45 @@ impl Lifecycle {
             // shared: wrap it and fill in the live OS window.
             let shared = Rc::new(RefCell::new(win_state));
             shared.borrow_mut().window = Some(view.window.clone());
-            let native = NativeWindow {
-                window_id,
-                state: shared.clone(),
-            };
             let entry = WindowEntry {
                 view: Rc::new(RefCell::new(view)),
                 state: shared.clone(),
-                shared_doc,
+                shared_doc: Rc::clone(&shared_doc),
             };
             self.state.borrow_mut().windows.insert(window_id, entry);
 
-            // Resolve outside the state borrow: the resolver constructs a
-            // NativeWindow JS object, which is a pure napi operation.
-            deferred.resolve(Box::new(move |_env| Ok(native)));
+            // Resolve outside the state borrow: the resolver builds the
+            // `Window` layer chain (a pure napi operation) and registers
+            // the window ref for lifecycle dispatch.
+            deferred.resolve(Box::new(move |env| {
+                let document = match shared_doc
+                    .js_weak()
+                    .as_ref()
+                    .and_then(|w| w.get_value(&env))
+                {
+                    Some(obj) => unsafe {
+                        Anything::from_napi_value(env.raw(), JsValue::raw(&obj))?
+                    },
+                    None => return Err(Error::from_reason("document is gone")),
+                };
+                let window_obj = new_from_chain::<WindowLayer>(
+                    &env,
+                    layer_chain!(
+                        EventTargetLayer::fresh(),
+                        WindowLayer {
+                            window_id,
+                            state: shared,
+                            shared_doc: Rc::clone(&shared_doc),
+                            lifecycle: Rc::clone(&lifecycle),
+                            document,
+                        },
+                    ),
+                )?;
+                shared_doc.set_window_ref(&env, &window_obj)?;
+                let obj_ref =
+                    unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&window_obj))? };
+                Ok(obj_ref)
+            }));
 
             // Post-open notification after the `openWindow` promise
             // resolves, dispatched to the app from Rust. No outstanding
@@ -351,8 +387,8 @@ impl Lifecycle {
     pub(crate) fn request_close(
         &self,
         env: Env,
-        window: &NativeWindow,
-    ) -> Result<PromiseRaw<'_, Undefined>> {
+        window: &WindowLayer,
+    ) -> Result<PromiseRaw<'static, Undefined>> {
         let window_id = window.window_id;
 
         // Decide under one short borrow: idempotency, the

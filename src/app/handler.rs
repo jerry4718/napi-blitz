@@ -28,12 +28,12 @@ impl ApplicationHandler for AppHandler {
             }
         }
         self.lifecycle
-            .drain_opening_windows(&EventLoopBox::new(event_loop));
+            .drain_opening_windows(&EventLoopBox::new(event_loop), Rc::clone(&self.lifecycle));
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.lifecycle
-            .drain_opening_windows(&EventLoopBox::new(event_loop));
+            .drain_opening_windows(&EventLoopBox::new(event_loop), Rc::clone(&self.lifecycle));
         self.lifecycle
             .drain_shell_events(&EventLoopBox::new(event_loop));
     }
@@ -74,7 +74,7 @@ impl ApplicationHandler for AppHandler {
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.lifecycle
-            .drain_opening_windows(&EventLoopBox::new(event_loop));
+            .drain_opening_windows(&EventLoopBox::new(event_loop), Rc::clone(&self.lifecycle));
         self.lifecycle
             .drain_shell_events(&EventLoopBox::new(event_loop));
     }

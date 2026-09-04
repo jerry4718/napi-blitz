@@ -9,14 +9,13 @@ use blitz::{
     shell::{View, WindowConfig},
     traits::shell::DummyShellProvider,
 };
-use napi::{Env, JsDeferred, Result, bindgen_prelude::Undefined};
+use napi::{
+    Env, JsDeferred, Result,
+    bindgen_prelude::{ObjectRef, Undefined},
+};
 use winit::window::WindowId;
 
-use crate::{
-    dom::shared::doc::SharedDocument,
-    renderer::CurrentRenderer,
-    window::{NativeWindow, WindowState},
-};
+use crate::{dom::shared::doc::SharedDocument, renderer::CurrentRenderer, window::WindowState};
 
 /// A live window: the blitz `View` plus the JS-side `Window` handle
 /// that holds an `Arc<dyn Window>`. Dropping the view alone does not
@@ -60,14 +59,14 @@ pub(crate) enum PendingRequest {
     Open {
         config: Box<WindowConfig<CurrentRenderer>>,
         /// Bare `WindowState` - while pending, this is the *only* owner (the
-        /// `NativeWindow` can't be built until the OS window id exists). It's
+        /// `Window` layer can't be built until the OS window id exists). It's
         /// wrapped in `Rc<RefCell>` at promotion time, when it becomes shared
-        /// between the `NativeWindow` and the `WindowEntry`.
+        /// between the `WindowLayer` and the `WindowEntry`.
         state: WindowState,
         /// Shared doc, so the promoted `WindowEntry` can dispatch shell
         /// events to the JS `Window` object.
         shared_doc: Rc<SharedDocument>,
-        deferred: JsDeferred<NativeWindow, Box<dyn FnOnce(Env) -> Result<NativeWindow>>>,
+        deferred: JsDeferred<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>,
     },
     /// Tear down a requested closure (deferred past in-flight winit dispatch
     /// so `window.close()` is safe from inside a click handler). Resolving

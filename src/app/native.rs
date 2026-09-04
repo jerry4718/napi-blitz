@@ -1,4 +1,4 @@
-//! `BlitzApp`: the JS-facing wrapper around a winit event loop.
+//! `BlitzApp`: the layer wrapper around a winit event loop.
 //!
 //! The napi boundary: every method translates JS arguments into one
 //! `Lifecycle` call and wraps the result in a promise. The lifecycle
@@ -23,8 +23,9 @@
 use crate::{
     app::{handler::AppHandler, lifecycle::Lifecycle},
     dom::DocumentLayer,
+    events::base::EventTargetLayer,
     window::{
-        NativeWindow,
+        WindowLayer,
         monitor::{MonitorInfo, monitor_to_info},
         options::WindowOptions,
     },
@@ -34,9 +35,11 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use blitz::shell::{BlitzShellProxy, EventLoop, create_default_event_loop};
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{Object, PromiseRaw, Undefined},
+    bindgen_prelude::{FromNapiValue, JsValue, Object, ObjectRef, PromiseRaw, Undefined},
 };
-use napi_helpers::inherits::with_own;
+use napi_helpers::inherits::{
+    Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own,
+};
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
 /// Result of one `pumpAppEvents` call.
@@ -50,93 +53,86 @@ pub struct PumpResult {
     pub code: Option<i32>,
 }
 
-#[napi]
-pub struct NativeApp {
+/// Own block of the `BlitzApp` class.
+#[layer(js_name = "BlitzApp")]
+pub struct BlitzAppLayer {
     event_loop: RefCell<EventLoop>,
     lifecycle: Rc<Lifecycle>,
 }
 
-#[napi]
-impl NativeApp {
-    /// Build the winit event loop.
-    #[napi(factory)]
-    pub fn create() -> Self {
+#[layer]
+impl BlitzAppLayer {
+    #[layer(parent)]
+    type Parent = EventTargetLayer;
+
+    #[layer(constructor)]
+    fn build(_sup: Super<EventTargetLayer>) -> Result<Constructed<Self>> {
+        Err(Error::from_reason(
+            "construct a BlitzApp via BlitzApp.create()",
+        ))
+    }
+
+    /// Build the winit event loop and register this app as the lifecycle
+    /// dispatch target for app-level events (`window:open` and friends).
+    #[layer]
+    pub fn create(env: &Env) -> Result<ObjectRef> {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
-        Self {
-            event_loop: RefCell::new(event_loop),
-            lifecycle: Rc::new(Lifecycle::new(proxy, receiver)),
-        }
+        let lifecycle = Rc::new(Lifecycle::new(proxy, receiver));
+        let app = new_from_chain::<BlitzAppLayer>(
+            env,
+            layer_chain!(
+                EventTargetLayer::fresh(),
+                BlitzAppLayer {
+                    event_loop: RefCell::new(event_loop),
+                    lifecycle: Rc::clone(&lifecycle),
+                },
+            ),
+        )?;
+        lifecycle.set_app_ref(Env::clone(env), app.clone())?;
+        let app_ref = unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&app))? };
+        Ok(app_ref)
     }
 
-    /// Store a weak ref to the JS `BlitzApp` object so Rust can
-    /// dispatch app-level lifecycle events (`window:open`,
-    /// `window:close`, `window:closed`) to it.
-    #[napi]
-    pub fn set_app_ref(&self, env: Env, app: Object) -> Result<()> {
-        self.lifecycle.set_app_ref(env, app)
-    }
-
-    /// Attach a new window to the given document. The same document
-    /// handle can only be attached to one window. The JS Document keeps
-    /// working after this call (it shares state with the window via
-    /// Rc<RefCell<...>>), so JS can keep mutating the DOM after
-    /// `openWindow`.
+    /// Open a new window for an existing `HTMLDocument`.
+    /// Construct window attributes with `WindowOptions.builder()`.
     ///
-    /// `options` maps directly to a winit `WindowAttributes`. If the
-    /// document carries a `<title>` element, blitz's mutator-flush will
-    /// overwrite the title shortly after open; this is expected, with
-    /// the document treated as the source of truth for window-title
-    /// content.
+    /// Async: the window is physically created by the next event-loop pump, so
+    /// this resolves once the OS window exists. Safe to call from inside an
+    /// event handler (e.g. a click) — the native side never recursively
+    /// pumps the event loop.
     ///
-    /// Returns a `Promise<NativeWindow>` that resolves once a
-    /// `pump_app_events` call promotes the request to a live window.
-    /// This method never drives the event loop itself, which makes it
-    /// safe to invoke from inside an event handler; because creation is
-    /// deferred to the caller's pump, the caller must ensure a pump is
-    /// (or will be) running before `await`-ing the result - otherwise
-    /// the promise never resolves.
-    #[napi]
+    /// Rust dispatches the cancelable app-level `window:open` event while
+    /// creating the window, before this promise resolves. A listener's
+    /// `preventDefault()` rejects this promise (the native side drops the
+    /// fresh view, so no `Window` is ever handed out).
+    #[layer]
     pub fn open_window(
         &self,
-        env: Env,
+        env: &Env,
         doc: Object,
         options: Option<&WindowOptions>,
-    ) -> Result<PromiseRaw<'_, NativeWindow>> {
+    ) -> Result<PromiseRaw<'static, ObjectRef>> {
         let shared_doc = with_own::<DocumentLayer, _>(&doc, |d| d.shared.clone())?;
-        self.lifecycle.open_window(env, shared_doc, options)
+        self.lifecycle
+            .open_window(Env::clone(env), shared_doc, options)
     }
 
     /// Queue the given window for closure and return a promise that
-    /// resolves once the native `View` has actually been torn down
-    /// (during the next pump), or rejects if a `close` listener calls
-    /// `preventDefault()`. The cancelable `close` event is dispatched
-    /// at the moment the close is requested; if not prevented, the
-    /// JS-side `closed` flag is set immediately and only the physical
-    /// teardown is async. `close()` is idempotent.
-    ///
-    /// This is intentionally not GC-driven: dropping the JS `Window`
-    /// object does not close the OS window. Callers must invoke this
-    /// explicitly.
-    #[napi]
+    /// resolves once the native `View` has actually been torn down, or
+    /// rejects if a `close` listener calls `preventDefault()`.
+    #[layer]
     pub fn close_window(
         &self,
-        env: Env,
-        window: &NativeWindow,
-    ) -> Result<PromiseRaw<'_, Undefined>> {
-        self.lifecycle.request_close(env, window)
+        env: &Env,
+        window: Object,
+    ) -> Result<PromiseRaw<'static, Undefined>> {
+        with_own::<WindowLayer, _>(&window, |d| d.close(env))?
     }
-
-    // -- Per-window runtime configuration -----------------------------------
-    //
-    // The napi `Window` handle does not own a reference to the live winit
-    // `Arc<dyn Window>`; the lifecycle state does. So all per-window
-    // setters/getters live on `BlitzApp` and look the view up by window_id.
-    // The JS-side `Window` class delegates through these.
 
     /// List all available monitors with full metadata. Returns `[]` if
     /// no windows have been created yet.
-    #[napi]
+    #[layer]
     pub fn available_monitors(&self) -> Vec<MonitorInfo> {
         let state = self.lifecycle.state().borrow();
         let Some(entry) = state.windows.values().next() else {
@@ -153,7 +149,7 @@ impl NativeApp {
 
     /// The primary monitor. Returns `None` if no windows have been
     /// created yet.
-    #[napi]
+    #[layer]
     pub fn primary_monitor(&self) -> Option<MonitorInfo> {
         let state = self.lifecycle.state().borrow();
         let entry = state.windows.values().next()?;
@@ -166,41 +162,13 @@ impl NativeApp {
     }
 
     /// Pump pending winit events for at most `millis` milliseconds.
-    #[napi]
+    #[layer]
     pub fn pump_app_events(&self, millis: f64) -> PumpResult {
         self.pump_app_events_inner(millis)
     }
-
-    /// Set the document zoom level. `1.0` is unzoomed. Combined with the
-    /// system scale factor to produce the total viewport scale
-    /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
-    #[napi]
-    pub fn set_zoom(&self, window: &NativeWindow, zoom: f64) -> Result<()> {
-        let state = self.lifecycle.state().borrow();
-        let entry = state
-            .windows
-            .get(&window.window_id)
-            .ok_or_else(|| Error::from_reason("window not found"))?;
-        entry
-            .view
-            .borrow_mut()
-            .with_viewport(|v| v.set_zoom(zoom as f32));
-        Ok(())
-    }
-
-    /// Get the current document zoom level.
-    #[napi]
-    pub fn get_zoom(&self, window: &NativeWindow) -> Result<f32> {
-        let state = self.lifecycle.state().borrow();
-        let entry = state
-            .windows
-            .get(&window.window_id)
-            .ok_or_else(|| Error::from_reason("window not found"))?;
-        Ok(entry.view.borrow().doc.inner().viewport().zoom())
-    }
 }
 
-impl NativeApp {
+impl BlitzAppLayer {
     fn poll_live_views(&self) {
         let state = self.lifecycle.state().borrow();
         for entry in state.windows.values() {

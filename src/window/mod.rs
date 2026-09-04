@@ -1,20 +1,14 @@
-//! `Window`: napi-facing handle to one open OS window.
+//! `Window`: layer handle to one open OS window.
 //!
-//! A `Window` is identified internally by the document id of its attached
-//! document (blitz's `BaseDocument::id()`). The doc id is allocated at
-//! `DocHandle` creation time, so we know it before winit has minted a real
-//! `WindowId` (winit only assigns one inside `can_create_surfaces`, which runs
-//! during the next `pump_app_events`).
+//! The layer holds the winit `WindowId` and the shared
+//! `Rc<RefCell<WindowState>>` directly (the same `Arc<dyn Window>` the
+//! lifecycle's `WindowEntry` keeps), so `close()` drops the OS window for
+//! both and runtime configuration calls reach the winit window without an
+//! app-side lookup.
 //!
-//! Closing is async: `BlitzApp.close_window` marks the window closed
-//! immediately and queues the `View` teardown for the next pump. The JS
-//! side must call `window.close()` (or `app.closeWindow(window)`)
-//! explicitly.
-//!
-//! Runtime configuration (size, resizable, ...) lives on `BlitzApp` rather
-//! than `Window` itself, because the napi `Window` handle does not own a
-//! reference back to the live winit `Arc<dyn Window>` - the application
-//! does. The JS layer's `Window` class delegates these calls to the app.
+//! Closing is async: `close()` marks the window closed immediately and
+//! queues the `View` teardown for the next pump. The JS side must call
+//! `window.close()` (or `app.closeWindow(window)`) explicitly.
 
 pub(crate) mod handle;
 pub(crate) mod monitor;
@@ -26,12 +20,18 @@ use self::{
     monitor::{MonitorInfo, VideoModeInfo},
 };
 use crate::{
+    app::lifecycle::Lifecycle,
     dom::{WindowDocument, shared::doc::SharedDocument},
+    events::base::EventTargetLayer,
     window::util::{parse_dimension, parse_window_buttons},
 };
 use napi::{
-    Error, Result,
-    bindgen_prelude::{BigInt, Uint8Array},
+    Env, Error, Result,
+    bindgen_prelude::{BigInt, PromiseRaw, Uint8Array, Undefined},
+};
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, proc::layer},
 };
 use std::{
     cell::{Ref, RefCell},
@@ -46,7 +46,7 @@ use winit::{
     window::{Window as WinitWindow, WindowId},
 };
 
-/// Shared inner state between the JS-side `Window` handle and the
+/// Shared inner state between the `Window` layer and the
 /// Rust-side `WindowEntry`. Both hold the same `Rc<RefCell<WindowState>>`,
 /// so `close()` on either side drops the `Arc<dyn Window>` for both.
 pub(crate) struct WindowState {
@@ -54,20 +54,18 @@ pub(crate) struct WindowState {
     pub(crate) closed: bool,
 }
 
-/// Handle to an open window. Construct via `BlitzApp.openWindow`.
-///
-/// Shares a `Rc<RefCell<WindowState>>` with the `WindowEntry` stored in
-/// `BlitzApp`. `close_window` takes the `Arc<dyn Window>` out of the inner
-/// cell, which releases the OS window even if this JS handle is still alive.
-#[napi]
-pub struct NativeWindow {
-    /// winit `WindowId`; uniquely identifies the window for as long as
-    /// it is open. Internal-only - the JS layer does not need to see this.
+/// Own block of the `Window` class. Constructed by the open-flow
+/// (`Lifecycle::drain_opening_windows`), never from JS directly.
+#[layer(js_name = "Window")]
+pub struct WindowLayer {
     pub(crate) window_id: WindowId,
     pub(crate) state: Rc<RefCell<WindowState>>,
+    pub(crate) shared_doc: Rc<SharedDocument>,
+    pub(crate) lifecycle: Rc<Lifecycle>,
+    pub(crate) document: Anything,
 }
 
-impl NativeWindow {
+impl WindowLayer {
     #[inline]
     fn native_window(&self) -> Result<Ref<'_, dyn WinitWindow>> {
         let state = self.state.borrow();
@@ -78,17 +76,33 @@ impl NativeWindow {
     }
 }
 
-#[napi]
-impl NativeWindow {
-    /// Whether `closeWindow` has run for this handle.
-    #[napi(getter)]
+#[layer]
+impl WindowLayer {
+    #[layer(parent)]
+    type Parent = EventTargetLayer;
+
+    #[layer(constructor)]
+    fn build(_sup: Super<EventTargetLayer>) -> Result<Constructed<Self>> {
+        Err(Error::from_reason(
+            "construct a window via BlitzApp.openWindow",
+        ))
+    }
+
+    /// The HTMLDocument painted in this window.
+    #[layer(getter)]
+    fn document(&self) -> Anything {
+        self.document.clone()
+    }
+
+    /// Whether `close()` has run for this window.
+    #[layer(getter)]
     pub fn closed(&self) -> bool {
         self.state.borrow().closed
     }
 
-    /// Opaque window identifier. JS uses this to map app-event payloads
-    /// back to the right `Window` wrapper.
-    #[napi(getter)]
+    /// Opaque window identifier. The lifecycle routes winit events back to
+    /// the right window by it.
+    #[layer(getter)]
     pub fn window_id(&self) -> BigInt {
         BigInt::from(self.window_id.into_raw() as u64)
     }
@@ -97,7 +111,7 @@ impl NativeWindow {
     ///
     /// The returned `RawWindowHandle` can be passed to `WindowOptions.parentWindow()`
     /// to create child windows, or to `rfd` dialogs that need a parent window.
-    #[napi]
+    #[layer]
     pub fn window_handle(&self) -> Result<WindowHandle> {
         let window = self.native_window()?;
         let wh = window
@@ -112,13 +126,13 @@ impl NativeWindow {
         })
     }
 
-    #[napi]
+    #[layer]
     pub fn set_title(&self, title: String) -> Result<()> {
         self.native_window()?.set_title(&title);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_size(&self, width: f64, height: f64) -> Result<()> {
         let width = parse_dimension("width", width)?;
         let height = parse_dimension("height", height)?;
@@ -128,18 +142,18 @@ impl NativeWindow {
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn get_size(&self) -> Result<Vec<u32>> {
         let size = self.native_window()?.surface_size();
         Ok(vec![size.width, size.height])
     }
 
-    #[napi]
+    #[layer]
     pub fn get_resizable(&self) -> Result<bool> {
         Ok(self.native_window()?.is_resizable())
     }
 
-    #[napi]
+    #[layer]
     pub fn current_monitor(&self) -> Option<MonitorInfo> {
         self.native_window()
             .ok()?
@@ -147,7 +161,7 @@ impl NativeWindow {
             .map(|inner| MonitorInfo { inner })
     }
 
-    #[napi]
+    #[layer]
     pub fn set_min_size(&self, width: f64, height: f64) -> Result<()> {
         let width = parse_dimension("minWidth", width)?;
         let height = parse_dimension("minHeight", height)?;
@@ -156,7 +170,7 @@ impl NativeWindow {
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_max_size(&self, width: f64, height: f64) -> Result<()> {
         let width = parse_dimension("maxWidth", width)?;
         let height = parse_dimension("maxHeight", height)?;
@@ -165,50 +179,50 @@ impl NativeWindow {
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_resizable(&self, value: bool) -> Result<()> {
         self.native_window()?.set_resizable(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_maximized(&self, value: bool) -> Result<()> {
         self.native_window()?.set_maximized(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_visible(&self, value: bool) -> Result<()> {
         self.native_window()?.set_visible(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_transparent(&self, value: bool) -> Result<()> {
         self.native_window()?.set_transparent(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_blur(&self, value: bool) -> Result<()> {
         self.native_window()?.set_blur(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_decorations(&self, value: bool) -> Result<()> {
         self.native_window()?.set_decorations(value);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_fullscreen_borderless(&self, monitor: &MonitorInfo) -> Result<()> {
         self.native_window()?
             .set_fullscreen(Some(Fullscreen::Borderless(Some(monitor.inner.clone()))));
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_fullscreen_exclusive(
         &self,
         monitor: &MonitorInfo,
@@ -222,20 +236,20 @@ impl NativeWindow {
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_fullscreen_none(&self) -> Result<()> {
         self.native_window()?.set_fullscreen(None);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_enabled_buttons(&self, buttons: Vec<String>) -> Result<()> {
         let flags = parse_window_buttons(&buttons)?;
         self.native_window()?.set_enabled_buttons(flags);
         Ok(())
     }
 
-    #[napi]
+    #[layer]
     pub fn set_window_icon(&self, data: Uint8Array) -> Result<()> {
         let bytes = data.as_ref();
         if bytes.len() < 8 {
@@ -261,6 +275,43 @@ impl NativeWindow {
             .map_err(|e| Error::from_reason(format!("windowIcon: {e}")))?;
         self.native_window()?.set_window_icon(Some(icon));
         Ok(())
+    }
+
+    /// Set the document zoom level. `1.0` is unzoomed. Combined with the
+    /// system scale factor to produce the total viewport scale
+    /// (`hidpi_scale * zoom`) that scales layout and CSS transforms.
+    #[layer]
+    pub fn set_zoom(&self, zoom: f64) -> Result<()> {
+        let state = self.lifecycle.state().borrow();
+        let entry = state
+            .windows
+            .get(&self.window_id)
+            .ok_or_else(|| Error::from_reason("window not found"))?;
+        entry
+            .view
+            .borrow_mut()
+            .with_viewport(|v| v.set_zoom(zoom as f32));
+        Ok(())
+    }
+
+    /// Get the current document zoom level.
+    #[layer]
+    pub fn get_zoom(&self) -> Result<f32> {
+        let state = self.lifecycle.state().borrow();
+        let entry = state
+            .windows
+            .get(&self.window_id)
+            .ok_or_else(|| Error::from_reason("window not found"))?;
+        Ok(entry.view.borrow().doc.inner().viewport().zoom())
+    }
+
+    /// Queue this window for closure and return a promise that resolves
+    /// once the native `View` has actually been torn down (during the next
+    /// pump), or rejects if a `close` listener calls `preventDefault()`.
+    /// `close()` is idempotent.
+    #[layer]
+    pub fn close(&self, env: &Env) -> Result<PromiseRaw<'static, Undefined>> {
+        self.lifecycle.request_close(Env::clone(env), self)
     }
 }
 

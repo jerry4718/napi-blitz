@@ -8,12 +8,14 @@
 use std::{cell::RefCell, rc::Rc};
 
 use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
-use napi_helpers::inherits::{LayerChain, new_from_chain, with_own};
+use napi_helpers::{
+    JsWeakRef,
+    inherits::{LayerChain, new_from_chain, with_own},
+};
 
 use crate::{
     dom::shared::doc::SharedDocument,
     events::base::{EventLayer, EventTargetLayer},
-    helpers::JsWeakRef,
 };
 
 /// Resolve the JS Window object from the document's weak ref.

@@ -19,6 +19,6 @@
 
 mod event_loop;
 mod handler;
-mod lifecycle;
+pub(crate) mod lifecycle;
 mod native;
 mod state;
