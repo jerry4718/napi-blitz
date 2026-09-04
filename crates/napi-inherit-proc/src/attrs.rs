@@ -9,11 +9,16 @@ use syn::{
     punctuated::Punctuated,
 };
 
-/// The `#[layer(...)]` attribute on an impl block: so far only the JS class
-/// name (`#[layer(js_name = "...")]`, defaulting to the Rust ident).
+/// The `#[layer(...)]` attribute on an impl block: the JS class name
+/// (`#[layer(js_name = "...")]`, defaulting to the Rust ident), and the two
+/// alias types exported next to the class — the constructor wrapper
+/// (`class_type`, defaulting to `ClassType`) and the instance type
+/// (`instance_type`, defaulting to the built-in `InstanceType`).
 #[derive(Default)]
 pub(crate) struct LayerAttrs {
     pub js_name: Option<String>,
+    pub class_type: Option<String>,
+    pub instance_type: Option<String>,
 }
 
 impl Parse for LayerAttrs {
@@ -22,11 +27,23 @@ impl Parse for LayerAttrs {
         let metas = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
         for meta in metas {
             let Meta::NameValue(nv) = meta else { continue };
-            if nv.path.get_ident().map(|i| i == "js_name").unwrap_or(false)
-                && let syn::Expr::Lit(expr) = &nv.value
-                && let syn::Lit::Str(s) = &expr.lit
-            {
-                out.js_name = Some(s.value());
+            let Some(ident) = nv.path.get_ident() else {
+                continue;
+            };
+            let Some(s) = (match &nv.value {
+                syn::Expr::Lit(expr) => match &expr.lit {
+                    syn::Lit::Str(s) => Some(s),
+                    _ => None,
+                },
+                _ => None,
+            }) else {
+                continue;
+            };
+            match ident.to_string().as_str() {
+                "js_name" => out.js_name = Some(s.value()),
+                "class_type" => out.class_type = Some(s.value()),
+                "instance_type" => out.instance_type = Some(s.value()),
+                _ => {}
             }
         }
         Ok(out)

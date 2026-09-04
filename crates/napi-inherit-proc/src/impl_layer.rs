@@ -71,6 +71,17 @@ pub(crate) struct ImplLayer {
     item: ItemImpl,
     self_ty: Ident,
     js_name: String,
+    /// The JS name of the emitted class declaration: `js_name` + `Class`,
+    /// kept distinct from the runtime export name, so the exported aliases
+    /// (`const` value + instance `type`) can share the module without
+    /// clashing with the class.
+    class_decl: String,
+    /// Constructor-wrapper type for the `const` alias — `ClassType` unless
+    /// the impl overrides it with `#[layer(class_type = "...")]`.
+    class_type: String,
+    /// Instance-type constructor for the `type` alias — `InstanceType`
+    /// unless the impl overrides it with `#[layer(instance_type = "...")]`.
+    instance_type: String,
     /// The struct block's registration (fields + docs). On a real build the
     /// struct expands first; the fallback only serves the IDE's on-demand
     /// expansion of an impl in isolation (diagnostic-only, never compiled).
@@ -90,6 +101,17 @@ impl ImplLayer {
         i.attrs.retain(|a| !a.path().is_ident("layer"));
         let self_ty = self_ident(&i.self_ty)?;
         let js_name = attrs.js_name.clone().unwrap_or_else(|| self_ty.to_string());
+        // The class declaration is renamed (`XxxClass`) so it can sit next
+        // to the exported `const Xxx` / `type Xxx` aliases in one module.
+        let class_decl = format!("{}Class", js_name);
+        let class_type = attrs
+            .class_type
+            .clone()
+            .unwrap_or_else(|| "ClassType".to_owned());
+        let instance_type = attrs
+            .instance_type
+            .clone()
+            .unwrap_or_else(|| "InstanceType".to_owned());
         let meta = read_layer(&self_ty.to_string()).unwrap_or_else(|| LayerMeta {
             js_name: self_ty.to_string(),
             fields: vec![],
@@ -155,6 +177,9 @@ impl ImplLayer {
             item: i,
             self_ty,
             js_name,
+            class_decl,
+            class_type,
+            instance_type,
             meta,
             parent_ty,
             parent_js,
@@ -172,12 +197,16 @@ impl ImplLayer {
         write_layer(&self.self_ty.to_string(), meta);
     }
 
-    /// The three TS type defs this impl emits, in CLI merge order: members,
-    /// class declaration, `extends` link.
+    /// The TS type defs this impl emits: the members (`impl`), the class
+    /// declaration (`struct`), the `extends` link, and the two exported
+    /// aliases that hide the declaration (`type` + `fn`).
     pub fn type_defs(&self) -> Vec<TypeDef> {
         let Self {
             self_ty,
             js_name,
+            class_decl,
+            class_type,
+            instance_type,
             meta,
             parent_js,
             members,
@@ -211,25 +240,51 @@ impl ImplLayer {
             comments: vec![],
             register_name: format_ident!("__layer_placeholder"),
         };
-        if let Some(def) = impl_def.to_type_def() {
+        if let Some(mut def) = impl_def.to_type_def() {
+            // Members merge into the class by declaration name; the runtime
+            // export name (`js_name`) is not the declaration name.
+            def.name = class_decl.clone();
             defs.push(def);
         }
         // The class type def comes from the struct-registered fields and
-        // this impl's `js_name`, so both type defs that the CLI merges share
-        // a single name source.
-        if let Some(def) = class_def(js_name, &meta.fields, meta.comments.clone()).to_type_def() {
+        // this impl's `js_name`. It is renamed to the declaration name with
+        // no `original_name`, so the CLI does not auto-emit
+        // `export type InheritLeaf = InheritLeafClass` (that alias would
+        // name the class type, not the instance type, and collide with the
+        // explicit `type` alias below).
+        if let Some(mut def) = class_def(js_name, &meta.fields, meta.comments.clone()).to_type_def()
+        {
+            def.name = class_decl.clone();
+            def.original_name = None;
             defs.push(def);
         }
-        // The TS `extends` link is emitted right next to the parent
-        // declaration that lives in the impl block.
+        // The TS `extends` link points at the parent class declaration,
+        // which carries the same `Class` suffix. A parent with no layer
+        // registration (e.g. the root layer) simply has no declaration and
+        // the link is dropped by the CLI.
         if let Some(parent) = parent_js {
             defs.push(TypeDef {
                 kind: "extends".to_owned(),
-                name: js_name.clone(),
+                name: class_decl.clone(),
                 def: parent.clone(),
                 ..Default::default()
             });
         }
+        // The exported aliases: a constructor value and an instance type, so
+        // callers write `new InheritLeaf(...)` / `leaf: InheritLeaf` instead
+        // of spelling `InstanceType<typeof InheritLeafClass>`.
+        defs.push(TypeDef {
+            kind: "type".to_owned(),
+            name: js_name.clone(),
+            def: format!("{instance_type}<typeof {class_decl}>;"),
+            ..Default::default()
+        });
+        defs.push(TypeDef {
+            kind: "fn".to_owned(),
+            name: js_name.clone(),
+            def: format!("const {js_name}: {class_type}<typeof {class_decl}>;"),
+            ..Default::default()
+        });
         defs
     }
 }
