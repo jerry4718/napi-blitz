@@ -24,6 +24,13 @@ test("macro: static method on the leaf constructor", (t) => {
     t.is(InheritLeaf.leafConst(), 99);
 });
 
+test("macro: field js_name overrides the default property name", (t) => {
+    const leaf = new InheritLeaf(1, 2, 3);
+    t.is(leaf.renamedProp, 42);
+    leaf.renamedProp = 7;
+    t.is(leaf.renamedProp, 7);
+});
+
 test("rust layer struct names are not exported", (t) => {
     for (const name of ["InheritBase", "InheritMid", "InheritLeaf"]) {
         t.true(name in binding, `${name} should be exported`);

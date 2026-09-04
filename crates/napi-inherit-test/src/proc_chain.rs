@@ -13,13 +13,17 @@ static SHARED_COUNTER: AtomicU32 = AtomicU32::new(10);
 
 // ── InheritBase ──────────────────────────────────────────────────────────
 
-#[layer(js_name = "InheritBase")]
+#[layer]
 pub struct BaseLayer {
     #[layer(getter, setter)]
     pub base_value: u32,
+    /// Exposed as `renamedProp`, not the camelCased field name, via the
+    /// field-level `js_name`.
+    #[layer(getter, setter, js_name = "renamedProp")]
+    pub renamed: u32,
 }
 
-#[layer]
+#[layer(js_name = "InheritBase")]
 impl BaseLayer {
     #[layer]
     const BASE_CONST: u32 = 1;
@@ -27,7 +31,13 @@ impl BaseLayer {
     #[layer(constructor)]
     fn build(base_value: u32, sup: Super<RootLayer>) -> Result<Constructed<Self>> {
         let done = sup.call(FnArgs::from(()))?;
-        Ok(Constructed::new(done, Self { base_value }))
+        Ok(Constructed::new(
+            done,
+            Self {
+                base_value,
+                renamed: 42,
+            },
+        ))
     }
 
     #[layer]
@@ -133,7 +143,7 @@ impl BaseLayer {
 
 // ── InheritMid ───────────────────────────────────────────────────────────
 
-#[layer(js_name = "InheritMid")]
+#[layer]
 pub struct MidLayer {
     #[layer(getter)]
     pub mid_value: u32,
@@ -142,7 +152,7 @@ pub struct MidLayer {
     pub base_seen_after_super: u32,
 }
 
-#[layer]
+#[layer(js_name = "InheritMid")]
 impl MidLayer {
     #[layer(parent)]
     type Parent = BaseLayer;
@@ -174,7 +184,7 @@ impl MidLayer {
 
 // ── InheritLeaf ──────────────────────────────────────────────────────────
 
-#[layer(js_name = "InheritLeaf")]
+#[layer]
 pub struct LeafLayer {
     #[layer(getter)]
     pub leaf_value: u32,
@@ -182,7 +192,7 @@ pub struct LeafLayer {
     pub mid_seen_after_super: u32,
 }
 
-#[layer]
+#[layer(js_name = "InheritLeaf")]
 impl LeafLayer {
     #[layer(parent)]
     type Parent = MidLayer;
@@ -236,5 +246,5 @@ pub fn make_proc_leaf_from_chain<'env>(env: &'env napi::Env) -> Result<Object<'e
     from_chain!((
         LeafLayer,
         env
-    ) BaseLayer { base_value: 100 }, MidLayer { mid_value: 200, base_seen_after_super: 100 }, LeafLayer { leaf_value: 300, mid_seen_after_super: 200 })
+    ) BaseLayer { base_value: 100, renamed: 42 }, MidLayer { mid_value: 200, base_seen_after_super: 100 }, LeafLayer { leaf_value: 300, mid_seen_after_super: 200 })
 }
