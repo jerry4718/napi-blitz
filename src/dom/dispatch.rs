@@ -20,6 +20,7 @@ use std::rc::{Rc, Weak};
 use crate::{
     dom::shared::{SharedDocument, wrap_node},
     events::base::{DispatchTarget, EventLayer, EventTargetLayer},
+    helpers::resolve_window,
 };
 use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
@@ -137,7 +138,17 @@ impl JsEventHandler {
 
         let mut propagation_stopped = false;
 
-        // 5. Capture phase (root → target's parent).
+        // 5. Capture phase: the window first (blitz's DOM chain has no
+        //    window node and `WindowLayer` is not part of the DOM tree,
+        //    so the capture leg is driven here), then root → target's
+        //    parent.
+        let window = resolve_window(shared_doc, env);
+        if let Some(window) = &window
+            && !propagation_stopped
+        {
+            propagation_stopped = self.dispatch_to_window(window, &event_obj, CAPTURING_PHASE, env);
+        }
+
         for &nid in clean_chain.iter().skip(1).rev() {
             if propagation_stopped {
                 break;
@@ -152,7 +163,7 @@ impl JsEventHandler {
                 self.dispatch_to_node(target_nid, &event_obj, AT_TARGET, shared_doc, env);
         }
 
-        // 7. Bubble phase (target's parent → root).
+        // 7. Bubble phase (target's parent → root), then the window last.
         if event.bubbles && !propagation_stopped {
             for &nid in clean_chain.iter().skip(1) {
                 if propagation_stopped {
@@ -160,6 +171,12 @@ impl JsEventHandler {
                 }
                 propagation_stopped =
                     self.dispatch_to_node(nid, &event_obj, BUBBLING_PHASE, shared_doc, env);
+            }
+            if let Some(window) = &window
+                && !propagation_stopped
+            {
+                propagation_stopped =
+                    self.dispatch_to_window(window, &event_obj, BUBBLING_PHASE, env);
             }
         }
 
@@ -228,6 +245,37 @@ impl JsEventHandler {
             with_own::<EventTargetLayer, _>(&node, |d| d.dispatch_event(&node, env, *event))
         {
             native_log!("napi-blitz-dom: dispatch_event failed on node {node_id}: {e}");
+            return false;
+        }
+        with_own::<EventLayer, _>(event, |d| {
+            let s = d.state_ref();
+            s.stop_propagation || s.stop_immediate
+        })
+        .unwrap_or(false)
+    }
+
+    /// Dispatch the event to the JS Window object. blitz's DOM chain has
+    /// no window node and `WindowLayer` is not a DOM node, so the capture
+    /// and bubble legs delivered to the window are driven here directly.
+    /// Returns `true` if propagation was stopped.
+    fn dispatch_to_window(&self, window: &Object, event: &Object, phase: u32, env: &Env) -> bool {
+        // 1. Set direct currentTarget + eventPhase.
+        if let Err(e) = with_own_mut::<EventLayer, _>(event, |d| -> Result<()> {
+            let s = d.state_mut();
+            s.phase = phase;
+            s.current_target = DispatchTarget::Direct(LayerRef::new(window, env)?);
+            Ok(())
+        }) {
+            native_log!("napi-blitz-dom: set window currentTarget failed: {e}");
+            return false;
+        }
+
+        // 2. Invoke the receiver's listener dispatch (`EventTargetLayer`
+        //    slot on the window chain), then read the event flags.
+        if let Err(e) =
+            with_own::<EventTargetLayer, _>(window, |d| d.dispatch_event(window, env, *event))
+        {
+            native_log!("napi-blitz-dom: dispatch_event failed on window: {e}");
             return false;
         }
         with_own::<EventLayer, _>(event, |d| {
