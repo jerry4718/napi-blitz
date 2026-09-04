@@ -1,5 +1,15 @@
 //! Ergonomic assembly of a [`LayerChain`] in reversed (parent-first) order.
 
+/// Build an instance from a data chain: `from_chain!((LeafLayer, env) ...)`
+/// calls [`new_from_chain`](crate::class::new_from_chain) with a
+/// `layer_chain!` assembled from the trailing expressions.
+#[macro_export]
+macro_rules! from_chain {
+    (($for:ty, $env:expr) $($tt:tt)+) => {
+        $crate::new_from_chain::<$for>($env, $crate::layer_chain!($($tt)+))
+    };
+}
+
 /// Assemble a `LayerChain` in reversed order: the first expression is the
 /// deepest parent, the last is the outermost own layer. The type of the
 /// result is inferred at the use site (`new_from_chain` fixes it).
@@ -33,14 +43,4 @@ macro_rules! layer_chain {
         $( let __layer_chain_acc = $crate::LayerChain { own: $own, parent: __layer_chain_acc }; )+
         __layer_chain_acc
     }};
-}
-
-/// Build an instance from a data chain: `from_chain!((LeafLayer, env) ...)`
-/// calls [`new_from_chain`](crate::class::new_from_chain) with a
-/// `layer_chain!` assembled from the trailing expressions.
-#[macro_export]
-macro_rules! from_chain {
-    (($for:ty, $env:expr) $($tt:tt)+) => {
-        $crate::new_from_chain::<$for>($env, $crate::layer_chain!($($tt)+))
-    };
 }

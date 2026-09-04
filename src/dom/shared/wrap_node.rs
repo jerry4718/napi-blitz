@@ -146,9 +146,16 @@ pub fn wrap_node<'a>(
                 HTMLElementLayer {},
             )?,
         },
-        NodeKind::Text => {
-            new_from_chain::<TextLayer>(env, layer_chain!(..base_layer, TextLayer {}))?
-        }
+        NodeKind::Text => new_from_chain::<TextLayer>(
+            env,
+            layer_chain!(
+                ..base_layer,
+                TextLayer {
+                    node_id,
+                    shared_doc: shared_doc.clone(),
+                }
+            ),
+        )?,
         NodeKind::Comment => {
             new_from_chain::<CommentLayer>(env, layer_chain!(..base_layer, CommentLayer {}))?
         }

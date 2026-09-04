@@ -198,12 +198,9 @@ impl FontFaceSetLayer {
         Ok(())
     }
 
-    /// Registered faces in insertion order. The iterable protocol needs a
-    /// `Symbol.iterator` key, which the `#[layer]` member naming cannot
-    /// express, so these return snapshot arrays.
-    #[layer]
-    fn values(&self) -> Vec<Anything> {
-        self.face_values()
+    #[layer(generator)]
+    fn values(&self, index: u32) -> Option<Anything> {
+        self.face_values().into_iter().nth(index as usize)
     }
 
     #[layer]

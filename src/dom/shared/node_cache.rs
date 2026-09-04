@@ -180,7 +180,7 @@ impl Finalize for NodeFinalizer {
             let cache = doc.node_cache();
             if !has_live_descendant(&doc_mut, &cache, self.node_id, &env) {
                 drop(cache);
-                #[cfg(debug_assertions)]
+                /*#[cfg(debug_assertions)]
                 {
                     println!(
                         "[finalize] doc_id={} node_id={} detached, remove_and_drop_node",
@@ -188,7 +188,7 @@ impl Finalize for NodeFinalizer {
                         self.node_id
                     );
                     print!("{}", node_tree);
-                }
+                }*/
                 doc_mut.mutate().remove_and_drop_node(self.node_id);
                 return;
             }
@@ -229,13 +229,13 @@ pub fn cleanup_detached_subtree(
         return;
     }
 
-    #[cfg(debug_assertions)]
+    /*#[cfg(debug_assertions)]
     {
         println!(
             "[cleanup] doc_id={} node_id={} top={} remove_and_drop_node",
             doc_id, node_id, top
         );
-    }
+    }*/
     doc.mutate().remove_and_drop_node(top);
 }
 

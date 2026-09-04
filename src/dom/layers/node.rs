@@ -55,7 +55,7 @@ impl NodeLayer {
         }
     }
 
-    #[layer]
+    #[layer(getter)]
     fn parent_node(&self, env: &Env) -> Result<Option<Anything>> {
         let Some(parent_id) = self
             .shared_doc
@@ -69,7 +69,7 @@ impl NodeLayer {
         Ok(Some(to_anything(node, env)?))
     }
 
-    #[layer]
+    #[layer(getter)]
     fn first_child(&self, env: &Env) -> Result<Option<Anything>> {
         let Some(child_id) = self
             .shared_doc
@@ -83,7 +83,7 @@ impl NodeLayer {
         Ok(Some(to_anything(node, env)?))
     }
 
-    #[layer]
+    #[layer(getter)]
     fn last_child(&self, env: &Env) -> Result<Option<Anything>> {
         let Some(child_id) = self
             .shared_doc
@@ -97,7 +97,7 @@ impl NodeLayer {
         Ok(Some(to_anything(node, env)?))
     }
 
-    #[layer]
+    #[layer(getter)]
     fn next_sibling(&self, env: &Env) -> Result<Option<Anything>> {
         let Some(sibling_id) = ({
             let base = self.shared_doc.base();
@@ -111,7 +111,7 @@ impl NodeLayer {
         Ok(Some(to_anything(node, env)?))
     }
 
-    #[layer]
+    #[layer(getter)]
     fn previous_sibling(&self, env: &Env) -> Result<Option<Anything>> {
         let Some(sibling_id) = ({
             let base = self.shared_doc.base();
@@ -125,7 +125,7 @@ impl NodeLayer {
         Ok(Some(to_anything(node, env)?))
     }
 
-    #[layer]
+    #[layer(getter)]
     fn child_nodes(&self, env: &Env) -> Result<Vec<Anything>> {
         let children: Vec<NodeId> = self
             .shared_doc
@@ -140,14 +140,35 @@ impl NodeLayer {
         Ok(out)
     }
 
+    /// `node.contains(other)` — true for the node itself and its
+    /// descendants. Non-`Node` arguments are false, per spec.
+    #[layer]
+    fn contains(&self, env: &Env, other: Object) -> Result<bool> {
+        let Ok(other_id) = with_own::<NodeLayer, _>(&other, |n| n.node_id) else {
+            return Ok(false);
+        };
+        if other_id == self.node_id {
+            return Ok(true);
+        }
+        let base = self.shared_doc.base();
+        let mut ancestor = base.get_node(other_id).and_then(|n| n.parent);
+        while let Some(id) = ancestor {
+            if id == self.node_id {
+                return Ok(true);
+            }
+            ancestor = base.get_node(id).and_then(|n| n.parent);
+        }
+        Ok(false)
+    }
+
     #[layer(getter)]
     fn text_content(&self) -> Option<String> {
         let base = self.shared_doc.base();
         base.get_node(self.node_id).map(|n| n.text_content())
     }
 
-    #[layer]
-    fn set_text_content(&mut self, text: String, env: &Env) {
+    #[layer(setter)]
+    fn set_text_content(&mut self, env: &Env, text: String) {
         let mut base = self.shared_doc.base_mut();
         let is_text = base
             .get_node(self.node_id)
@@ -221,6 +242,23 @@ impl NodeLayer {
             wrap_node(&self.shared_doc, env, node_id)?,
             env,
         )?)
+    }
+
+    /// `parent.removeChild(child)` — detach `child` and return it.
+    #[layer]
+    fn remove_child(&mut self, env: &Env, child: Object) -> Result<Anything> {
+        let child_id = with_own::<NodeLayer, _>(&child, |d| d.node_id)?;
+        // Switch to weak before removing, while parent chain is intact.
+        if let Err(e) = self.shared_doc.make_in_document_subtree_weak(child_id, env) {
+            eprintln!("napi-blitz-dom: make_in_document_subtree_weak failed: {e}");
+        }
+        let mut base = self.shared_doc.base_mut();
+        let mut mutator = base.mutate();
+        mutator.remove_node(child_id);
+        drop(mutator);
+        drop(base);
+        self.shared_doc.mark_host_dirty();
+        Ok(to_anything(child, env)?)
     }
 
     #[layer]

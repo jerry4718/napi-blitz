@@ -17,6 +17,8 @@ pub(crate) mod html_input_element;
 pub(crate) mod html_textarea_element;
 pub(crate) mod document;
 pub(crate) mod html_document;
+pub(crate) mod style_handler;
+pub(crate) mod attributes_handler;
 
 pub use comment::CommentLayer;
 pub use document::DocumentLayer;

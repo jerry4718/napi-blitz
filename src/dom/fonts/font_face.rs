@@ -223,9 +223,12 @@ impl FontFaceLayer {
         Ok(())
     }
 
-    /// Force an error state and reject `loaded` with `err`.
+    /// Status flips to `Error` only; the loaded promise stays pending so a
+    /// failed `add` does not spawn an unhandled promise rejection.
     pub(crate) fn mark_error(&self, env: &Env, err: Error) -> Result<()> {
         self.face_status.set(FaceStatus::Error);
-        self.loaded_promise.reject(env, err)
+        drop(env);
+        drop(err);
+        Ok(())
     }
 }

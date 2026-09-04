@@ -143,6 +143,16 @@ impl WindowLayer {
     }
 
     #[layer]
+    pub fn resize(&self, width: f64, height: f64) -> Result<()> {
+        let width = parse_dimension("width", width)?;
+        let height = parse_dimension("height", height)?;
+        let _ = self
+            .native_window()?
+            .request_surface_size(PhysicalSize::new(width, height).into());
+        Ok(())
+    }
+
+    #[layer]
     pub fn get_size(&self) -> Result<Vec<u32>> {
         let size = self.native_window()?.surface_size();
         Ok(vec![size.width, size.height])
@@ -311,7 +321,7 @@ impl WindowLayer {
     /// `close()` is idempotent.
     #[layer]
     pub fn close(&self, env: &Env) -> Result<PromiseRaw<'static, Undefined>> {
-        self.lifecycle.request_close(Env::clone(env), self)
+        self.lifecycle.request_close(self)
     }
 }
 

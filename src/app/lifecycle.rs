@@ -46,12 +46,14 @@ use std::{
 
 use blitz::shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use napi::{
-    Env, Error, JsDeferred, JsValue, Result,
-    bindgen_prelude::{FromNapiValue, Object, ObjectRef, PromiseRaw, Undefined},
+    Env, Error, JsValue, Result,
+    bindgen_prelude::{FromNapiValue, Object, PromiseRaw, ToNapiValue, Undefined},
+    check_status, sys,
 };
 use napi_helpers::{
     JsWeakRef,
     anything::Anything,
+    deferred::Deferred,
     inherits::{layer_chain, new_from_chain},
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
@@ -63,7 +65,6 @@ use crate::{
     },
     dom::shared::doc::SharedDocument,
     events::base::EventTargetLayer,
-    global,
     helpers::{dispatch_app_event, dispatch_window_event},
     renderer::CurrentRenderer,
     window::{
@@ -73,6 +74,9 @@ use crate::{
 };
 
 pub(crate) struct Lifecycle {
+    /// The napi env the lifecycle dispatches JS on. Lifecycle exists only
+    /// on the main thread, so holding the env here is safe.
+    env: Env,
     /// Live windows and queued open/close requests - the facts of window
     /// life and death. Pure data; see `state.rs`.
     state: RefCell<AppState>,
@@ -91,8 +95,13 @@ pub(crate) struct Lifecycle {
 }
 
 impl Lifecycle {
-    pub(crate) fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
+    pub(crate) fn new(
+        env: Env,
+        proxy: BlitzShellProxy,
+        event_queue: Receiver<BlitzShellEvent>,
+    ) -> Self {
         Self {
+            env,
             state: RefCell::new(AppState {
                 windows: std::collections::HashMap::new(),
                 pending_requests: Vec::new(),
@@ -114,8 +123,8 @@ impl Lifecycle {
     /// Store a weak ref to the JS `BlitzApp` object so Rust can dispatch
     /// app-level lifecycle events (`window:open`, `window:close`,
     /// `window:closed`) to it.
-    pub(crate) fn set_app_ref(&self, env: Env, app: Object) -> Result<()> {
-        *self.js_app_ref.borrow_mut() = Some(JsWeakRef::new(&app, &env)?);
+    pub(crate) fn set_app_ref(&self, app: Object) -> Result<()> {
+        *self.js_app_ref.borrow_mut() = Some(JsWeakRef::new(&app, &self.env)?);
         Ok(())
     }
 
@@ -127,35 +136,35 @@ impl Lifecycle {
     /// Dispatch the cancelable `window:open` request to the app. JS holds
     /// no Window object yet, so the app is the only receiver. Returns
     /// `true` if the open should proceed.
-    fn dispatch_open_request(&self, env: &Env) -> Result<bool> {
+    fn dispatch_open_request(&self) -> Result<bool> {
         Ok(!dispatch_app_event(
             &self.js_app_ref,
             "window:open",
             true,
-            env,
+            &self.env,
         )?)
     }
 
     /// Dispatch the non-cancelable `window:opened` notification to the
     /// app, after the `openWindow` promise has resolved.
-    fn notify_opened(&self, env: &Env) -> Result<()> {
-        dispatch_app_event(&self.js_app_ref, "window:opened", false, env).map(|_| ())
+    fn notify_opened(&self) -> Result<()> {
+        dispatch_app_event(&self.js_app_ref, "window:opened", false, &self.env).map(|_| ())
     }
 
     /// Dispatch the cancelable close request: `close` to the window and,
     /// independently, `window:close` to the app. A `preventDefault()` at
     /// either level vetoes the close. Returns `true` if it should proceed.
-    fn dispatch_close_request(&self, doc: &Rc<SharedDocument>, env: &Env) -> Result<bool> {
-        let window_prevented = dispatch_window_event(doc, "close", true, env)?;
-        let app_prevented = dispatch_app_event(&self.js_app_ref, "window:close", true, env)?;
+    fn dispatch_close_request(&self, doc: &Rc<SharedDocument>) -> Result<bool> {
+        let window_prevented = dispatch_window_event(doc, "close", true, &self.env)?;
+        let app_prevented = dispatch_app_event(&self.js_app_ref, "window:close", true, &self.env)?;
         Ok(!window_prevented && !app_prevented)
     }
 
     /// Dispatch the non-cancelable `closed` (window) and `window:closed`
     /// (app) notifications, after the teardown has completed.
-    fn notify_closed(&self, doc: &Rc<SharedDocument>, env: &Env) -> Result<()> {
-        dispatch_window_event(doc, "closed", false, env)?;
-        dispatch_app_event(&self.js_app_ref, "window:closed", false, env).map(|_| ())
+    fn notify_closed(&self, doc: &Rc<SharedDocument>) -> Result<()> {
+        dispatch_window_event(doc, "closed", false, &self.env)?;
+        dispatch_app_event(&self.js_app_ref, "window:closed", false, &self.env).map(|_| ())
     }
 
     /// Build the pieces for a pending open from the document's shared
@@ -186,7 +195,7 @@ impl Lifecycle {
         config: WindowConfig<CurrentRenderer>,
         state: WindowState,
         shared_doc: Rc<SharedDocument>,
-        deferred: JsDeferred<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>,
+        deferred: Deferred,
     ) {
         self.state
             .borrow_mut()
@@ -217,18 +226,27 @@ impl Lifecycle {
     /// the result; otherwise the promise never resolves.
     pub(crate) fn open_window(
         &self,
-        env: Env,
         shared_doc: Rc<SharedDocument>,
         options: Option<&WindowOptions>,
-    ) -> Result<PromiseRaw<'static, ObjectRef>> {
-        let (config, win_state) = Self::build_open_request(&shared_doc, options)?;
-        let (deferred, promise_obj) =
-            env.create_deferred::<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>()?;
-        let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
+    ) -> Result<PromiseRaw<'static, Anything>> {
+        let deferred = Deferred::new(&self.env)?;
+        let promise = PromiseRaw::new(self.env.raw(), unsafe {
+            Anything::to_napi_value(self.env.raw(), deferred.value())?
+        });
 
-        self.queue_open(config, win_state, shared_doc, deferred);
-
-        Ok(promise)
+        // Parameter validation rejects the promise instead of throwing
+        // synchronously, so every failure of this async API surfaces as a
+        // rejection.
+        match Self::build_open_request(&shared_doc, options) {
+            Ok((config, win_state)) => {
+                self.queue_open(config, win_state, shared_doc, deferred);
+                Ok(promise)
+            }
+            Err(e) => {
+                deferred.reject(&self.env, e)?;
+                Ok(promise)
+            }
+        }
     }
 
     /// Take the pending requests matching `take` out of the queue and put
@@ -286,23 +304,15 @@ impl Lifecycle {
             // Open confirmation, dispatched to the app from Rust. Must not
             // hold a state borrow: the dispatch re-enters JS and the
             // listener may call back into `NativeApp`.
-            let allowed = match global::env() {
-                Ok(env) => self.dispatch_open_request(&env).unwrap_or_else(|e| {
-                    eprintln!(
-                        "napi-blitz: drain_opening_windows: open request failed, treating open as confirmed: {e}"
-                    );
-                    true
-                }),
-                Err(e) => {
-                    eprintln!(
-                        "napi-blitz: drain_opening_windows: env not available, treating open as confirmed: {e}"
-                    );
-                    true
-                }
-            };
+            let allowed = self.dispatch_open_request().unwrap_or_else(|e| {
+                eprintln!(
+                    "napi-blitz: drain_opening_windows: open request failed, treating open as confirmed: {e}"
+                );
+                true
+            });
             if !allowed {
                 drop(view);
-                deferred.reject(Error::from_reason("window open prevented"));
+                deferred.reject(&self.env, Error::from_reason("window open prevented"));
                 continue;
             }
 
@@ -317,22 +327,22 @@ impl Lifecycle {
             };
             self.state.borrow_mut().windows.insert(window_id, entry);
 
-            // Resolve outside the state borrow: the resolver builds the
-            // `Window` layer chain (a pure napi operation) and registers
-            // the window ref for lifecycle dispatch.
-            deferred.resolve(Box::new(move |env| {
+            // Resolve outside the state borrow: build the `Window` layer
+            // chain (a pure napi operation) and register the window ref
+            // for lifecycle dispatch.
+            let build = (|| -> Result<sys::napi_value> {
                 let document = match shared_doc
                     .js_weak()
                     .as_ref()
-                    .and_then(|w| w.get_value(&env))
+                    .and_then(|w| w.get_value(&self.env))
                 {
                     Some(obj) => unsafe {
-                        Anything::from_napi_value(env.raw(), JsValue::raw(&obj))?
+                        Anything::from_napi_value(self.env.raw(), JsValue::raw(&obj))?
                     },
                     None => return Err(Error::from_reason("document is gone")),
                 };
                 let window_obj = new_from_chain::<WindowLayer>(
-                    &env,
+                    &self.env,
                     layer_chain!(
                         EventTargetLayer::fresh(),
                         WindowLayer {
@@ -344,26 +354,30 @@ impl Lifecycle {
                         },
                     ),
                 )?;
-                shared_doc.set_window_ref(&env, &window_obj)?;
-                let obj_ref =
-                    unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&window_obj))? };
-                Ok(obj_ref)
-            }));
+                shared_doc.set_window_ref(&self.env, &window_obj)?;
+                let value = unsafe {
+                    Anything::from_napi_value(self.env.raw(), JsValue::raw(&window_obj))?
+                };
+                unsafe { Anything::to_napi_value(self.env.raw(), value) }
+            })();
+            match build {
+                Ok(raw) => {
+                    if let Err(e) = deferred.resolve(&self.env, raw) {
+                        eprintln!("napi-blitz: drain_opening_windows: resolve failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    if let Err(re) = deferred.reject(&self.env, e) {
+                        eprintln!("napi-blitz: drain_opening_windows: reject failed: {re}");
+                    }
+                }
+            }
 
             // Post-open notification after the `openWindow` promise
             // resolves, dispatched to the app from Rust. No outstanding
             // state borrow: JS re-entry into `open_window` /
             // `request_close` is safe.
-            let env = match global::env() {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!(
-                        "napi-blitz: drain_opening_windows: env not available, skipping window:opened: {e}"
-                    );
-                    continue;
-                }
-            };
-            if let Err(e) = self.notify_opened(&env) {
+            if let Err(e) = self.notify_opened() {
                 eprintln!("napi-blitz: drain_opening_windows: notify_opened failed: {e}");
             }
         }
@@ -386,7 +400,6 @@ impl Lifecycle {
     /// explicitly.
     pub(crate) fn request_close(
         &self,
-        env: Env,
         window: &WindowLayer,
     ) -> Result<PromiseRaw<'static, Undefined>> {
         let window_id = window.window_id;
@@ -420,24 +433,25 @@ impl Lifecycle {
             }
         };
         let Some(shared_doc) = shared_doc else {
-            return PromiseRaw::resolve(&env, ());
+            return PromiseRaw::resolve(&self.env, ());
         };
 
         // Dispatch the cancelable `close` event to the window from Rust.
-        if !self.dispatch_close_request(&shared_doc, &env)? {
+        if !self.dispatch_close_request(&shared_doc)? {
             // A `close` listener on the window or a `window:close`
             // listener on the app prevented the close: the window stays
             // open and the caller's promise rejects.
-            let (deferred, promise_obj) =
-                env.create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
-            let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
-            deferred.reject(Error::from_reason("close prevented"));
-            return Ok(promise);
+            let deferred = Deferred::new(&self.env)?;
+            deferred.reject(&self.env, Error::from_reason("close prevented"))?;
+            return Ok(PromiseRaw::new(self.env.raw(), unsafe {
+                Anything::to_napi_value(self.env.raw(), deferred.value())?
+            }));
         }
 
-        let (deferred, promise_obj) =
-            env.create_deferred::<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>()?;
-        let promise = PromiseRaw::new(env.raw(), JsValue::raw(&promise_obj));
+        let deferred = Deferred::new(&self.env)?;
+        let promise = PromiseRaw::new(self.env.raw(), unsafe {
+            Anything::to_napi_value(self.env.raw(), deferred.value())?
+        });
 
         // Mark the handle closed and queue the teardown. Pure state
         // mutation: no JS call, so the borrow is safe.
@@ -496,18 +510,11 @@ impl Lifecycle {
             };
             Rc::clone(&entry.shared_doc)
         };
-        let env = match global::env() {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("napi-blitz: close_from_os: env not available: {e}");
-                return;
-            }
-        };
 
         // Dispatch `close` (window) + `window:close` (app), both
         // cancelable. If either was prevented, abort - the window stays
         // open.
-        match self.dispatch_close_request(&shared_doc, &env) {
+        match self.dispatch_close_request(&shared_doc) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => {
@@ -520,7 +527,7 @@ impl Lifecycle {
             self.exit_if_empty(event_loop);
         }
 
-        if let Err(e) = self.notify_closed(&shared_doc, &env) {
+        if let Err(e) = self.notify_closed(&shared_doc) {
             eprintln!("napi-blitz: close_from_os: notify_closed failed: {e}");
         }
     }
@@ -557,14 +564,7 @@ impl Lifecycle {
             //    was already dispatched by `request_close`; here only
             //    the post-teardown notification remains.
             if let Some(shared_doc) = shared_doc {
-                let env = match global::env() {
-                    Ok(e) => e,
-                    Err(e) => {
-                        eprintln!("napi-blitz: drain_closing_windows: env not available: {e}");
-                        return;
-                    }
-                };
-                if let Err(e) = self.notify_closed(&shared_doc, &env) {
+                if let Err(e) = self.notify_closed(&shared_doc) {
                     eprintln!("napi-blitz: drain_closing_windows: notify_closed failed: {e}");
                 }
             }
@@ -572,7 +572,16 @@ impl Lifecycle {
             // 3. Fulfil the `close_window` promise after the
             //    notifications, so JS-side await sees the teardown
             //    fully complete.
-            deferred.resolve(Box::new(move |_env| Ok(())));
+            let mut raw = std::ptr::null_mut();
+            if let Err(e) =
+                check_status!(unsafe { sys::napi_get_undefined(self.env.raw(), &mut raw) })
+            {
+                eprintln!("napi-blitz: drain_closing_windows: get_undefined failed: {e}");
+                continue;
+            }
+            if let Err(e) = deferred.resolve(&self.env, raw) {
+                eprintln!("napi-blitz: drain_closing_windows: resolve failed: {e}");
+            }
         }
     }
 

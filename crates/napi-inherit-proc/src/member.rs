@@ -14,6 +14,8 @@ pub(crate) struct Member {
     pub kind: MemberKind,
     /// `#[layer(this)]` — the instance may be injected without a receiver.
     pub this_injectable: bool,
+    /// `#[layer(getter, js_name = "...")]` — explicit JS member name.
+    pub js_name: Option<String>,
     pub f: syn::ImplItemFn,
 }
 
@@ -25,6 +27,7 @@ impl Member {
         Some(Self {
             kind: info.kind,
             this_injectable: info.this_injectable,
+            js_name: info.js_name,
             f: f.clone(),
         })
     }
@@ -38,10 +41,13 @@ impl Member {
         let Self {
             kind,
             this_injectable,
+            js_name,
             f,
         } = self;
         let name = f.sig.ident.clone();
-        let js = to_camel(&name.to_string());
+        let js = js_name
+            .clone()
+            .unwrap_or_else(|| to_camel(&name.to_string()));
         // Split the signature into JS args and the injected receiver. A
         // parameter named `this` of type `Object` is filled by the runtime
         // with the instance object, so the body can reach any layer's own
@@ -129,6 +135,20 @@ impl Member {
         };
 
         match kind {
+            MemberKind::Generator => {
+                quote! {
+                    napi_helpers::inherits::define_generator(env, proto, "iterator", |env, this, index| {
+                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))
+                    })?;
+                }
+            }
+            MemberKind::AsyncGenerator => {
+                quote! {
+                    napi_helpers::inherits::define_generator(env, proto, "asyncIterator", |env, this, index| {
+                        napi_helpers::inherits::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, index))
+                    })?;
+                }
+            }
             MemberKind::Getter => {
                 if has_receiver {
                     quote! {
@@ -156,7 +176,7 @@ impl Member {
                 }
             }
             MemberKind::Setter => {
-                let js = setter_js_name(&name);
+                let js = js_name.clone().unwrap_or_else(|| setter_js_name(&name));
                 let Some(value_ty) = normal.first().map(|(_, ty)| ty.clone()) else {
                     return syn::Error::new_spanned(
                         f,
@@ -270,6 +290,7 @@ impl Member {
         let Self {
             kind,
             this_injectable,
+            js_name,
             f,
         } = self;
         let name = f.sig.ident.clone();
@@ -328,12 +349,25 @@ impl Member {
             ReturnType::Default => None,
             ReturnType::Type(_, ty) => Some((**ty).clone()),
         };
-        let (kind_, js_name) = match kind {
-            MemberKind::Constructor => (FnKind::Constructor, "constructor".to_owned()),
-            MemberKind::Getter => (FnKind::Getter, to_camel(&name.to_string())),
-            MemberKind::Setter => (FnKind::Setter, setter_js_name(&name)),
-            MemberKind::Method => (FnKind::Normal, to_camel(&name.to_string())),
+        let fallback = match kind {
+            MemberKind::Constructor => "constructor".to_owned(),
+            MemberKind::Getter => to_camel(&name.to_string()),
+            MemberKind::Setter => setter_js_name(&name),
+            MemberKind::Method => to_camel(&name.to_string()),
+            MemberKind::Generator => "[Symbol.iterator]".to_owned(),
+            MemberKind::AsyncGenerator => "[Symbol.asyncIterator]".to_owned(),
         };
+        let (kind_, js_name) = (
+            match kind {
+                MemberKind::Constructor => FnKind::Constructor,
+                MemberKind::Getter => FnKind::Getter,
+                MemberKind::Setter => FnKind::Setter,
+                MemberKind::Method => FnKind::Normal,
+                MemberKind::Generator => FnKind::Getter,
+                MemberKind::AsyncGenerator => FnKind::Getter,
+            },
+            js_name.clone().unwrap_or(fallback),
+        );
         // Instance vs static is derived from the signature: `&self`/`&mut
         // self` receiver means an instance member, no receiver means a
         // static one. A `#[layer(this)]` member has no receiver but is still

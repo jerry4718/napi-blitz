@@ -57,6 +57,12 @@ pub(crate) enum MemberKind {
     Getter,
     Setter,
     Method,
+    /// `#[layer(generator)]` — the member's snapshot becomes the class's
+    /// `Symbol.iterator`, so `for...of` and spread iterate the instance.
+    Generator,
+    /// `#[layer(async_generator)]` — same snapshot shape, exposed as
+    /// `Symbol.asyncIterator` for `for await...of`.
+    AsyncGenerator,
 }
 
 /// The parsed flags of one `#[layer(...)]` member attribute.
@@ -65,29 +71,47 @@ struct MemberFlags {
     /// `#[layer(this)]` — inject the JS instance although there is no
     /// receiver. Without the flag a receiver-less member is a plain static.
     this_injectable: bool,
+    /// `#[layer(getter, js_name = "...")]` — explicit JS member name for
+    /// names `to_camel` cannot express (e.g. `innerHTML`).
+    js_name: Option<String>,
 }
 
 impl Parse for MemberFlags {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let mut kind = MemberKind::Method;
         let mut this_injectable = false;
+        let mut js_name = None;
         let metas = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
         for meta in metas {
-            if let Meta::Path(p) = meta
-                && let Some(i) = p.get_ident()
-            {
-                match i.to_string().as_str() {
-                    "constructor" => kind = MemberKind::Constructor,
-                    "getter" => kind = MemberKind::Getter,
-                    "setter" => kind = MemberKind::Setter,
-                    "this" => this_injectable = true,
-                    _ => {}
+            match &meta {
+                Meta::Path(p) => {
+                    if let Some(i) = p.get_ident() {
+                        match i.to_string().as_str() {
+                            "constructor" => kind = MemberKind::Constructor,
+                            "getter" => kind = MemberKind::Getter,
+                            "setter" => kind = MemberKind::Setter,
+                            "generator" => kind = MemberKind::Generator,
+                            "async_generator" => kind = MemberKind::AsyncGenerator,
+                            "this" => this_injectable = true,
+                            _ => {}
+                        }
+                    }
                 }
+                Meta::NameValue(nv) => {
+                    if nv.path.is_ident("js_name")
+                        && let syn::Expr::Lit(lit) = &nv.value
+                        && let syn::Lit::Str(s) = &lit.lit
+                    {
+                        js_name = Some(s.value());
+                    }
+                }
+                _ => {}
             }
         }
         Ok(Self {
             kind,
             this_injectable,
+            js_name,
         })
     }
 }
@@ -96,6 +120,7 @@ impl Parse for MemberFlags {
 pub(crate) struct MemberInfo {
     pub kind: MemberKind,
     pub this_injectable: bool,
+    pub js_name: Option<String>,
 }
 
 impl MemberInfo {
@@ -113,6 +138,7 @@ impl MemberInfo {
                         out = Some(Self {
                             kind: flags.kind,
                             this_injectable: flags.this_injectable,
+                            js_name: flags.js_name,
                         });
                     }
                 }
@@ -121,6 +147,7 @@ impl MemberInfo {
                     out = Some(Self {
                         kind: MemberKind::Method,
                         this_injectable: false,
+                        js_name: None,
                     })
                 }
             }

@@ -22,9 +22,13 @@ use blitz::{
 use fontique::Blob;
 use napi::{Env, JsValue, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{JsWeakRef, anything::OtherRef};
+use napi_helpers::{
+    JsWeakRef,
+    anything::{Anything, OtherRef},
+};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
+    collections::HashMap,
     rc::Rc,
     sync::Arc,
     task::Context as TaskContext,
@@ -58,6 +62,11 @@ pub struct SharedDocument {
     /// The document's `FontFaceSet`, retained strongly: created at
     /// document initialization, returned by the `fonts` getter.
     fonts: RefCell<Option<OtherRef>>,
+    /// Cached `style` proxies per node, so `el.style` is identity-stable.
+    style_proxies: RefCell<HashMap<NodeId, Anything>>,
+    /// Cached `attributes` proxies per node, so `el.attributes` is
+    /// identity-stable.
+    attributes_proxies: RefCell<HashMap<NodeId, Anything>>,
     /// The napi env captured at document creation; blitz's
     /// `EventHandler` callbacks do not carry an `Env`.
     env: Cell<Option<Env>>,
@@ -75,6 +84,8 @@ impl SharedDocument {
             js_weak: RefCell::new(None),
             js_window_ref: RefCell::new(None),
             fonts: RefCell::new(None),
+            style_proxies: RefCell::new(HashMap::new()),
+            attributes_proxies: RefCell::new(HashMap::new()),
             env: Cell::new(None),
             attached: Cell::new(false),
         }
@@ -155,6 +166,24 @@ impl SharedDocument {
     /// The document's `FontFaceSet`, if initialized.
     pub fn fonts(&self) -> Ref<'_, Option<OtherRef>> {
         self.fonts.borrow()
+    }
+
+    /// The cached `style` proxy for `node_id`, if built.
+    pub fn style_proxy(&self, node_id: NodeId) -> Option<Anything> {
+        self.style_proxies.borrow().get(&node_id).cloned()
+    }
+
+    pub fn set_style_proxy(&self, node_id: NodeId, proxy: Anything) {
+        self.style_proxies.borrow_mut().insert(node_id, proxy);
+    }
+
+    /// The cached `attributes` proxy for `node_id`, if built.
+    pub fn attributes_proxy(&self, node_id: NodeId) -> Option<Anything> {
+        self.attributes_proxies.borrow().get(&node_id).cloned()
+    }
+
+    pub fn set_attributes_proxy(&self, node_id: NodeId, proxy: Anything) {
+        self.attributes_proxies.borrow_mut().insert(node_id, proxy);
     }
 }
 

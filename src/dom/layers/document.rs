@@ -85,8 +85,10 @@ impl DocumentLayer {
     #[layer]
     fn get_elements_by_tag_name(&self, name: String, env: &Env) -> Vec<Anything> {
         let doc = self.shared.clone();
+        // Tag matching is ASCII case-insensitive per the HTML spec.
+        let name = name.to_ascii_lowercase();
         let root = doc.base().root_node().id;
-        let ids = doc.dfs(root, |n| is_element_with_tag(n, &name));
+        let ids = doc.dfs(root, |n| name == "*" || is_element_with_tag(n, &name));
         ids.into_iter()
             .filter_map(|id| to_anything(wrap_node(&doc, env, id).ok()?, env).ok())
             .collect()
@@ -154,19 +156,19 @@ impl DocumentLayer {
         Ok(to_anything(wrap_node(&self.shared, env, node_id)?, env)?)
     }
 
-    #[layer]
+    #[layer(getter)]
     fn document_element(&self, env: &Env) -> Option<Anything> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "html"))?;
         to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
     }
 
-    #[layer]
+    #[layer(getter)]
     fn head(&self, env: &Env) -> Option<Anything> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "head"))?;
         to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
     }
 
-    #[layer]
+    #[layer(getter)]
     fn body(&self, env: &Env) -> Option<Anything> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "body"))?;
         to_anything(wrap_node(&self.shared, env, id).ok()?, env).ok()
@@ -182,6 +184,43 @@ impl DocumentLayer {
             .get_node(id)
             .map(|n| n.text_content())
             .unwrap_or_default()
+    }
+
+    /// `document.title = ...` — update the existing `<title>`'s text, or
+    /// create one inside `<head>` when the document has none.
+    #[layer(setter)]
+    fn set_title(&mut self, title: String) {
+        // All lookups borrow the document; run them before `mutate()`.
+        let existing = self.shared.find_first(|n| is_element_with_tag(n, "title"));
+        let head = self.shared.find_first(|n| is_element_with_tag(n, "head"));
+        // `<title>` is an element; its text lives in the Text child.
+        let text_child = existing.and_then(|id| {
+            let state = self.shared.base();
+            let child = state.get_node(id).and_then(|n| n.children.first().copied());
+            child.filter(|&c| state.get_node(c).map(|t| t.is_text_node()).unwrap_or(false))
+        });
+        let mut state = self.shared.base_mut();
+        let mut mutator = state.mutate();
+        match existing {
+            Some(id) => match text_child {
+                Some(c) => mutator.set_node_text(c, &title),
+                None => {
+                    let text_id = mutator.create_text_node(&title);
+                    mutator.append_children(id, &[text_id]);
+                }
+            },
+            None => {
+                if let Some(head) = head {
+                    let title_id = mutator.create_element(make_qual_name("title", None), vec![]);
+                    let text_id = mutator.create_text_node(&title);
+                    mutator.append_children(title_id, &[text_id]);
+                    mutator.append_children(head, &[title_id]);
+                }
+            }
+        }
+        drop(mutator);
+        drop(state);
+        self.shared.mark_host_dirty();
     }
 }
 

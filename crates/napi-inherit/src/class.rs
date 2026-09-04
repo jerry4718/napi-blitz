@@ -8,10 +8,10 @@
 use std::{any::TypeId, ffi::CString, ptr};
 
 use napi::{
-    Env, Error, JsError, JsValue, Property, PropertyAttributes, Result, Status,
+    Env, Error, JsError, JsSymbol, JsValue, Property, PropertyAttributes, Result, Status,
     bindgen_prelude::{
-        FnArgs, FromNapiValue, Function, FunctionCallContext, JsObjectValue, Object, This,
-        ToNapiValue,
+        FnArgs, FromNapiValue, Function, FunctionCallContext, JsObjectValue, Object, ObjectRef,
+        This, ToNapiValue,
     },
     check_status, sys,
 };
@@ -103,6 +103,103 @@ where
         .with_property_attributes(PropertyAttributes::Configurable);
     proto.define_properties(&[prop])?;
     Ok(())
+}
+
+/// A getter keyed by a well-known symbol, so protocol members land on the
+/// prototype.
+pub fn define_symbol_getter<R, F>(
+    env: &Env,
+    proto: &mut Object,
+    description: &str,
+    getter: F,
+) -> Result<()>
+where
+    R: ToNapiValue,
+    F: 'static + Fn(Env, This) -> Result<R>,
+{
+    let sym = wellknown_symbol(env, description)?;
+    let prop = Property::new()
+        .with_name(env, sym)?
+        .with_getter_closure(getter)
+        .with_property_attributes(PropertyAttributes::Configurable);
+    proto.define_properties(&[prop])?;
+    Ok(())
+}
+
+/// `Symbol.iterator` / `Symbol.asyncIterator` as a method returning an
+/// iterator object driven by `next_item(env, this, index)`.
+pub fn define_generator<I, F>(
+    env: &Env,
+    proto: &mut Object,
+    description: &str,
+    next_item: F,
+) -> Result<()>
+where
+    I: ToNapiValue + 'static,
+    F: 'static + Clone + Fn(Env, This, u32) -> Result<Option<I>>,
+{
+    let sym = wellknown_symbol(env, description)?;
+    let iter_fn: Function<'_, (), ObjectRef<false>> = env.create_function_from_closure(
+        "[Symbol.iterator]",
+        move |ctx: FunctionCallContext| -> Result<ObjectRef<false>> {
+            let this: This = ctx.this()?;
+            let set_ref: ObjectRef<false> =
+                unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&this)) }?;
+            let idx = std::rc::Rc::new(std::cell::Cell::new(0u32));
+            let next_item = next_item.clone();
+            let next: Function<'_, (), Object> = ctx.env.create_function_from_closure(
+                "next",
+                move |next_ctx: FunctionCallContext| -> Result<Object> {
+                    let env = next_ctx.env;
+                    let i = idx.get();
+                    let raw = set_ref.get_value(env)?;
+                    let this_obj = raw;
+                    let result = match next_item(env.clone(), this_obj.into(), i)? {
+                        Some(value) => {
+                            idx.set(i + 1);
+                            let mut obj = Object::new(env)?;
+                            obj.set("value", value)?;
+                            obj.set("done", false)?;
+                            obj
+                        }
+                        None => {
+                            let mut obj = Object::new(env)?;
+                            obj.set("done", true)?;
+                            obj
+                        }
+                    };
+                    Ok(result)
+                },
+            )?;
+            let mut iter = Object::new(ctx.env)?;
+            iter.set_named_property("next", next)?;
+            unsafe { ObjectRef::from_napi_value(ctx.env.raw(), JsValue::raw(&iter)) }
+        },
+    )?;
+    let prop = Property::new()
+        .with_name(env, sym)?
+        .with_value(&iter_fn)
+        .with_property_attributes(PropertyAttributes::Writable | PropertyAttributes::Configurable);
+    proto.define_properties(&[prop])?;
+    Ok(())
+}
+
+/// Resolve a well-known symbol by its description through the global
+/// `Symbol` constructor. `get_named_property_unchecked` because the
+/// `Symbol` constructor is a function, not a plain object.
+fn wellknown_symbol<'env>(env: &'env Env, description: &str) -> Result<JsSymbol<'env>> {
+    let global = env.get_global()?;
+    let sym_ctor: Object = global.get_named_property_unchecked("Symbol")?;
+    sym_ctor.get_named_property(description)
+}
+
+/// Build a JS array from an iterator of napi-convertible items.
+fn build_array<'env, I: ToNapiValue>(env: &'env Env, list: Vec<I>) -> Result<Object<'env>> {
+    let mut arr = env.create_array(list.len() as u32)?;
+    for (i, v) in list.into_iter().enumerate() {
+        arr.set(i as u32, v)?;
+    }
+    unsafe { Object::from_napi_value(env.raw(), JsValue::raw(&arr)) }
 }
 
 /// A setter on the prototype (non-enumerable, configurable - WebIDL shape).

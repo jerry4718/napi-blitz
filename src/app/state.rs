@@ -9,10 +9,8 @@ use blitz::{
     shell::{View, WindowConfig},
     traits::shell::DummyShellProvider,
 };
-use napi::{
-    Env, JsDeferred, Result,
-    bindgen_prelude::{ObjectRef, Undefined},
-};
+use napi::Result;
+use napi_helpers::deferred::Deferred;
 use winit::window::WindowId;
 
 use crate::{dom::shared::doc::SharedDocument, renderer::CurrentRenderer, window::WindowState};
@@ -66,14 +64,14 @@ pub(crate) enum PendingRequest {
         /// Shared doc, so the promoted `WindowEntry` can dispatch shell
         /// events to the JS `Window` object.
         shared_doc: Rc<SharedDocument>,
-        deferred: JsDeferred<ObjectRef, Box<dyn FnOnce(Env) -> Result<ObjectRef>>>,
+        deferred: Deferred,
     },
     /// Tear down a requested closure (deferred past in-flight winit dispatch
     /// so `window.close()` is safe from inside a click handler). Resolving
     /// `deferred` fulfils the `Promise` `close_window` returned to JS.
     Close {
         window_id: WindowId,
-        deferred: JsDeferred<Undefined, Box<dyn FnOnce(Env) -> Result<Undefined>>>,
+        deferred: Deferred,
     },
 }
 

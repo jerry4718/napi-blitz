@@ -36,9 +36,11 @@ use blitz::shell::{BlitzShellProxy, EventLoop, create_default_event_loop};
 use napi::{
     Env, Error, Result,
     bindgen_prelude::{FromNapiValue, JsValue, Object, ObjectRef, PromiseRaw, Undefined},
+    check_status, sys,
 };
-use napi_helpers::inherits::{
-    Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own,
+use napi_helpers::{
+    anything::Anything,
+    inherits::{Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own},
 };
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
@@ -78,7 +80,7 @@ impl BlitzAppLayer {
     pub fn create(env: &Env) -> Result<ObjectRef> {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
-        let lifecycle = Rc::new(Lifecycle::new(proxy, receiver));
+        let lifecycle = Rc::new(Lifecycle::new(Env::clone(env), proxy, receiver));
         let app = new_from_chain::<BlitzAppLayer>(
             env,
             layer_chain!(
@@ -89,7 +91,7 @@ impl BlitzAppLayer {
                 },
             ),
         )?;
-        lifecycle.set_app_ref(Env::clone(env), app.clone())?;
+        lifecycle.set_app_ref(app.clone())?;
         let app_ref = unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&app))? };
         Ok(app_ref)
     }
@@ -111,11 +113,17 @@ impl BlitzAppLayer {
         &self,
         env: &Env,
         doc: Object,
-        options: Option<&WindowOptions>,
-    ) -> Result<PromiseRaw<'static, ObjectRef>> {
+        options: Option<Object>,
+    ) -> Result<PromiseRaw<'static, Anything>> {
         let shared_doc = with_own::<DocumentLayer, _>(&doc, |d| d.shared.clone())?;
-        self.lifecycle
-            .open_window(Env::clone(env), shared_doc, options)
+        // The layer trampoline converts borrowed arguments (`&T`) through
+        // napi-rs's native-borrow scope, which it does not set; unwrap the
+        // `WindowOptions` instance to its Rust value directly instead.
+        let options = options
+            .as_ref()
+            .map(|obj| Self::window_options_ref(env, obj))
+            .transpose()?;
+        self.lifecycle.open_window(shared_doc, options)
     }
 
     /// Queue the given window for closure and return a promise that
@@ -169,6 +177,20 @@ impl BlitzAppLayer {
 }
 
 impl BlitzAppLayer {
+    /// Unwrap a `WindowOptions` class instance to its Rust value without
+    /// going through napi-rs's borrowed-argument conversion (which
+    /// requires a native-borrow scope the layer trampoline does not set).
+    fn window_options_ref<'a>(env: &Env, obj: &Object) -> Result<&'a WindowOptions> {
+        let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        check_status!(unsafe { sys::napi_unwrap(env.raw(), obj.raw(), &mut ptr) })?;
+        if ptr.is_null() {
+            return Err(Error::from_reason(
+                "argument is not a WindowOptions instance",
+            ));
+        }
+        Ok(unsafe { &*(ptr as *const WindowOptions) })
+    }
+
     fn poll_live_views(&self) {
         let state = self.lifecycle.state().borrow();
         for entry in state.windows.values() {

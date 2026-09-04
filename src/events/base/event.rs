@@ -202,6 +202,12 @@ impl EventLayer {
         self.state.stop_propagation = true;
     }
 
+    /// `cancelBubble` mirrors whether `stopPropagation()` was called.
+    #[layer(getter)]
+    fn cancel_bubble(&self) -> bool {
+        self.state.stop_propagation
+    }
+
     #[layer]
     fn stop_immediate_propagation(&mut self) {
         self.state.stop_propagation = true;
