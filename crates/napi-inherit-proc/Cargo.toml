@@ -1,6 +1,6 @@
 [package]
 name = "napi-inherit-proc"
-version = "0.2.219"
+version = "0.3.220"
 edition = "2024"
 
 [lib]

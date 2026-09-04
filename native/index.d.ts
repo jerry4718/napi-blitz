@@ -353,6 +353,17 @@ export interface FontFaceDescriptors {
   display?: string
 }
 
+export interface ListenerOps {
+  insertListener: (target: EventTarget, listener: Function | { handleEvent: Function }, spec: ListenerSpec) => boolean
+  deleteListener: (target: EventTarget, listener: Function | { handleEvent: Function }, spec: ListenerSpec) => boolean
+}
+
+export interface ListenerSpec {
+  type: string
+  capture: boolean
+  kind: string
+}
+
 /**
  * `dictionary MessageEventInit : EventInit`.
  * `source` and `ports` are not implemented yet.
@@ -398,6 +409,8 @@ export interface RegisterFontOptions {
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
+
+export declare function setListenerOps(ops: ListenerOps): void
 
 /**
  * Register the JS-side `pumpAppLoop(app, options)` function that runs the
@@ -982,7 +995,12 @@ export declare class WheelEventClass extends MouseEvent {
  */
 export declare class WindowClass extends EventTarget {
   constructor()
-  /** The HTMLDocument painted in this window. */
+  /**
+   * The HTMLDocument painted in this window. Resolved through the
+   * shared document's two-state reference: strong while the window is
+   * live, weak after teardown, so no strong edge is parked on the
+   * window wrapper itself.
+   */
   get document(): HTMLDocument
   /** Whether `close()` has run for this window. */
   get closed(): boolean
