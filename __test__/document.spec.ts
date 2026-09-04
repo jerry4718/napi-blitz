@@ -5,7 +5,7 @@ import test from "ava";
 import {Comment, Element, HTMLDocument, HTMLElement, Node, Text,} from './_shim.ts';
 
 test("HTMLDocument has documentElement / head / body", (t) => {
-  const doc = HTMLDocument.create();
+  const doc: HTMLDocument = HTMLDocument.create();
   t.is(doc.documentElement.tagName, "html");
   t.is(doc.head?.tagName, "head");
   t.is(doc.body?.tagName, "body");
