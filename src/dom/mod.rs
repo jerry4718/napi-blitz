@@ -31,8 +31,10 @@
 //! wrapped in a `RefCell`.
 
 mod dispatch;
+
 mod layers;
 mod shared;
 
+#[allow(unused)]
 pub use layers::*;
 pub use shared::create_document;

@@ -14,7 +14,7 @@
 use std::marker::PhantomData;
 
 use crate::{own::set_own_block, registry::HasClassRef};
-use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, ToNapiValue};
+use napi::bindgen_prelude::{FnArgs, FromNapiValue, JsValuesTupleIntoVec, ToNapiValue};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 /// Compile-time layout of a layer's own data inside the per-instance
@@ -37,7 +37,7 @@ pub trait OwnBlock: 'static {
 /// members it registers on its prototype and constructor.
 pub trait LayerMembers: Sized + 'static {
     /// The parent layer. `RootLayer` terminates the chain.
-    type Parent: OwnBlock + EmitOwn + HasClassRef;
+    type Parent: OwnBlock + EmitOwn + HasClassRef + LayerAccessors;
 
     const CLASS_NAME: &'static str;
 
@@ -108,7 +108,7 @@ impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 /// method, it dispatches the typed arguments, calls `sup`, and hands `env` /
 /// `sup` / `this` to the method (which may be a JS subclass instance).
 pub trait LayerBuild: LayerMembers + Sized + 'static {
-    type Args: LayerArgs;
+    type Args: LayerArgs + FromNapiValue;
 
     fn build<'env>(
         env: &'env Env,
@@ -119,11 +119,11 @@ pub trait LayerBuild: LayerMembers + Sized + 'static {
 
 pub trait LayerComposed: Sized + 'static {
     /// The parent layer. `RootLayer` terminates the chain.
-    type Parent: OwnBlock + EmitOwn + HasClassRef;
+    type Parent: OwnBlock + EmitOwn + HasClassRef + LayerAccessors;
 
     const CLASS_NAME: &'static str;
 
-    type Args: LayerArgs;
+    type Args: LayerArgs + FromNapiValue;
 
     fn build<'env>(
         env: &'env Env,
@@ -205,6 +205,12 @@ impl EmitOwn for RootLayer {
 
 impl OwnBlock for RootLayer {
     const DEPTH: usize = 0;
+}
+
+impl LayerAccessors for RootLayer {
+    fn define_accessors(_env: &Env, _proto: &mut Object) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// A node of the Rust data chain: this layer's own data plus the parent

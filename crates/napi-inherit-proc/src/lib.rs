@@ -880,20 +880,13 @@ fn gen_extend_layer_impl(
     }
 }
 
-/// Mount the built class onto `module.exports` (the replacement for the old
-/// `build_inherit_test_classes`-style object return). `build_class` is
-/// idempotent, and `link_prototype` resolves the parent's handles at build
-/// time, so every ancestor is built first - `.init_array` ctor order is not
-/// guaranteed to follow declaration order.
-fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStream2 {
+/// Mount the built class onto `module.exports`. `build_class` is idempotent
+/// and builds the parent class lazily, so registration order needs no
+/// ancestor handling here - `.init_array` ctor order does not matter.
+fn gen_register(self_ty: &Ident, js_name: &str) -> TokenStream2 {
     let lower = self_ty.to_string().to_lowercase();
     let register_fn = format_ident!("__layer_register_{lower}");
     let export_fn = format_ident!("__layer_export_{lower}");
-    let ancestor_builds = ancestors.iter().map(|ty| {
-        quote! {
-            napi_helpers::inherits::build_class::<#ty>(&env)?;
-        }
-    });
     quote! {
         #[cfg(all(not(test), not(target_family = "wasm")))]
         napi::ctor::declarative::ctor! {
@@ -915,7 +908,6 @@ fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStre
             env: napi::bindgen_prelude::sys::napi_env,
         ) -> napi::bindgen_prelude::Result<napi::bindgen_prelude::sys::napi_value> {
             let env = napi::Env::from(env);
-            #(#ancestor_builds)*
             napi_helpers::inherits::build_class::<#self_ty>(&env)?;
             let (ctor, _) = napi_helpers::inherits::require(&env, std::any::TypeId::of::<#self_ty>())?;
             Ok(napi::bindgen_prelude::JsValue::raw(&ctor))
@@ -926,33 +918,6 @@ fn gen_register(self_ty: &Ident, js_name: &str, ancestors: &[Type]) -> TokenStre
 struct MemberFn {
     kind: MemberKind,
     f: syn::ImplItemFn,
-}
-
-/// Walk the parent chain of `meta` up to the root, returning the ancestor
-/// Rust types ordered from root to parent (self excluded).
-fn ancestor_chain(meta: &LayerMeta) -> Vec<Type> {
-    // Stop at the first unresolvable ancestor. A real build always resolves
-    // (structs expand before impls), so this only guards the IDE's on-demand
-    // expansion: panicking here holds the lock and poisons the registry,
-    // breaking every later expansion.
-    let reg = layer_registry().lock().unwrap();
-    let mut out = vec![];
-    let mut cur = meta.parent_ty.clone();
-    while let Some(ty_str) = cur {
-        let Ok(ty) = syn::parse_str::<Type>(&ty_str) else {
-            break;
-        };
-        let Some(last) = type_last_ident(&ty) else {
-            break;
-        };
-        let Some(pm) = reg.get(&last.to_string()) else {
-            break;
-        };
-        out.push(ty);
-        cur = pm.parent_ty.clone();
-    }
-    out.reverse();
-    out
 }
 
 fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
@@ -1036,7 +1001,6 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     // constructor signature and `LayerBuild::Args`.
     let ts_params: Vec<(Ident, Box<Type>)> = ctor_build.params();
     let full_params_ty: Vec<Box<Type>> = ts_params.iter().map(|(_, t)| t.clone()).collect();
-    let ancestors: Vec<Type> = ancestor_chain(&meta);
     napi_fns.push(member_napi_fn(
         &ctor_f,
         MemberKind::Constructor,
@@ -1097,7 +1061,7 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         &consts,
         ctor_ret_is_result,
     );
-    let register = gen_register(&self_ty, &meta.js_name, &ancestors);
+    let register = gen_register(&self_ty, &meta.js_name);
     Ok(quote! { #i #extend_layer #register })
 }
 

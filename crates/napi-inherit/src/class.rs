@@ -23,14 +23,14 @@ use crate::{
 };
 
 /// Build and register a layer's JS class. Idempotent: repeated calls for an
-/// already-registered class are no-ops.
-pub fn build_class<T: ExtendLayer + LayerAccessors>(env: &Env) -> Result<()>
-where
-    <T as LayerBuild>::Args: FromNapiValue,
-{
+/// already-registered class are no-ops. The parent class is built first
+/// through `ensure_class_built` (`RootLayer` terminates the chain), so the
+/// prototype link below always finds the parent's handles.
+pub fn build_class<T: ExtendLayer + LayerAccessors>(env: &Env) -> Result<()> {
     if registry::contains(TypeId::of::<T>()) {
         return Ok(());
     }
+    <T::Parent as registry::HasClassRef>::ensure_class_built(env)?;
     let mut proto = Object::new(env)?;
     let mut ctor = create_constructor::<T>(env)?;
     T::define_accessors(env, &mut proto)?;
@@ -41,10 +41,7 @@ where
     Ok(())
 }
 
-fn create_constructor<T: ExtendLayer>(env: &Env) -> Result<Object<'_>>
-where
-    <T as LayerBuild>::Args: FromNapiValue,
-{
+fn create_constructor<T: ExtendLayer>(env: &Env) -> Result<Object<'_>> {
     let env_raw = env.raw();
     let mut raw = ptr::null_mut();
     check_status!(unsafe {

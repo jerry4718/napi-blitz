@@ -18,7 +18,8 @@ use napi::{
     bindgen_prelude::{FromNapiValue, Object, ObjectRef},
 };
 
-use crate::layer::{ExtendLayer, RootLayer};
+use crate::class::build_class;
+use crate::layer::{ExtendLayer, LayerAccessors, RootLayer};
 
 /// Resolve a layer's (constructor, prototype) handles. `RootLayer` has no
 /// JS class, so it resolves to `None` - the only `None` there is. Every
@@ -27,6 +28,13 @@ use crate::layer::{ExtendLayer, RootLayer};
 /// the prototype link.
 pub trait HasClassRef {
     fn class_handles(env: &Env) -> Result<Option<(Object<'_>, Object<'_>)>>;
+
+    /// Ensure the class is registered, building it lazily if not. `RootLayer`
+    /// (the chain terminator) is the no-op default; every other layer builds
+    /// itself through `build_class`.
+    fn ensure_class_built(_env: &Env) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl HasClassRef for RootLayer {
@@ -35,9 +43,16 @@ impl HasClassRef for RootLayer {
     }
 }
 
-impl<T: ExtendLayer> HasClassRef for T {
+impl<T: ExtendLayer + LayerAccessors> HasClassRef for T {
     fn class_handles(env: &Env) -> Result<Option<(Object<'_>, Object<'_>)>> {
         require(env, TypeId::of::<T>()).map(Some)
+    }
+
+    fn ensure_class_built(env: &Env) -> Result<()> {
+        if contains(TypeId::of::<T>()) {
+            return Ok(());
+        }
+        build_class::<T>(env)
     }
 }
 
