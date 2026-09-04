@@ -162,6 +162,18 @@ impl EventLayer {
         self.type_.clone()
     }
 
+    /// Mutable access to the dispatch state block, for the Rust-side
+    /// dispatch driver (`napi-blitz-dom`) to set the target /
+    /// currentTarget / phase and read back the outcome flags.
+    pub fn state_mut(&mut self) -> &mut EventState {
+        &mut self.state
+    }
+
+    /// Shared access to the dispatch state block.
+    pub fn state_ref(&self) -> &EventState {
+        &self.state
+    }
+
     /// `event.target` — resolves the target only when read.
     #[layer(getter)]
     fn target(&self, env: &Env) -> Result<Anything> {
@@ -207,6 +219,41 @@ impl EventLayer {
     #[layer]
     fn composed_path(&self) -> Vec<Anything> {
         Vec::new()
+    }
+}
+
+impl EventLayer {
+    /// Fresh own block with default configuration, for Rust-side data-chain
+    /// construction (the parent slot of derived event layers such as `UIEvent`).
+    pub fn fresh() -> Self {
+        Self {
+            type_: String::new(),
+            bubbles: false,
+            cancelable: false,
+            composed: false,
+            time_stamp: 0.0,
+            is_trusted: false,
+            state: EventState::default(),
+        }
+    }
+
+    /// Own block with explicit configuration, for Rust-side data-chain
+    /// construction of dispatched events (`napi-blitz-dom`'s event builder).
+    pub fn with_init(
+        type_: impl Into<String>,
+        bubbles: bool,
+        cancelable: bool,
+        composed: bool,
+    ) -> Self {
+        Self {
+            type_: type_.into(),
+            bubbles,
+            cancelable,
+            composed,
+            time_stamp: 0.0,
+            is_trusted: false,
+            state: EventState::default(),
+        }
     }
 }
 

@@ -8,7 +8,7 @@
 
 use std::{ffi::c_void, ptr};
 
-use crate::helpers::{Finalize, finalize_trampoline};
+use crate::{Finalize, finalize_trampoline};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 /// A weak reference to a JS object.
@@ -16,14 +16,14 @@ use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 /// Created via [`JsWeakRef::new`] with an initial refcount of **0**,
 /// meaning it does not prevent V8 from garbage-collecting the target.
 /// Use [`JsWeakRef::get_value`] to probe whether the object is still alive.
-pub(crate) struct JsWeakRef {
+pub struct JsWeakRef {
     inner: sys::napi_ref,
     env: sys::napi_env,
 }
 
 impl JsWeakRef {
     /// Create a weak reference to `obj`.
-    pub(crate) fn new(obj: &Object, env: &Env) -> Result<Self> {
+    pub fn new(obj: &Object, env: &Env) -> Result<Self> {
         let mut inner = ptr::null_mut();
         check_status!(
             unsafe { sys::napi_create_reference(env.raw(), obj.raw(), 0, &mut inner) },
@@ -37,7 +37,7 @@ impl JsWeakRef {
 
     /// Try to retrieve the JS object. Returns `None` if it has been
     /// garbage-collected.
-    pub(crate) fn get_value<'env>(&self, env: &'env Env) -> Option<Object<'env>> {
+    pub fn get_value<'env>(&self, env: &'env Env) -> Option<Object<'env>> {
         let mut value = ptr::null_mut();
         let status = unsafe { sys::napi_get_reference_value(env.raw(), self.inner, &mut value) };
         if status != sys::Status::napi_ok || value.is_null() {
@@ -48,7 +48,7 @@ impl JsWeakRef {
 
     /// Whether the JS object is still alive (not yet collected).
     #[allow(unused)]
-    pub(crate) fn is_alive(&self, env: &Env) -> bool {
+    pub fn is_alive(&self, env: &Env) -> bool {
         self.get_value(env).is_some()
     }
 
@@ -57,7 +57,7 @@ impl JsWeakRef {
     /// transferred via `Box::into_raw`; the trampoline reclaims it before
     /// calling `finalize`.
     #[allow(unused)]
-    pub(crate) fn add_finalizer<T: Finalize + 'static>(&self, env: &Env, data: T) -> Result<()> {
+    pub fn add_finalizer<T: Finalize + 'static>(&self, env: &Env, data: T) -> Result<()> {
         let obj = self.get_value(env).ok_or_else(|| {
             napi::Error::new(
                 napi::Status::GenericFailure,

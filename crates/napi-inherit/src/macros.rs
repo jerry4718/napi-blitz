@@ -23,9 +23,9 @@
 /// Prefix `..` to start from an already-built chain instead of `()`.
 #[macro_export]
 macro_rules! layer_chain {
-    (.. $base:expr, $($own:expr),+ $(,)?) => {{
+    (.. $base:expr $(, $own:expr)* $(,)?) => {{
         let __layer_chain_acc = $base;
-        $( let __layer_chain_acc = $crate::layer::LayerChain { own: $own, parent: __layer_chain_acc }; )+
+        $( let __layer_chain_acc = $crate::layer::LayerChain { own: $own, parent: __layer_chain_acc }; )*
         __layer_chain_acc
     }};
     ($($own:expr),+ $(,)?) => {{

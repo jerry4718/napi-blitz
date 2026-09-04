@@ -13,6 +13,7 @@
 /// discard_err!(factory_fn.call(args), "call event factory for node {}", node_id);
 /// ```
 #[cfg(not(debug_assertions))]
+#[macro_export]
 macro_rules! discard_err {
     ($result:expr, $($arg:tt)*) => {
         if let Err(e) = $result {
@@ -21,6 +22,7 @@ macro_rules! discard_err {
     };
 }
 #[cfg(debug_assertions)]
+#[macro_export]
 macro_rules! discard_err {
     ($result:expr, $($arg:tt)*) => {
         if let Err(e) = $result {
@@ -28,5 +30,3 @@ macro_rules! discard_err {
         }
     };
 }
-
-pub(crate) use discard_err;

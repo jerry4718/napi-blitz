@@ -16,6 +16,13 @@
 
 pub mod class;
 pub mod layer;
-pub mod macros;
+mod macros;
 pub mod own;
 pub mod registry;
+
+pub use napi_inherit_proc as proc;
+
+pub use class::*;
+pub use layer::*;
+pub use own::*;
+pub use registry::*;

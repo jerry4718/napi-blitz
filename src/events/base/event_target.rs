@@ -48,8 +48,8 @@ pub struct ListenerEntry {
 /// JS value under strict equality. Only the stored side needs
 /// re-materializing from its reference; the incoming value is the current
 /// call's.
-fn same_callback(env: &Env, incoming: sys::napi_value, stored: &OtherRef) -> Result<bool> {
-    let stored = stored.raw_value(env)?;
+unsafe fn same_callback(env: &Env, incoming: sys::napi_value, stored: &OtherRef) -> Result<bool> {
+    let stored = unsafe { stored.raw_value(env)? };
     let mut result = false;
     check_status!(unsafe { sys::napi_strict_equals(env.raw(), incoming, stored, &mut result) })?;
     Ok(result)
@@ -59,6 +59,17 @@ fn same_callback(env: &Env, incoming: sys::napi_value, stored: &OtherRef) -> Res
 #[layer(js_name = "EventTarget")]
 pub struct EventTargetLayer {
     listeners: RefCell<Vec<ListenerEntry>>,
+}
+
+impl EventTargetLayer {
+    /// Fresh own block with an empty listener list, for Rust-side
+    /// data-chain construction (the parent slot of derived layers such as
+    /// a DOM `Node`).
+    pub fn fresh() -> Self {
+        Self {
+            listeners: RefCell::new(Vec::new()),
+        }
+    }
 }
 
 #[layer]
@@ -92,7 +103,7 @@ impl EventTargetLayer {
                 "parameter 2 expected a Function",
             ));
         };
-        let callback_value = callback.raw_value(env)?;
+        let callback_value = unsafe { callback.raw_value(env)? };
 
         let mut capture = false;
         let mut once = false;
@@ -115,7 +126,7 @@ impl EventTargetLayer {
                 continue;
             }
             // Same (type, callback, capture) triple — a duplicate registration.
-            if same_callback(env, callback_value, &l.callback)? {
+            if unsafe { same_callback(env, callback_value, &l.callback) }? {
                 return Ok(());
             }
         }
@@ -150,7 +161,7 @@ impl EventTargetLayer {
                 "parameter 2 expected a Function",
             ));
         };
-        let callback_value = callback.raw_value(env)?;
+        let callback_value = unsafe { callback.raw_value(env)? };
 
         let capture = match options {
             Some(Either::A(o)) => o.capture.unwrap_or(false),
@@ -165,7 +176,7 @@ impl EventTargetLayer {
             !l.removed
                 && l.event_type == event_type
                 && l.capture == capture
-                && same_callback(env, callback_value, &l.callback).unwrap_or(false)
+                && unsafe { same_callback(env, callback_value, &l.callback) }.unwrap_or(false)
         }) else {
             return Ok(());
         };
@@ -179,7 +190,11 @@ impl EventTargetLayer {
     /// listeners, honouring `stopImmediatePropagation`; returns whether the
     /// default was NOT prevented.
     #[layer]
-    fn dispatch_event(&self, env: &Env, event: Object) -> Result<bool> {
+    /// Dispatch a single event to this target's listeners. The event must
+    /// be an `Event`-derived layer instance; the canceled flag is read
+    /// back from its `EventLayer` state. `pub` so the Rust dispatch driver
+    /// (`napi-blitz-dom`) can invoke it directly.
+    pub fn dispatch_event(&self, env: &Env, event: Object) -> Result<bool> {
         let event_type = napi_inherit::own::with_own::<EventLayer, _>(&event, |d| d.type_name())?;
         let event_value = unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&event))? };
 
@@ -205,7 +220,7 @@ impl EventTargetLayer {
             let Some(idx) = next else { break };
             let (once, f) = {
                 let listeners = self.listeners.borrow();
-                let callback = listeners[idx].callback.raw_value(env)?;
+                let callback = unsafe { listeners[idx].callback.raw_value(env)? };
                 (listeners[idx].once, unsafe {
                     Function::<FnArgs<(Anything,)>, Anything>::from_napi_value(env.raw(), callback)?
                 })

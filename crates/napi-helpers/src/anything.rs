@@ -45,7 +45,12 @@ pub struct OtherValue {
 
 impl OtherRef {
     /// Create a strong reference to `value`.
-    pub fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    ///
+    /// # Safety
+    ///
+    /// `env` must be a valid `napi_env` from the current native call, and
+    /// `value` must be a valid JS value belonging to that environment.
+    pub unsafe fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
         let mut inner = ptr::null_mut();
         check_status!(
             unsafe { sys::napi_create_reference(env, value, 1, &mut inner) },
@@ -57,7 +62,11 @@ impl OtherRef {
     }
 
     /// Retrieve the referenced value.
-    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
+    ///
+    /// # Safety
+    ///
+    /// `env` must be the same environment the reference was created with.
+    pub unsafe fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
         let mut value = ptr::null_mut();
         check_status!(
             unsafe { sys::napi_get_reference_value(env.raw(), self.inner.inner, &mut value) },
@@ -111,10 +120,10 @@ impl FromNapiValue for Anything {
             }?)),
             ValueType::Null => Ok(Self::Null),
             ValueType::Undefined => Ok(Self::Undefined),
-            ValueType::Function => Ok(Self::Function(OtherRef::new(env, napi_val)?)),
+            ValueType::Function => Ok(Self::Function(unsafe { OtherRef::new(env, napi_val)? })),
             // Everything else (objects, symbols, ...) is retained
             // by reference so the value survives the call.
-            _ => Ok(Self::Object(OtherRef::new(env, napi_val)?)),
+            _ => Ok(Self::Object(unsafe { OtherRef::new(env, napi_val)? })),
         }
     }
 }
@@ -135,7 +144,7 @@ impl ToNapiValue for Anything {
             }
             Self::Object(r) | Self::Function(r) => {
                 let env = Env::from_raw(env);
-                Ok(r.raw_value(&env)?)
+                Ok(unsafe { r.raw_value(&env)? })
             }
         }
     }

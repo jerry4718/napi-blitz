@@ -9,7 +9,7 @@
 
 use std::{ffi::c_void, ptr};
 
-use crate::helpers::{Finalize, finalize_trampoline};
+use crate::{Finalize, finalize_trampoline};
 use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 
 /// A reference to a JS object whose strength can be switched at runtime.
@@ -19,7 +19,7 @@ use napi::{Env, JsValue, Result, bindgen_prelude::Object, check_status, sys};
 /// - `get_value` retrieves the object if still alive.
 /// - `add_finalizer` attaches a callback that fires when the object is
 ///   collected (only possible while in weak mode).
-pub(crate) struct SwitchableRef {
+pub struct SwitchableRef {
     inner: sys::napi_ref,
     env: sys::napi_env,
     strong: bool,
@@ -29,7 +29,7 @@ impl SwitchableRef {
     /// Create a new reference with the given initial strength.
     ///
     /// `strong = true` -> refcount 1, `strong = false` -> refcount 0.
-    pub(crate) fn new(obj: &Object, env: &Env, strong: bool) -> Result<Self> {
+    pub fn new(obj: &Object, env: &Env, strong: bool) -> Result<Self> {
         let mut inner = ptr::null_mut();
         let initial_count: u32 = if strong { 1 } else { 0 };
         check_status!(
@@ -45,7 +45,7 @@ impl SwitchableRef {
 
     /// Retrieve the JS object. Returns `None` if it has been collected
     /// (only possible in weak mode).
-    pub(crate) fn get_value<'env>(&self, env: &'env Env) -> Option<Object<'env>> {
+    pub fn get_value<'env>(&self, env: &'env Env) -> Option<Object<'env>> {
         let mut value = ptr::null_mut();
         let status = unsafe { sys::napi_get_reference_value(env.raw(), self.inner, &mut value) };
         if status != sys::Status::napi_ok || value.is_null() {
@@ -55,18 +55,18 @@ impl SwitchableRef {
     }
 
     /// Whether the object is still alive.
-    pub(crate) fn is_alive(&self, env: &Env) -> bool {
+    pub fn is_alive(&self, env: &Env) -> bool {
         self.get_value(env).is_some()
     }
 
     /// Whether the reference is currently strong.
     #[allow(unused)]
-    pub(crate) fn is_strong(&self) -> bool {
+    pub fn is_strong(&self) -> bool {
         self.strong
     }
 
     /// Switch to strong (refcount 1). No-op if already strong.
-    pub(crate) fn make_strong(&mut self, env: &Env) -> Result<()> {
+    pub fn make_strong(&mut self, env: &Env) -> Result<()> {
         if self.strong {
             return Ok(());
         }
@@ -80,7 +80,7 @@ impl SwitchableRef {
     }
 
     /// Switch to weak (refcount 0). No-op if already weak.
-    pub(crate) fn make_weak(&mut self, env: &Env) -> Result<()> {
+    pub fn make_weak(&mut self, env: &Env) -> Result<()> {
         if !self.strong {
             return Ok(());
         }
@@ -96,7 +96,7 @@ impl SwitchableRef {
     /// Attach a finalizer to the referenced JS object. When V8 collects
     /// it (only possible while in weak mode), `data.finalize(env)` will
     /// be called.
-    pub(crate) fn add_finalizer<T: Finalize + 'static>(&self, env: &Env, data: T) -> Result<()> {
+    pub fn add_finalizer<T: Finalize + 'static>(&self, env: &Env, data: T) -> Result<()> {
         let obj = self.get_value(env).ok_or_else(|| {
             napi::Error::new(
                 napi::Status::GenericFailure,
