@@ -939,23 +939,30 @@ struct MemberFn {
 /// (Rust type, constructor params) ordered from root to parent (self
 /// excluded).
 fn ancestor_chain(meta: &LayerMeta) -> Vec<(Type, Vec<(Ident, Type)>)> {
+    // Stop at the first unresolvable ancestor. A real build always resolves
+    // (structs expand before impls), so this only guards the IDE's on-demand
+    // expansion: panicking here holds the lock and poisons the registry,
+    // breaking every later expansion.
     let reg = layer_registry().lock().unwrap();
     let mut out = vec![];
     let mut cur = meta.parent_ty.clone();
     while let Some(ty_str) = cur {
-        let ty: Type = syn::parse_str(&ty_str).expect("invalid parent type");
-        let last = type_last_ident(&ty).expect("parent ident").to_string();
-        let pm = reg.get(&last).expect("parent layer not registered");
-        let params = pm
-            .ctor_params
-            .iter()
-            .map(|(n, t)| {
-                (
-                    Ident::new(n, Span::call_site()),
-                    syn::parse_str(t).expect("invalid ctor param type"),
-                )
-            })
-            .collect();
+        let Ok(ty) = syn::parse_str::<Type>(&ty_str) else {
+            break;
+        };
+        let Some(last) = type_last_ident(&ty) else {
+            break;
+        };
+        let Some(pm) = reg.get(&last.to_string()) else {
+            break;
+        };
+        let mut params = vec![];
+        for (n, t) in &pm.ctor_params {
+            let Ok(t) = syn::parse_str::<Type>(t) else {
+                break;
+            };
+            params.push((Ident::new(n, Span::call_site()), t));
+        }
         out.push((ty, params));
         cur = pm.parent_ty.clone();
     }
@@ -965,17 +972,20 @@ fn ancestor_chain(meta: &LayerMeta) -> Vec<(Type, Vec<(Ident, Type)>)> {
 
 fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
     let self_ty = self_ident(&i.self_ty)?;
+    // rustc expands structs before impls, so a real build always finds the
+    // registered struct; the fallback only serves the IDE's on-demand
+    // expansion of an impl in isolation (diagnostic-only, never compiled).
     let meta = layer_registry()
         .lock()
         .unwrap()
         .get(&self_ty.to_string())
         .cloned()
-        .ok_or_else(|| {
-            syn::Error::new_spanned(
-                &i.self_ty,
-                "#[layer] impl must follow the #[layer] struct it implements",
-            )
-        })?;
+        .unwrap_or_else(|| LayerMeta {
+            js_name: self_ty.to_string(),
+            parent_ty: None,
+            fields: vec![],
+            ctor_params: vec![],
+        });
 
     let mut i = i.clone();
     let mut napi_fns = vec![];
