@@ -1,0 +1,11 @@
+[package]
+name = "napi-helpers"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "napi_helpers"
+path = "src/lib.rs"
+
+[dependencies]
+napi = { workspace = true }

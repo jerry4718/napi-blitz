@@ -3,33 +3,28 @@
 //! Only registers its own `detail` accessor (read from the own block).
 //! Event properties are inherited via the prototype chain.
 
-use napi::{Env, Result, bindgen_prelude::Unknown};
+use napi::Result;
+use napi_helpers::any_value::AnyValue;
 use napi_inherit_proc::layer;
 
-use super::{dispatch::StoredValue, event::EventLayer};
-
 /// Own block of the `CustomEvent` class.
-#[layer(js_name = "CustomEvent", parent = EventLayer)]
+#[layer(js_name = "CustomEvent", parent = super::EventLayer)]
 pub struct CustomEventLayer {
-    detail: StoredValue,
+    detail: AnyValue,
 }
 
 #[layer]
 impl CustomEventLayer {
     /// `new CustomEvent(type, detail)`.
     #[layer(constructor)]
-    fn build(env: &Env, detail: Option<Unknown<'static>>) -> Result<Self> {
-        let detail = match detail {
-            None => super::dispatch::null_unknown(env)?,
-            Some(v) => v,
-        };
+    fn build(detail: Option<AnyValue>) -> Result<Self> {
         Ok(Self {
-            detail: StoredValue::from_value(&detail)?,
+            detail: detail.unwrap_or(AnyValue::Null),
         })
     }
 
     #[layer(getter)]
-    fn detail(&self, env: &Env) -> Result<Unknown<'static>> {
-        self.detail.to_value(env)
+    fn detail(&self) -> AnyValue {
+        self.detail.clone()
     }
 }

@@ -8,13 +8,9 @@
 
 use std::cell::RefCell;
 
-use napi::{
-    Env, Result,
-    bindgen_prelude::{Object, Unknown},
-};
+use napi::{Env, Result, bindgen_prelude::Object};
+use napi_helpers::any_value::AnyValue;
 use napi_inherit_proc::layer;
-
-use super::dispatch::{self, StoredValue};
 
 /// A reference to the event's target (or current target).
 ///
@@ -27,11 +23,11 @@ pub enum DispatchTarget {
     /// No target assigned.
     None,
     /// A direct held value.
-    Direct(StoredValue),
+    Direct(AnyValue),
     /// Lazily produces the target; the result is cached after first resolve.
     Callable {
-        callable: Box<dyn Fn(&Env) -> Result<Unknown<'static>>>,
-        cached: RefCell<Option<StoredValue>>,
+        callable: Box<dyn Fn(&Env) -> Result<AnyValue>>,
+        cached: RefCell<Option<AnyValue>>,
     },
 }
 
@@ -43,12 +39,12 @@ impl Default for DispatchTarget {
 
 impl DispatchTarget {
     /// Hold a JS value directly.
-    pub fn from_value(v: Unknown<'_>) -> Result<Self> {
-        Ok(Self::Direct(StoredValue::from_value(&v)?))
+    pub fn from_value(v: AnyValue) -> Self {
+        Self::Direct(v)
     }
 
     /// Resolve lazily via a callable; the produced value is cached.
-    pub fn from_callable(callable: Box<dyn Fn(&Env) -> Result<Unknown<'static>>>) -> Self {
+    pub fn from_callable(callable: Box<dyn Fn(&Env) -> Result<AnyValue>>) -> Self {
         Self::Callable {
             callable,
             cached: RefCell::new(None),
@@ -57,16 +53,16 @@ impl DispatchTarget {
 
     /// Produce the target JS value (null when unset). Resolving a `Callable`
     /// caches its result.
-    pub fn resolve(&self, env: &Env) -> Result<Unknown<'static>> {
+    pub fn resolve(&self, env: &Env) -> Result<AnyValue> {
         match self {
-            Self::None => dispatch::null_unknown(env),
-            Self::Direct(v) => v.to_value(env),
+            Self::None => Ok(AnyValue::Null),
+            Self::Direct(v) => Ok(v.clone()),
             Self::Callable { callable, cached } => {
                 if let Some(c) = cached.borrow().as_ref() {
-                    return c.to_value(env);
+                    return Ok(c.clone());
                 }
                 let v = callable(env)?;
-                *cached.borrow_mut() = Some(StoredValue::from_value(&v)?);
+                *cached.borrow_mut() = Some(v.clone());
                 Ok(v)
             }
         }
@@ -141,13 +137,13 @@ impl EventLayer {
 
     /// `event.target` — resolves the target only when read.
     #[layer(getter)]
-    fn target(&self, env: &Env) -> Result<Unknown<'static>> {
+    fn target(&self, env: &Env) -> Result<AnyValue> {
         self.state.target.resolve(env)
     }
 
     /// `event.currentTarget` — the current receiver during dispatch.
     #[layer(getter)]
-    fn current_target(&self, env: &Env) -> Result<Unknown<'static>> {
+    fn current_target(&self, env: &Env) -> Result<AnyValue> {
         self.state.current_target.resolve(env)
     }
 
@@ -182,7 +178,7 @@ impl EventLayer {
     /// `event.composedPath()`. Placeholder: the dispatch chain is populated
     /// by the dispatch side.
     #[layer]
-    fn composed_path(&self) -> Vec<Unknown<'static>> {
+    fn composed_path(&self) -> Vec<AnyValue> {
         Vec::new()
     }
 }

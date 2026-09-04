@@ -11,5 +11,5 @@
 #[macro_use]
 extern crate napi_derive;
 
-mod proc_chain;
 mod manual_chain;
+mod proc_chain;

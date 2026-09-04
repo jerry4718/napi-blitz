@@ -9,8 +9,9 @@ use std::cell::RefCell;
 
 use napi::{
     Env, Result,
-    bindgen_prelude::{FnArgs, FunctionRef, JsValue, Object, Unknown},
+    bindgen_prelude::{FnArgs, FromNapiValue, FunctionRef, JsValue, Object, Unknown},
 };
+use napi_helpers::any_value::AnyValue;
 use napi_inherit_proc::layer;
 
 use super::event::EventLayer;
@@ -18,7 +19,7 @@ use super::event::EventLayer;
 /// One registered listener.
 pub struct ListenerEntry {
     pub event_type: String,
-    pub callback: FunctionRef<FnArgs<(Unknown<'static>,)>, Unknown<'static>>,
+    pub callback: FunctionRef<FnArgs<(AnyValue,)>, AnyValue>,
     pub capture: bool,
     pub once: bool,
     pub removed: bool,
@@ -45,7 +46,7 @@ impl EventTargetLayer {
         &self,
         env: &Env,
         event_type: String,
-        callback: FunctionRef<FnArgs<(Unknown<'static>,)>, Unknown<'static>>,
+        callback: FunctionRef<FnArgs<(AnyValue,)>, AnyValue>,
         capture: Option<bool>,
     ) -> Result<()> {
         let mut listeners = self.listeners.borrow_mut();
@@ -78,7 +79,7 @@ impl EventTargetLayer {
     fn remove_event_listener(
         &self,
         event_type: String,
-        _callback: FunctionRef<FnArgs<(Unknown<'static>,)>, Unknown<'static>>,
+        _callback: FunctionRef<FnArgs<(AnyValue,)>, AnyValue>,
         capture: Option<bool>,
     ) -> Result<()> {
         let mut listeners = self.listeners.borrow_mut();
@@ -98,8 +99,9 @@ impl EventTargetLayer {
     #[layer]
     fn dispatch_event(&self, env: &Env, event: Object) -> Result<bool> {
         let event_type = napi_inherit::own::with_own::<EventLayer, _>(&event, |d| d.type_name())?;
-
-        let event_unknown = to_unknown(env, &event)?;
+        let event_value = AnyValue::from_unknown(unsafe {
+            Unknown::from_napi_value(env.raw(), JsValue::raw(&event))?
+        })?;
 
         {
             let listeners = self.listeners.borrow();
@@ -114,17 +116,11 @@ impl EventTargetLayer {
                     break;
                 }
                 let f = listener.callback.borrow_back(env)?;
-                let _ = f.call(FnArgs::from((event_unknown.clone(),)));
+                let _ = f.call(FnArgs::from((event_value.clone(),)));
             }
         }
 
         let canceled = napi_inherit::own::with_own::<EventLayer, _>(&event, |d| d.state.canceled)?;
         Ok(!canceled)
     }
-}
-
-/// Convert a JS object to an `Unknown` value (no conversion/ref creation).
-fn to_unknown(env: &Env, obj: &Object) -> Result<Unknown<'static>> {
-    use napi::bindgen_prelude::FromNapiValue;
-    unsafe { Unknown::from_napi_value(env.raw(), JsValue::raw(obj)) }
 }

@@ -111,6 +111,13 @@ test("CustomEvent stores a boolean detail", (t) => {
   t.true(ce.detail);
 });
 
+test("CustomEvent stores a bigint detail", (t) => {
+  const ce = new CustomEvent("boom", 123n);
+  t.is(ce.detail, 123n);
+  const neg = new CustomEvent("boom", -5n);
+  t.is(neg.detail, -5n);
+});
+
 test("CustomEvent stores an object detail", (t) => {
   const obj = { a: 1, b: [2, 3] };
   const ce = new CustomEvent("boom", obj);

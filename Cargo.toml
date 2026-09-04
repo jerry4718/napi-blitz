@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/napi-helpers",
     "crates/napi-inherit",
     "crates/napi-inherit-proc",
     "crates/napi-inherit-test"
@@ -47,6 +48,7 @@ skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_rende
 [dependencies]
 napi = { workspace = true }
 napi-derive = { workspace = true }
+napi-helpers = { workspace = true }
 napi-inherit = { workspace = true }
 napi-inherit-proc = { workspace = true }
 winit = { workspace = true }
@@ -68,6 +70,7 @@ log = { workspace = true }
 [workspace.dependencies]
 napi = { version = "3.12.2", features = ["napi6", "async"] }
 napi-derive = "3.6.3"
+napi-helpers = { path = "crates/napi-helpers" }
 napi-inherit = { path = "crates/napi-inherit" }
 napi-inherit-proc = { path = "crates/napi-inherit-proc" }
 

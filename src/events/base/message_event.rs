@@ -1,14 +1,13 @@
 //! The `MessageEvent` class — inherits from `Event`.
 
-use napi::{Env, Result, bindgen_prelude::Unknown};
+use napi::Result;
+use napi_helpers::any_value::AnyValue;
 use napi_inherit_proc::layer;
 
-use super::{EventLayer, dispatch::StoredValue};
-
 /// Own block of the `MessageEvent` class.
-#[layer(js_name = "MessageEvent", parent = EventLayer)]
+#[layer(js_name = "MessageEvent", parent = super::EventLayer)]
 pub struct MessageEventLayer {
-    data: StoredValue,
+    data: AnyValue,
     origin: String,
 }
 
@@ -16,20 +15,16 @@ pub struct MessageEventLayer {
 impl MessageEventLayer {
     /// `new MessageEvent(type, data, origin)`.
     #[layer(constructor)]
-    fn build(env: &Env, data: Option<Unknown<'static>>, origin: Option<String>) -> Result<Self> {
-        let data = match data {
-            None => super::dispatch::null_unknown(env)?,
-            Some(v) => v,
-        };
+    fn build(data: Option<AnyValue>, origin: Option<String>) -> Result<Self> {
         Ok(Self {
-            data: StoredValue::from_value(&data)?,
+            data: data.unwrap_or(AnyValue::Null),
             origin: origin.unwrap_or_default(),
         })
     }
 
     #[layer(getter)]
-    fn data(&self, env: &Env) -> Result<Unknown<'static>> {
-        self.data.to_value(env)
+    fn data(&self) -> AnyValue {
+        self.data.clone()
     }
 
     #[layer(getter)]

@@ -634,9 +634,9 @@ export declare function registerNodeConstructor(nodeType: number, constructor: {
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
 /** Own block of the `CustomEvent` class. */
 export declare class CustomEvent extends Event {
-  get detail(): unknown
+  get detail(): AnyValue
   /** `new CustomEvent(type, detail)`. */
-  constructor(type: string, detail?: unknown | undefined | null)
+  constructor(type: string, detail?: AnyValue | undefined | null)
 }
 
 /** Own block of the `Event` class. */
@@ -648,9 +648,9 @@ export declare class Event {
   readonly isTrusted: boolean
   get type(): string
   /** `event.target` — resolves the target only when read. */
-  get target(): unknown
+  get target(): AnyValue
   /** `event.currentTarget` — the current receiver during dispatch. */
-  get currentTarget(): unknown
+  get currentTarget(): AnyValue
   get eventPhase(): number
   get defaultPrevented(): boolean
   stopPropagation(): void
@@ -660,7 +660,7 @@ export declare class Event {
    * `event.composedPath()`. Placeholder: the dispatch chain is populated
    * by the dispatch side.
    */
-  composedPath(): Array<unknown>
+  composedPath(): Array<AnyValue>
   /** `new Event(type)`. */
   constructor(type: string)
 }
@@ -668,9 +668,9 @@ export declare class Event {
 /** Own block of the `EventTarget` class. */
 export declare class EventTarget {
   /** `target.addEventListener(type, callback, capture?)`. */
-  addEventListener(eventType: string, callback: (arg0: unknown) => unknown, capture?: boolean | undefined | null): void
+  addEventListener(eventType: string, callback: (arg0: AnyValue) => AnyValue, capture?: boolean | undefined | null): void
   /** `target.removeEventListener(type, callback, capture?)`. */
-  removeEventListener(eventType: string, callback: (arg0: unknown) => unknown, capture?: boolean | undefined | null): void
+  removeEventListener(eventType: string, callback: (arg0: AnyValue) => AnyValue, capture?: boolean | undefined | null): void
   /**
    * `target.dispatchEvent(event) -> boolean`. Invokes the matching
    * listeners, honouring `stopImmediatePropagation`; returns whether the
@@ -682,8 +682,8 @@ export declare class EventTarget {
 
 /** Own block of the `MessageEvent` class. */
 export declare class MessageEvent extends Event {
-  get data(): unknown
+  get data(): AnyValue
   get origin(): string
   /** `new MessageEvent(type, data, origin)`. */
-  constructor(type: string, data?: unknown | undefined | null, origin?: string | undefined | null)
+  constructor(type: string, data?: AnyValue | undefined | null, origin?: string | undefined | null)
 }
