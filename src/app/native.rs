@@ -35,12 +35,12 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use blitz::shell::{BlitzShellProxy, EventLoop, create_default_event_loop};
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{FromNapiValue, JsValue, Object, ObjectRef, PromiseRaw, Undefined},
+    bindgen_prelude::{JsValue, Object, PromiseRaw, Undefined},
     check_status, sys,
 };
 use napi_helpers::{
     anything::Anything,
-    inherits::{Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own},
+    inherits::{Constructed, LayerRef, Super, layer_chain, new_from_chain, proc::layer, with_own},
 };
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
@@ -77,7 +77,7 @@ impl BlitzAppLayer {
     /// Build the winit event loop and register this app as the lifecycle
     /// dispatch target for app-level events (`window:open` and friends).
     #[layer]
-    pub fn create(env: &Env) -> Result<ObjectRef> {
+    pub fn create(env: &Env) -> Result<LayerRef<BlitzAppLayer>> {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         let lifecycle = Rc::new(Lifecycle::new(Env::clone(env), proxy, receiver));
@@ -92,8 +92,7 @@ impl BlitzAppLayer {
             ),
         )?;
         lifecycle.set_app_ref(app)?;
-        let app_ref = unsafe { ObjectRef::from_napi_value(env.raw(), JsValue::raw(&app))? };
-        Ok(app_ref)
+        LayerRef::new(&app, env)
     }
 
     /// Open a new window for an existing `HTMLDocument`.
