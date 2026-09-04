@@ -9,7 +9,7 @@
 
 // 4. Build the node chain by blitz node type + tag name.
 use crate::dom::{
-    DocumentLayer, dispatch::JsEventHandler, shared::node_cache::NodeCache, wrap_node,
+    dispatch::JsEventHandler, fonts::FontFaceSetLayer, shared::node_cache::NodeCache, wrap_node,
 };
 use blitz::{
     dom::{
@@ -20,9 +20,9 @@ use blitz::{
     traits::events::UiEvent,
 };
 use fontique::Blob;
-use napi::{Env, Result, bindgen_prelude::Object};
+use napi::{Env, JsValue, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{JsWeakRef, inherits::with_own};
+use napi_helpers::{JsWeakRef, anything::OtherRef};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     rc::Rc,
@@ -55,6 +55,9 @@ pub struct SharedDocument {
     js_weak: RefCell<Option<JsWeakRef>>,
     /// Weak ref to the JS Window object, for lifecycle dispatch.
     js_window_ref: RefCell<Option<JsWeakRef>>,
+    /// The document's `FontFaceSet`, retained strongly: created at
+    /// document initialization, returned by the `fonts` getter.
+    fonts: RefCell<Option<OtherRef>>,
     /// The napi env captured at document creation; blitz's
     /// `EventHandler` callbacks do not carry an `Env`.
     env: Cell<Option<Env>>,
@@ -71,6 +74,7 @@ impl SharedDocument {
             node_cache: RefCell::new(NodeCache::new()),
             js_weak: RefCell::new(None),
             js_window_ref: RefCell::new(None),
+            fonts: RefCell::new(None),
             env: Cell::new(None),
             attached: Cell::new(false),
         }
@@ -140,6 +144,17 @@ impl SharedDocument {
     /// Read the JS Window object's weak ref.
     pub fn js_window_ref(&self) -> Ref<'_, Option<JsWeakRef>> {
         self.js_window_ref.borrow()
+    }
+
+    /// Retain the document's `FontFaceSet`.
+    pub fn set_fonts(&self, env: &Env, fonts: &Object) -> Result<()> {
+        *self.fonts.borrow_mut() = Some(unsafe { OtherRef::new(env.raw(), JsValue::raw(fonts))? });
+        Ok(())
+    }
+
+    /// The document's `FontFaceSet`, if initialized.
+    pub fn fonts(&self) -> Ref<'_, Option<OtherRef>> {
+        self.fonts.borrow()
     }
 }
 
@@ -326,6 +341,10 @@ pub fn create_document<'env>(
         .register_fonts(Blob::new(Arc::new(BULLET_FONT) as _), None);
     font_ctx.collection.make_shared();
     font_ctx.source_cache.make_shared();
+    // Shared clone for the document's `FontFaceSet`: `make_shared` keeps
+    // both copies on one collection, so faces registered through the set
+    // are visible to the engine's own context.
+    let fonts_ctx = font_ctx.clone();
 
     let ua_stylesheets = config
         .as_ref()
@@ -353,15 +372,9 @@ pub fn create_document<'env>(
     let shared_doc = Rc::new(SharedDocument::new(base));
     shared_doc.set_env(env.clone());
 
+    let fonts = FontFaceSetLayer::init(env, fonts_ctx)?;
+    shared_doc.set_fonts(env, &fonts)?;
+
     let node_id = shared_doc.base().root_node().id;
     wrap_node(&shared_doc, &env, node_id)
-}
-
-/// Register the JS `Window` object for the document, retained weakly, so
-/// the Rust side can dispatch lifecycle events to it. Called from the JS
-/// `Window` constructor.
-#[napi]
-pub fn set_window_ref(env: Env, doc: Object, window: Object) -> Result<()> {
-    let shared_doc = with_own::<DocumentLayer, _>(&doc, |d| d.shared.clone())?;
-    shared_doc.set_window_ref(&env, &window)
 }

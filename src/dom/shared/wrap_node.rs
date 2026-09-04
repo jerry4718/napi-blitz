@@ -3,8 +3,8 @@
 use crate::{
     dom::{
         CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer, HTMLElementLayer,
-        HTMLInputElementLayer, HTMLTextAreaElementLayer, NodeLayer, TextLayer,
-        layers::element::ElementState, shared::doc::SharedDocument,
+        HTMLHtmlElementLayer, HTMLInputElementLayer, HTMLTextAreaElementLayer, NodeLayer,
+        TextLayer, layers::element::ElementState, shared::doc::SharedDocument,
     },
     events::base::EventTargetLayer,
 };
@@ -100,6 +100,16 @@ pub fn wrap_node<'a>(
 
     let js_node = match node_kind {
         NodeKind::Element => match qual_name.map(|qn| qn.local) {
+            Some(local_name!("html")) => from_chain!(
+                (HTMLHtmlElementLayer, env)..base_layer,
+                ElementLayer {
+                    node_id,
+                    shared_doc: shared_doc.clone(),
+                    state: ElementState::default(),
+                },
+                HTMLElementLayer {},
+                HTMLHtmlElementLayer {},
+            )?,
             Some(local_name!("input")) => from_chain!(
                 (HTMLInputElementLayer, env)..base_layer,
                 ElementLayer {

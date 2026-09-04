@@ -8,6 +8,7 @@
 //! └── Node
 //!     ├── Element
 //!     │   └── HTMLElement
+//!     │       ├── HTMLHtmlElement
 //!     │       ├── HTMLInputElement
 //!     │       └── HTMLTextAreaElement
 //!     ├── Text
@@ -33,6 +34,7 @@
 pub mod dispatch;
 pub mod layers;
 pub mod shared;
+pub mod fonts;
 
 pub use layers::*;
 pub use shared::*;
