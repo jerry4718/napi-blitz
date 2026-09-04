@@ -14,7 +14,7 @@
 use std::marker::PhantomData;
 
 use crate::{own::set_own_block, registry::HasClassRef};
-use napi::bindgen_prelude::{FnArgs, FromNapiValue, JsValuesTupleIntoVec, ToNapiValue};
+use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, ToNapiValue};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 /// Compile-time layout of a layer's own data inside the per-instance
@@ -108,7 +108,7 @@ impl_layer_args!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 /// method, it dispatches the typed arguments, calls `sup`, and hands `env` /
 /// `sup` / `this` to the method (which may be a JS subclass instance).
 pub trait LayerBuild: LayerMembers + Sized + 'static {
-    type Args: LayerArgs + FromNapiValue;
+    type Args: LayerArgs;
 
     fn build<'env>(
         env: &'env Env,
@@ -123,7 +123,7 @@ pub trait LayerComposed: Sized + 'static {
 
     const CLASS_NAME: &'static str;
 
-    type Args: LayerArgs + FromNapiValue;
+    type Args: LayerArgs;
 
     fn build<'env>(
         env: &'env Env,

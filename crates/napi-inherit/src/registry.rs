@@ -19,7 +19,7 @@ use napi::{
 };
 
 use crate::class::build_class;
-use crate::layer::{ExtendLayer, LayerAccessors, RootLayer};
+use crate::layer::{ExtendLayer, LayerAccessors, LayerBuild, RootLayer};
 
 /// Resolve a layer's (constructor, prototype) handles. `RootLayer` has no
 /// JS class, so it resolves to `None` - the only `None` there is. Every
@@ -43,7 +43,10 @@ impl HasClassRef for RootLayer {
     }
 }
 
-impl<T: ExtendLayer + LayerAccessors> HasClassRef for T {
+impl<T: ExtendLayer + LayerAccessors> HasClassRef for T
+where
+    <T as LayerBuild>::Args: FromNapiValue,
+{
     fn class_handles(env: &Env) -> Result<Option<(Object<'_>, Object<'_>)>> {
         require(env, TypeId::of::<T>()).map(Some)
     }
