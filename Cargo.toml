@@ -122,14 +122,14 @@ napi-build = "2.4.1"
 # Apply with: cargo build --release (uses [patch.crates-io.git] overrides below)
 # To switch: comment out the path patches above and uncomment the git ones.
 [patch.crates-io]
-blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
-stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "0c89f437834f2a4eb80d0fa4bfa2b2e7159f34aa" }
+blitz = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-dom = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-traits = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-html = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-net = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-paint = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+blitz-shell = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
+stylo_taffy = { git = "https://github.com/jerry4718/blitz.git", rev = "5c28d056ce19baa97c624c8331dc2772a41daada" }
 #taffy = { git = "https://github.com/jerry4718/taffy.git", rev = "4ae4219b34e0ad22fd907cb1a7fa9a68c1ea1621" }
 
 #[patch.crates-io]
