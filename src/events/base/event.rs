@@ -8,14 +8,9 @@
 
 use std::cell::RefCell;
 
-use napi::{
-    Env, Result,
-    bindgen_prelude::{FnArgs, Object},
-};
+use napi::{Env, Result, bindgen_prelude::FnArgs};
 use napi_derive::napi;
-use napi_helpers::inherits::{
-    Constructed, LayerChain, LayerRef, RootLayer, Super, new_from_chain, proc::layer,
-};
+use napi_helpers::inherits::{Constructed, LayerRef, RootLayer, Super, proc::layer};
 
 use crate::events::base::EventTargetLayer;
 
@@ -269,23 +264,4 @@ impl EventLayer {
             state: EventState::default(),
         }
     }
-}
-
-/// Build an `Event` from native data (Rust-side construction, bypassing the
-/// JS `new` path).
-#[allow(dead_code)]
-pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
-    let chain = LayerChain {
-        own: EventLayer {
-            type_: type_.into(),
-            bubbles: false,
-            cancelable: false,
-            composed: false,
-            time_stamp: 0.0,
-            is_trusted: false,
-            state: EventState::default(),
-        },
-        parent: (),
-    };
-    new_from_chain::<EventLayer>(env, chain)
 }

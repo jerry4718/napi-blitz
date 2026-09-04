@@ -11,8 +11,9 @@
 //!     │       ├── HTMLHtmlElement
 //!     │       ├── HTMLInputElement
 //!     │       └── HTMLTextAreaElement
-//!     ├── Text
-//!     ├── Comment
+//!     ├── CharacterData
+//!     │   ├── Text
+//!     │   └── Comment
 //!     └── Document
 //!         └── HTMLDocument
 //!

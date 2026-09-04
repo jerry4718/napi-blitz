@@ -5,7 +5,7 @@
 /// `layer_chain!` assembled from the trailing expressions.
 #[macro_export]
 macro_rules! from_chain {
-    (($for:ty, $env:expr) $($tt:tt)+) => {
+    (($for:ty, $env:expr), $($tt:tt)+) => {
         $crate::new_from_chain::<$for>($env, $crate::layer_chain!($($tt)+))
     };
 }

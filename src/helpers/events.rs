@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
 use napi_helpers::{
     JsWeakRef,
-    inherits::{LayerChain, new_from_chain, with_own},
+    inherits::{from_chain, with_own},
 };
 
 use crate::{
@@ -32,11 +32,10 @@ fn build_event<'env>(
     bubbles: bool,
     cancelable: bool,
 ) -> Result<Object<'env>> {
-    let chain = LayerChain {
-        own: EventLayer::with_init(event_type.to_string(), bubbles, cancelable, false),
-        parent: (),
-    };
-    new_from_chain::<EventLayer>(env, chain)
+    from_chain!(
+        (EventLayer, env),
+        EventLayer::with_init(event_type.to_string(), bubbles, cancelable, false),
+    )
 }
 
 /// Dispatch the event through the receiver's `EventTargetLayer` slot.

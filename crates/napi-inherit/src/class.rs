@@ -81,6 +81,9 @@ pub fn link_prototype<T: ExtendLayer>(env: &Env) -> Result<()> {
 /// `Object.create(proto)` followed by the recursive own-block write,
 /// parent layers first.
 pub fn new_from_chain<T: ExtendLayer>(env: &Env, chain: LayerChain<T>) -> Result<Object<'_>> {
+    // WARNING: calling this with a hand-assembled `LayerChain` hurts
+    // readability. Always prefer the `from_chain!` macro; call this directly
+    // only when the chain must be built programmatically.
     let (_, proto) = registry::require(env, TypeId::of::<T>())?;
     let mut this = object_create(env, &proto)?;
     attach_registry::<T>(&mut this)?;

@@ -2,9 +2,9 @@
 
 use crate::{
     dom::{
-        CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer, HTMLElementLayer,
-        HTMLHtmlElementLayer, HTMLInputElementLayer, HTMLTextAreaElementLayer, NodeLayer,
-        TextLayer, layers::element::ElementState, shared::doc::SharedDocument,
+        CharacterDataLayer, CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer,
+        HTMLElementLayer, HTMLHtmlElementLayer, HTMLInputElementLayer, HTMLTextAreaElementLayer,
+        NodeLayer, TextLayer, layers::element::ElementState, shared::doc::SharedDocument,
     },
     events::base::EventTargetLayer,
 };
@@ -13,7 +13,7 @@ use blitz::{
     traits::NodeId,
 };
 use napi::{Env, Error, Status, bindgen_prelude::Object};
-use napi_helpers::inherits::{from_chain, layer_chain, new_from_chain};
+use napi_helpers::inherits::{from_chain, layer_chain};
 use std::rc::Rc;
 
 /// Return the cached JS wrapper for `node_id`, or build the matching
@@ -81,7 +81,8 @@ pub fn wrap_node<'a>(
             return Ok(existing);
         }
         let document = from_chain!(
-            (HTMLDocumentLayer, env)..base_layer,
+            (HTMLDocumentLayer, env),
+            ..base_layer,
             DocumentLayer {
                 shared: shared_doc.clone()
             },
@@ -101,7 +102,8 @@ pub fn wrap_node<'a>(
     let js_node = match node_kind {
         NodeKind::Element => match qual_name.map(|qn| qn.local) {
             Some(local_name!("html")) => from_chain!(
-                (HTMLHtmlElementLayer, env)..base_layer,
+                (HTMLHtmlElementLayer, env),
+                ..base_layer,
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
@@ -111,7 +113,8 @@ pub fn wrap_node<'a>(
                 HTMLHtmlElementLayer {},
             )?,
             Some(local_name!("input")) => from_chain!(
-                (HTMLInputElementLayer, env)..base_layer,
+                (HTMLInputElementLayer, env),
+                ..base_layer,
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
@@ -124,7 +127,8 @@ pub fn wrap_node<'a>(
                 },
             )?,
             Some(local_name!("textarea")) => from_chain!(
-                (HTMLTextAreaElementLayer, env)..base_layer,
+                (HTMLTextAreaElementLayer, env),
+                ..base_layer,
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
@@ -137,7 +141,8 @@ pub fn wrap_node<'a>(
                 },
             )?,
             _ => from_chain!(
-                (HTMLElementLayer, env)..base_layer,
+                (HTMLElementLayer, env),
+                ..base_layer,
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
@@ -146,19 +151,24 @@ pub fn wrap_node<'a>(
                 HTMLElementLayer {},
             )?,
         },
-        NodeKind::Text => new_from_chain::<TextLayer>(
-            env,
-            layer_chain!(
-                ..base_layer,
-                TextLayer {
-                    node_id,
-                    shared_doc: shared_doc.clone(),
-                }
-            ),
+        NodeKind::Text => from_chain!(
+            (TextLayer, env),
+            ..base_layer,
+            CharacterDataLayer {
+                node_id,
+                shared_doc: shared_doc.clone(),
+            },
+            TextLayer {},
         )?,
-        NodeKind::Comment => {
-            new_from_chain::<CommentLayer>(env, layer_chain!(..base_layer, CommentLayer {}))?
-        }
+        NodeKind::Comment => from_chain!(
+            (CommentLayer, env),
+            ..base_layer,
+            CharacterDataLayer {
+                node_id,
+                shared_doc: shared_doc.clone(),
+            },
+            CommentLayer {},
+        )?,
         _ => {
             return Err(Error::new(
                 Status::GenericFailure,

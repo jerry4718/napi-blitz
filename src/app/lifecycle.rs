@@ -55,7 +55,7 @@ use napi_helpers::{
     anything::Anything,
     deferred::Deferred,
     discard_err,
-    inherits::{LayerRef, layer_chain, new_from_chain},
+    inherits::{LayerRef, from_chain},
 };
 use winit::{event_loop::ActiveEventLoop, window::WindowId};
 
@@ -343,18 +343,16 @@ impl Lifecycle {
                     Some(obj) => LayerRef::new(&obj, &self.env)?,
                     None => return Err(Error::from_reason("document is gone")),
                 };
-                let window_obj = new_from_chain::<WindowLayer>(
-                    &self.env,
-                    layer_chain!(
-                        EventTargetLayer::fresh(),
-                        WindowLayer {
-                            window_id,
-                            state: shared,
-                            shared_doc: Rc::clone(&shared_doc),
-                            lifecycle: Rc::clone(&lifecycle),
-                            document,
-                        },
-                    ),
+                let window_obj = from_chain!(
+                    (WindowLayer, &self.env),
+                    EventTargetLayer::fresh(),
+                    WindowLayer {
+                        window_id,
+                        state: shared,
+                        shared_doc: Rc::clone(&shared_doc),
+                        lifecycle: Rc::clone(&lifecycle),
+                        document,
+                    },
                 )?;
                 shared_doc.set_window_ref(&self.env, &window_obj)?;
                 let value = unsafe {

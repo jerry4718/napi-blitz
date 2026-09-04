@@ -216,6 +216,9 @@ impl LayerAccessors for RootLayer {
 /// A node of the Rust data chain: this layer's own data plus the parent
 /// chain. Values move straight into the own blocks.
 pub struct LayerChain<T: ExtendLayer> {
+    // WARNING: hand-constructing `LayerChain` hurts readability. Always
+    // prefer the `from_chain!` macro; build the chain directly only when it
+    // must be assembled programmatically.
     pub parent: <T::Parent as EmitOwn>::Chain,
     pub own: T,
 }

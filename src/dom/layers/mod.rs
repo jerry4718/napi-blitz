@@ -1,13 +1,14 @@
 //! DOM node layers for the napi runtime, built on `napi-inherit`'s
 //! `#[layer]` macro. The hierarchy mirrors the boa-gui-runtime design:
 //! `EventTarget → Node → Element → HTMLElement → HTMLHtmlElement /
-//! HTMLInputElement / HTMLTextAreaElement`, plus `Text`, `Comment`, and
-//! `Document → HTMLDocument` nodes.
+//! HTMLInputElement / HTMLTextAreaElement`, plus `CharacterData → Text /
+//! Comment`, and `Document → HTMLDocument` nodes.
 
 // Module order matters for the `#[layer]` extends resolution: the parent
 // layer's struct must be expanded before the child's impl (the layer
 // registry is build-order dependent). List parents before their children.
 pub(crate) mod node;
+pub(crate) mod character_data;
 pub(crate) mod comment;
 pub(crate) mod text;
 pub(crate) mod element;
@@ -20,6 +21,7 @@ pub(crate) mod html_document;
 pub(crate) mod style_handler;
 pub(crate) mod attributes_handler;
 
+pub use character_data::CharacterDataLayer;
 pub use comment::CommentLayer;
 pub use document::DocumentLayer;
 pub use element::ElementLayer;

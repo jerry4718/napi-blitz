@@ -55,7 +55,8 @@ pub(crate) fn build_event<'env>(
         | DomEventData::ContextMenu(e)
         | DomEventData::DoubleClick(e) => {
             from_chain!(
-                (PointerEventLayer, env)..base_chain,
+                (PointerEventLayer, env),
+                ..base_chain,
                 MouseEventLayer::from_blitz(e),
                 PointerEventLayer::from_blitz(e),
             )
@@ -68,26 +69,30 @@ pub(crate) fn build_event<'env>(
         | DomEventData::MouseEnter(e)
         | DomEventData::MouseLeave(e) => {
             from_chain!(
-                (MouseEventLayer, env)..base_chain,
+                (MouseEventLayer, env),
+                ..base_chain,
                 MouseEventLayer::from_blitz(e),
             )
         }
         DomEventData::Wheel(e) => {
             from_chain!(
-                (WheelEventLayer, env)..base_chain,
+                (WheelEventLayer, env),
+                ..base_chain,
                 MouseEventLayer::from_blitz_wheel(e),
                 WheelEventLayer::from_blitz(e),
             )
         }
         DomEventData::KeyDown(e) | DomEventData::KeyUp(e) | DomEventData::KeyPress(e) => {
             from_chain!(
-                (KeyboardEventLayer, env)..base_chain,
+                (KeyboardEventLayer, env),
+                ..base_chain,
                 KeyboardEventLayer::from_blitz(e),
             )
         }
         DomEventData::Input(e) => {
             from_chain!(
-                (InputEventLayer, env)..base_chain,
+                (InputEventLayer, env),
+                ..base_chain,
                 InputEventLayer {
                     data: e.value.clone()
                 },
@@ -100,7 +105,8 @@ pub(crate) fn build_event<'env>(
                 _ => String::new(),
             };
             from_chain!(
-                (CompositionEventLayer, env)..base_chain,
+                (CompositionEventLayer, env),
+                ..base_chain,
                 CompositionEventLayer { data },
             )
         }
@@ -109,12 +115,13 @@ pub(crate) fn build_event<'env>(
         | DomEventData::FocusIn(_)
         | DomEventData::FocusOut(_) => {
             from_chain!(
-                (FocusEventLayer, env)..base_chain,
+                (FocusEventLayer, env),
+                ..base_chain,
                 FocusEventLayer {
                     related_target: DispatchTarget::None,
                 },
             )
         }
-        _ => from_chain!((UIEventLayer, env)..base_chain),
+        _ => from_chain!((UIEventLayer, env), ..base_chain),
     }
 }

@@ -423,7 +423,8 @@ impl ElementLayer {
         if let Some(proxy) = self.shared_doc.style_proxy(self.node_id) {
             return Ok(proxy);
         }
-        let handler = from_chain!((StyleHandlerLayer, env)
+        let handler = from_chain!(
+            (StyleHandlerLayer, env),
             StyleHandlerLayer {
                 node_id: self.node_id,
                 shared_doc: Rc::clone(&self.shared_doc),
@@ -442,7 +443,8 @@ impl ElementLayer {
         if let Some(proxy) = self.shared_doc.attributes_proxy(self.node_id) {
             return Ok(proxy);
         }
-        let handler = from_chain!((AttributesHandlerLayer, env)
+        let handler = from_chain!(
+            (AttributesHandlerLayer, env),
             AttributesHandlerLayer {
                 node_id: self.node_id,
                 shared_doc: Rc::clone(&self.shared_doc),

@@ -5,18 +5,27 @@
 
 use std::rc::Rc;
 
-use crate::events::base::EventTargetLayer;
+use crate::{
+    dom::shared::{doc::SharedDocument, wrap_node},
+    events::base::EventTargetLayer,
+};
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
 use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer, with_own};
 
-use crate::dom::shared::{doc::SharedDocument, wrap_node};
-
-const NODE_TYPE_ELEMENT: u32 = 1;
-const NODE_TYPE_TEXT: u32 = 3;
-const NODE_TYPE_COMMENT: u32 = 8;
-const NODE_TYPE_DOCUMENT: u32 = 9;
-const NODE_TYPE_OTHER: u32 = 0;
+#[napi(js_name = "NodeTypes")]
+mod node_types {
+    #[napi]
+    pub const ELEMENT_NODE: u8 = 1;
+    #[napi]
+    pub const TEXT_NODE: u8 = 3;
+    #[napi]
+    pub const COMMENT_NODE: u8 = 8;
+    #[napi]
+    pub const DOCUMENT_NODE: u8 = 9;
+    #[napi]
+    pub const OTHER_NODE: u8 = 0;
+}
 
 /// Own block of the `Node` class.
 #[layer]
@@ -38,17 +47,17 @@ impl NodeLayer {
     }
 
     #[layer(getter)]
-    fn node_type(&self) -> u32 {
+    fn node_type(&self) -> u8 {
         let base = self.shared_doc.base();
         let Some(node) = base.get_node(self.node_id) else {
-            return NODE_TYPE_OTHER;
+            return node_types::OTHER_NODE;
         };
         match &node.data {
-            NodeData::Document(_) => NODE_TYPE_DOCUMENT,
-            NodeData::Element(_) => NODE_TYPE_ELEMENT,
-            NodeData::Text(_) => NODE_TYPE_TEXT,
-            NodeData::Comment { .. } => NODE_TYPE_COMMENT,
-            _ => NODE_TYPE_OTHER,
+            NodeData::Document(_) => node_types::DOCUMENT_NODE,
+            NodeData::Element(_) => node_types::ELEMENT_NODE,
+            NodeData::Text(_) => node_types::TEXT_NODE,
+            NodeData::Comment { .. } => node_types::COMMENT_NODE,
+            _ => node_types::OTHER_NODE,
         }
     }
 

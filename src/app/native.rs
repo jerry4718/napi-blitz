@@ -40,7 +40,7 @@ use napi::{
 };
 use napi_helpers::{
     anything::Anything,
-    inherits::{Constructed, LayerRef, Super, layer_chain, new_from_chain, proc::layer, with_own},
+    inherits::{Constructed, LayerRef, Super, from_chain, proc::layer, with_own},
 };
 use winit::event_loop::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 
@@ -81,15 +81,13 @@ impl BlitzAppLayer {
         let event_loop = create_default_event_loop();
         let (proxy, receiver) = BlitzShellProxy::new(event_loop.create_proxy());
         let lifecycle = Rc::new(Lifecycle::new(Env::clone(env), proxy, receiver));
-        let app = new_from_chain::<BlitzAppLayer>(
-            env,
-            layer_chain!(
-                EventTargetLayer::fresh(),
-                BlitzAppLayer {
-                    event_loop: RefCell::new(event_loop),
-                    lifecycle: Rc::clone(&lifecycle),
-                },
-            ),
+        let app = from_chain!(
+            (BlitzAppLayer, env),
+            EventTargetLayer::fresh(),
+            BlitzAppLayer {
+                event_loop: RefCell::new(event_loop),
+                lifecycle: Rc::clone(&lifecycle),
+            },
         )?;
         lifecycle.set_app_ref(app)?;
         LayerRef::new(&app, env)

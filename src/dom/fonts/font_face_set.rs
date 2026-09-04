@@ -16,7 +16,7 @@ use napi_helpers::{
     Deferred,
     anything::{Anything, OtherRef},
     discard_err,
-    inherits::{Constructed, Super, layer_chain, new_from_chain, proc::layer, with_own},
+    inherits::{Constructed, Super, from_chain, proc::layer, with_own},
 };
 use parley::{
     FontContext,
@@ -246,16 +246,14 @@ impl FontFaceSetLayer {
     /// Build the set for a document (`document.fonts`), its `ready`
     /// promise already resolved to the instance.
     pub(crate) fn init<'env>(env: &'env Env, font_ctx: FontContext) -> Result<Object<'env>> {
-        let set = new_from_chain::<FontFaceSetLayer>(
-            env,
-            layer_chain!(
-                EventTargetLayer::fresh(),
-                FontFaceSetLayer {
-                    font_ctx,
-                    faces: RefCell::new(Vec::new()),
-                    ready_promise: Deferred::new(env)?,
-                },
-            ),
+        let set = from_chain!(
+            (FontFaceSetLayer, env),
+            EventTargetLayer::fresh(),
+            FontFaceSetLayer {
+                font_ctx,
+                faces: RefCell::new(Vec::new()),
+                ready_promise: Deferred::new(env)?,
+            },
         )?;
         let raw = JsValue::raw(&set);
         with_own::<FontFaceSetLayer, _>(&set, |d| {

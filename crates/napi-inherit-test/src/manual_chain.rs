@@ -309,9 +309,18 @@ pub fn build_inherit_test_classes<'env>(env: &'env Env) -> Result<Object<'env>> 
 #[napi]
 pub fn make_inherit_leaf_from_chain<'env>(env: &'env Env) -> Result<Object<'env>> {
     from_chain!(
-        (LeafLayer, env)
-        BaseLayer { base_value: 100, renamed: 42 },
-        MidLayer { mid_value: 200, base_seen_after_super: 100 },
-        LeafLayer { leaf_value: 300, mid_seen_after_super: 200 }
+        (LeafLayer, env),
+        BaseLayer {
+            base_value: 100,
+            renamed: 42
+        },
+        MidLayer {
+            mid_value: 200,
+            base_seen_after_super: 100
+        },
+        LeafLayer {
+            leaf_value: 300,
+            mid_seen_after_super: 200
+        }
     )
 }

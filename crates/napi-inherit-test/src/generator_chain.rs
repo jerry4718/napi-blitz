@@ -55,7 +55,7 @@ impl GenSourceLayer {
 #[napi]
 pub fn make_gen_source<'env>(env: &'env napi::Env) -> Result<Object<'env>> {
     from_chain!(
-        (GenSourceLayer, env)
+        (GenSourceLayer, env),
         GenSourceLayer {
             label: "src".into(),
             items: RefCell::new(vec![10, 20, 30]),
