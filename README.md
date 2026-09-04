@@ -6,6 +6,12 @@ A Node.js native binding for [Blitz](https://github.com/DioxusLabs/blitz), built
 
 [中文文档](./README-zh.md)
 
+Documentation:
+
+- [Basics: the pump loop and threading model](./docs/basic.md)
+- [Events: event classes, dispatch support, and `on<event>` attributes](./docs/events.md)
+- [Future API shapes (unsettled)](./docs/future-api.md)
+
 ## What is this?
 
 `@ylcc/napi-blitz` lets JavaScript create and mutate a Blitz-backed HTML document from Node-compatible runtimes. It is useful for experiments, native UI prototypes, DOM renderer adapters, and testing Blitz layout/event behavior without embedding a browser engine.

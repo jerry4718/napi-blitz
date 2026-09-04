@@ -6,6 +6,12 @@
 
 [English README](./README.md)
 
+文档：
+
+- [基础：Pump 循环与线程模型](./docs/basic-zh.md)
+- [事件：事件类层级、派发支持与 `on<event>` 属性](./docs/events-zh.md)
+- [未来 API 的可能变化形式（未定稿）](./docs/future-api-zh.md)
+
 ## 这是什么？
 
 它允许你在 Node 兼容运行时里创建 Blitz 文档、打开原生窗口，并通过 DOM API 修改界面。适合做原生 UI 实验、DOM renderer 适配、Blitz 布局/事件调试，或不想嵌入完整浏览器引擎的桌面原型。

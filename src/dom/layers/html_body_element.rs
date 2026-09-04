@@ -19,30 +19,34 @@ use crate::{
 };
 
 /// Event handler IDL attributes on `<body>` elements that are aliases for
-/// the corresponding window event handlers.
+/// the corresponding window event handlers. The whole set is NOT
+/// dispatched: each accessor forwards to the window's attribute listener,
+/// and the window lifecycle currently has no source for these events (the
+/// window only receives `close` / `closed` and DOM events that bubble out
+/// of the document, none of which are in this set).
 const WINDOW_REFLECTING_BODY_EVENTS: &[&str] = &[
-    "afterprint",
-    "beforeprint",
-    "beforeunload",
-    "blur",
-    "error",
-    "focus",
-    "hashchange",
-    "languagechange",
-    "load",
-    "message",
-    "messageerror",
-    "offline",
-    "online",
-    "pagehide",
-    "pageshow",
-    "popstate",
-    "rejectionhandled",
-    "resize",
-    "scroll",
-    "storage",
-    "unhandledrejection",
-    "unload",
+    "afterprint",         // NOT dispatched — no window lifecycle source
+    "beforeprint",        // NOT dispatched — no window lifecycle source
+    "beforeunload",       // NOT dispatched — no window lifecycle source
+    "blur",               // NOT dispatched — forwards to window; focus/blur does not bubble
+    "error",              // NOT dispatched — no window lifecycle source
+    "focus",              // NOT dispatched — forwards to window; focus/blur does not bubble
+    "hashchange",         // NOT dispatched — no window lifecycle source
+    "languagechange",     // NOT dispatched — no window lifecycle source
+    "load",               // NOT dispatched — no window lifecycle source
+    "message",            // NOT dispatched — no window lifecycle source
+    "messageerror",       // NOT dispatched — no window lifecycle source
+    "offline",            // NOT dispatched — no window lifecycle source
+    "online",             // NOT dispatched — no window lifecycle source
+    "pagehide",           // NOT dispatched — no window lifecycle source
+    "pageshow",           // NOT dispatched — no window lifecycle source
+    "popstate",           // NOT dispatched — no window lifecycle source
+    "rejectionhandled",   // NOT dispatched — no window lifecycle source
+    "resize",             // NOT dispatched — no window lifecycle source
+    "scroll",             // NOT dispatched — no window lifecycle source (no Scroll event)
+    "storage",            // NOT dispatched — no window lifecycle source
+    "unhandledrejection", // NOT dispatched — no window lifecycle source
+    "unload",             // NOT dispatched — no window lifecycle source
 ];
 
 /// Own block of the `HTMLBodyElement` class.

@@ -401,57 +401,62 @@ pub(crate) fn make_window_document(shared_doc: &Rc<SharedDocument>) -> Box<Windo
 /// Event types for which `on<event>` IDL-style attributes are defined on
 /// the `Window` prototype: the window event handlers plus the interaction
 /// events that bubble out of the document (mirrors
-/// `blitz-vibey-script`'s `WINDOW_EVENT_TYPES`).
+/// `blitz-vibey-script`'s `WINDOW_EVENT_TYPES`). Each entry notes whether
+/// the current runtime dispatches events of that type to the window.
 const WINDOW_EVENT_TYPES: &[&str] = &[
-    "afterprint",
-    "beforeprint",
-    "beforeunload",
-    "blur",
-    "error",
-    "focus",
-    "hashchange",
-    "languagechange",
-    "load",
-    "message",
-    "messageerror",
-    "offline",
-    "online",
-    "pagehide",
-    "pageshow",
-    "popstate",
-    "rejectionhandled",
-    "resize",
-    "scroll",
-    "storage",
-    "unhandledrejection",
-    "unload",
-    "click",
-    "dblclick",
-    "contextmenu",
-    "mousedown",
-    "mouseup",
-    "mousemove",
-    "mouseover",
-    "mouseout",
-    "pointerdown",
-    "pointerup",
-    "pointermove",
-    "pointercancel",
-    "pointerover",
-    "pointerout",
-    "touchstart",
-    "touchmove",
-    "touchend",
-    "touchcancel",
-    "keydown",
-    "keyup",
-    "keypress",
-    "input",
-    "change",
-    "focusin",
-    "focusout",
-    "submit",
-    "wheel",
+    "afterprint",         // NOT dispatched — no window lifecycle source
+    "beforeprint",        // NOT dispatched — no window lifecycle source
+    "beforeunload",       // NOT dispatched — no window lifecycle source
+    "blur",               // NOT dispatched — focus/blur does not bubble to the window
+    "error",              // NOT dispatched — no window lifecycle source
+    "focus",              // NOT dispatched — focus/blur does not bubble to the window
+    "hashchange",         // NOT dispatched — no window lifecycle source
+    "languagechange",     // NOT dispatched — no window lifecycle source
+    "load",               // NOT dispatched — no window lifecycle source
+    "message",            // NOT dispatched — no window lifecycle source
+    "messageerror",       // NOT dispatched — no window lifecycle source
+    "offline",            // NOT dispatched — no window lifecycle source
+    "online",             // NOT dispatched — no window lifecycle source
+    "pagehide",           // NOT dispatched — no window lifecycle source
+    "pageshow",           // NOT dispatched — no window lifecycle source
+    "popstate",           // NOT dispatched — no window lifecycle source
+    "rejectionhandled",   // NOT dispatched — no window lifecycle source
+    "resize",             // NOT dispatched — no window lifecycle source
+    "scroll",             // NOT dispatched — no window lifecycle source (no Scroll event)
+    "storage",            // NOT dispatched — no window lifecycle source
+    "unhandledrejection", // NOT dispatched — no window lifecycle source
+    "unload",             // NOT dispatched — no window lifecycle source
+    "click",              // dispatched — bubbles out of the document
+    "dblclick",           // dispatched — bubbles out of the document
+    "contextmenu",        // dispatched — bubbles out of the document
+    "mousedown",          // dispatched — bubbles out of the document
+    "mouseup",            // dispatched — bubbles out of the document
+    "mousemove",          // dispatched — bubbles out of the document
+    "mouseenter",         // NOT dispatched — non-bubbling hover event stays on the chain
+    "mouseleave",         // NOT dispatched — non-bubbling hover event stays on the chain
+    "mouseover",          // dispatched — bubbles out of the document
+    "mouseout",           // dispatched — bubbles out of the document
+    "pointerdown",        // dispatched — bubbles out of the document
+    "pointerup",          // dispatched — bubbles out of the document
+    "pointermove",        // dispatched — bubbles out of the document
+    "pointercancel",      // dispatched — bubbles out of the document
+    "pointerenter",       // NOT dispatched — non-bubbling hover event stays on the chain
+    "pointerleave",       // NOT dispatched — non-bubbling hover event stays on the chain
+    "pointerover",        // dispatched — bubbles out of the document
+    "pointerout",         // dispatched — bubbles out of the document
+    "touchstart",         // dispatched — pointer synthesis, bubbles out of the document
+    "touchmove",          // dispatched — pointer synthesis, bubbles out of the document
+    "touchend",           // dispatched — pointer synthesis, bubbles out of the document
+    "touchcancel",        // dispatched — pointer synthesis, bubbles out of the document
+    "keydown",            // dispatched — bubbles out of the document
+    "keyup",              // dispatched — bubbles out of the document
+    "keypress",           // NOT dispatched — no KeyPress source
+    "input",              // dispatched — bubbles out of the document
+    "change",             // NOT dispatched — no Change source
+    "focusin",            // dispatched — bubbles out of the document
+    "focusout",           // dispatched — bubbles out of the document
+    "submit",             // NOT dispatched — no form submit source
+    "wheel",              // dispatched — bubbles out of the document
 ];
 
 /// Define the `on<event>` IDL-style attributes on `Window.prototype`. The

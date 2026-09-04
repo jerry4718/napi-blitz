@@ -327,42 +327,44 @@ impl NodeLayer {
 
 /// Event types for which `on<event>` IDL-style attributes are defined on
 /// the node prototype (mirrors `blitz-vibey-script`'s `ON_EVENT_TYPES`).
+/// Each entry notes whether the engine currently dispatches events of that
+/// type to the node.
 const ON_EVENT_TYPES: &[&str] = &[
-    "click",
-    "dblclick",
-    "contextmenu",
-    "mousedown",
-    "mouseup",
-    "mousemove",
-    "mouseenter",
-    "mouseleave",
-    "mouseover",
-    "mouseout",
-    "pointerdown",
-    "pointerup",
-    "pointermove",
-    "pointercancel",
-    "pointerenter",
-    "pointerleave",
-    "pointerover",
-    "pointerout",
-    "touchstart",
-    "touchmove",
-    "touchend",
-    "touchcancel",
-    "keydown",
-    "keyup",
-    "keypress",
-    "input",
-    "change",
-    "focus",
-    "blur",
-    "focusin",
-    "focusout",
-    "submit",
-    "scroll",
-    "wheel",
-    "load",
+    "click",         // dispatched — pointer synthesis
+    "dblclick",      // dispatched — pointer synthesis
+    "contextmenu",   // dispatched — pointer synthesis
+    "mousedown",     // dispatched — pointer synthesis
+    "mouseup",       // dispatched — pointer synthesis
+    "mousemove",     // dispatched — pointer move
+    "mouseenter",    // dispatched — hover chain entry
+    "mouseleave",    // dispatched — hover chain exit
+    "mouseover",     // dispatched — hover chain
+    "mouseout",      // dispatched — hover chain
+    "pointerdown",   // dispatched — ui event
+    "pointerup",     // dispatched — ui event
+    "pointermove",   // dispatched — ui event
+    "pointercancel", // dispatched — ui event
+    "pointerenter",  // dispatched — hover chain entry
+    "pointerleave",  // dispatched — hover chain exit
+    "pointerover",   // dispatched — hover chain
+    "pointerout",    // dispatched — hover chain
+    "touchstart",    // dispatched — pointer synthesis for finger/pen
+    "touchmove",     // dispatched — pointer synthesis for finger/pen
+    "touchend",      // dispatched — pointer synthesis for finger/pen
+    "touchcancel",   // dispatched — pointer synthesis for finger/pen
+    "keydown",       // dispatched — ui event
+    "keyup",         // dispatched — ui event
+    "keypress", // NOT dispatched — no KeyPress source; the engine emits keydown/keyup and input
+    "input",    // dispatched — text input
+    "change",   // NOT dispatched — no Change source
+    "focus",    // dispatched — focus change
+    "blur",     // dispatched — focus change
+    "focusin",  // dispatched — focus change
+    "focusout", // dispatched — focus change
+    "submit",   // NOT dispatched — no form submit source
+    "scroll",   // NOT dispatched — scrolling does not emit a Scroll event
+    "wheel",    // dispatched — ui event
+    "load",     // NOT dispatched — no document load source
 ];
 
 /// Define the `on<event>` IDL-style attributes on `Node.prototype`. Called
