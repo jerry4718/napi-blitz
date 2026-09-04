@@ -5,8 +5,10 @@
 
 use std::cell::RefCell;
 
-use napi::bindgen_prelude::{FnArgs, Object};
-use napi::{Error, Result};
+use napi::{
+    Error, Result,
+    bindgen_prelude::{FnArgs, Object},
+};
 use napi_derive::napi;
 
 use napi_helpers::inherits::{Constructed, RootLayer, Super, from_chain, proc::layer};

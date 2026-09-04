@@ -35,8 +35,10 @@ use napi::{
     Env, Error, Result,
     bindgen_prelude::{BigInt, Object, PromiseRaw, Uint8Array, Undefined},
 };
-use napi_helpers::discard_err;
-use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
+use napi_helpers::{
+    discard_err,
+    inherits::{Constructed, LayerRef, Super, proc::layer},
+};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
