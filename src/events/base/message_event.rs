@@ -1,7 +1,9 @@
 //! The `MessageEvent` class — inherits from `Event`.
 
 use napi::Result;
+use napi::bindgen_prelude::FnArgs;
 use napi_helpers::any_value::AnyValue;
+use napi_inherit::layer::{Constructed, Super};
 use napi_inherit_proc::layer;
 
 /// Own block of the `MessageEvent` class.
@@ -15,11 +17,20 @@ pub struct MessageEventLayer {
 impl MessageEventLayer {
     /// `new MessageEvent(type, data, origin)`.
     #[layer(constructor)]
-    fn build(data: Option<AnyValue>, origin: Option<String>) -> Result<Self> {
-        Ok(Self {
-            data: data.unwrap_or(AnyValue::Null),
-            origin: origin.unwrap_or_default(),
-        })
+    fn build(
+        type_: String,
+        data: Option<AnyValue>,
+        origin: Option<String>,
+        sup: Super<crate::event::EventLayer>,
+    ) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from((type_,)))?;
+        Ok(Constructed::new(
+            done,
+            Self {
+                data: data.unwrap_or(AnyValue::Null),
+                origin: origin.unwrap_or_default(),
+            },
+        ))
     }
 
     #[layer(getter)]

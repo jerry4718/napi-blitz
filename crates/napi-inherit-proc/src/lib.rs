@@ -95,11 +95,6 @@ struct LayerMeta {
     js_name: String,
     parent_ty: Option<String>,
     fields: Vec<FieldMeta>,
-    /// Constructor parameters of this layer, in declaration order. Filled in
-    /// by the impl expansion so later layers can concatenate the chain's
-    /// full TypeScript constructor signature and compute their own parameter
-    /// offset into the JS argument list.
-    ctor_params: Vec<(String, String)>,
 }
 
 static LAYER_REGISTRY: OnceLock<Mutex<HashMap<String, LayerMeta>>> = OnceLock::new();
@@ -375,18 +370,35 @@ fn build_class_def(s: &ItemStruct, js_name: &str, fields: &[FieldMeta]) -> NapiS
 /// bound as the optional `env` and `this` (the instance, which may be a JS
 /// subclass instance); the remaining parameters are this layer's constructor
 /// args - typed.
+/// One entry of the `#[layer(constructor)]` build signature: a real
+/// constructor parameter (ancestor's or this layer's own, in argument
+/// order), or one of the injected handles (`env`, `sup`).
+enum BuildArg {
+    Param(Ident, Type),
+    Env,
+    Sup,
+}
+
 struct BuildParams {
-    has_env: bool,
-    has_this: bool,
-    params: Vec<(Ident, Type)>,
+    /// The full signature in order, injected handles included.
+    args: Vec<BuildArg>,
+}
+
+impl BuildParams {
+    /// The real constructor parameters, injected handles removed.
+    fn params(&self) -> Vec<(Ident, Type)> {
+        self.args
+            .iter()
+            .filter_map(|a| match a {
+                BuildArg::Param(id, ty) => Some((id.clone(), ty.clone())),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
-    let mut out = BuildParams {
-        has_env: false,
-        has_this: false,
-        params: vec![],
-    };
+    let mut args = vec![];
     for a in &f.sig.inputs {
         let FnArg::Typed(pat) = a else { continue };
         let is = |expected: &str| {
@@ -395,18 +407,18 @@ fn analyze_build(f: &syn::ImplItemFn) -> BuildParams {
                 .unwrap_or(false)
         };
         if is("Env") {
-            out.has_env = true;
-        } else if is("Object") {
-            out.has_this = true;
+            args.push(BuildArg::Env);
+        } else if is("Super") {
+            args.push(BuildArg::Sup);
         } else {
             let name = match &*pat.pat {
                 syn::Pat::Ident(pi) => pi.ident.clone(),
-                _ => format_ident!("p{}", out.params.len()),
+                _ => format_ident!("p{}", args.len()),
             };
-            out.params.push((name, (*pat.ty).clone()));
+            args.push(BuildArg::Param(name, (*pat.ty).clone()));
         }
     }
-    out
+    BuildParams { args }
 }
 
 fn member_napi_fn(
@@ -545,7 +557,6 @@ fn expand_struct(s: &ItemStruct, attrs: &LayerAttrs) -> syn::Result<TokenStream2
                 .as_ref()
                 .map(|t| t.to_token_stream().to_string()),
             fields,
-            ctor_params: vec![],
         },
     );
     if let Some(parent) = &parent_js {
@@ -771,7 +782,7 @@ fn gen_extend_layer_impl(
     parent_ty: &Option<Type>,
     ctor_name: &Ident,
     build: &BuildParams,
-    arg_offset: usize,
+    full_params_ty: &[Type],
     fields: &[FieldMember],
     members: &[MemberFn],
     consts: &[(String, syn::Expr)],
@@ -808,48 +819,51 @@ fn gen_extend_layer_impl(
             napi_inherit::class::define_static_value(env, ctor, #cname, #cexpr)?;
         }
     });
-    // This layer's typed parameters are the `args[arg_offset..]` slice of the
-    // JS argument list; the ancestors (already built via `sup.call`) resolve
-    // their own prefix. `env` / `this` are forwarded only if the user's build
-    // declared them.
-    //
-    // A parameter whose type is `Option<...>` is allowed to be absent: the
-    // bound falls back to `None` when the argument is missing (the argument
-    // list is short), otherwise it is parsed as usual (which maps JS
-    // null/undefined to `None` too).
-    let arg_parses = build.params.iter().enumerate().map(|(i, (_, ty))| {
-        let bind = format_ident!("p{}", i);
-        let idx = arg_offset + i;
-        let is_option = type_last_ident(ty)
-            .map(|i| i.to_string() == "Option")
-            .unwrap_or(false);
-        if is_option {
-            quote! {
-                let #bind: #ty = if #idx < args.len() {
-                    napi_inherit::own::arg_from_napi(env, args, #idx)?
-                } else {
-                    None
-                };
-            }
-        } else {
-            quote! { let #bind: #ty = napi_inherit::own::arg_from_napi(env, args, #idx)?; }
+    // The full argument tuple comes straight from the build signature's real
+    // parameters (ancestors' first). The generated `build` only destructures
+    // it and forwards to the user's build, which receives the injected
+    // `env` / `sup` handles and drives `sup.call` itself.
+    let total = full_params_ty.len();
+    let binds: Vec<Ident> = (0..total).map(|i| format_ident!("p{}", i)).collect();
+    let args_tuple_ty = match total {
+        0 => quote! { () },
+        1 => {
+            let t = &full_params_ty[0];
+            quote! { (#t,) }
         }
-    });
-    let mut user_args: Vec<TokenStream2> = vec![];
-    if build.has_env {
-        user_args.push(quote! { env });
-    }
-    if build.has_this {
-        user_args.push(quote! { this });
-    }
-    for i in 0..build.params.len() {
-        let bind = format_ident!("p{}", i);
-        user_args.push(quote! { #bind });
+        _ => quote! { ( #(#full_params_ty),* ) },
+    };
+    let destructure = match total {
+        0 => quote! { let _ = args.data; },
+        1 => {
+            let b = &binds[0];
+            quote! { let ( #b, ) = args.data; }
+        }
+        _ => quote! { let ( #(#binds),* ) = args.data; },
+    };
+    let has_env = build.args.iter().any(|a| matches!(a, BuildArg::Env));
+    let env_param = if has_env {
+        quote! { env: &'env napi::Env }
+    } else {
+        quote! { _env: &'env napi::Env }
+    };
+    let mut forward: Vec<TokenStream2> = vec![];
+    let mut pidx = 0usize;
+    for a in &build.args {
+        match a {
+            BuildArg::Env => forward.push(quote! { env }),
+            BuildArg::Sup => forward.push(quote! { sup }),
+            BuildArg::Param(_, _) => {
+                let b = &binds[pidx];
+                forward.push(quote! { #b });
+                pidx += 1;
+            }
+        }
     }
     let ctor_call = if ctor_ret_is_result {
-        quote! { #self_ty::#ctor_name(#(#user_args),*)? }
+        quote! { #self_ty::#ctor_name(#(#forward),*) }
     } else {
-        quote! { #self_ty::#ctor_name(#(#user_args),*) }
+        quote! { Ok(#self_ty::#ctor_name(#(#forward),*)) }
     };
     quote! {
         impl napi_inherit::layer::LayerDef for #self_ty {
@@ -870,18 +884,15 @@ fn gen_extend_layer_impl(
         }
 
         impl napi_inherit::layer::LayerBuild for #self_ty {
+            type Args = #args_tuple_ty;
+
             fn build<'env>(
-                env: &'env napi::Env,
-                args: &[napi::bindgen_prelude::Unknown<'env>],
+                #env_param,
+                args: napi::bindgen_prelude::FnArgs<Self::Args>,
                 sup: napi_inherit::layer::Super<'_, 'env, Self::Parent>,
             ) -> napi::Result<napi_inherit::layer::Constructed<Self>> {
-                #(#arg_parses)*
-                let done = sup.call(args)?;
-                let this = done.this();
-                Ok(napi_inherit::layer::Constructed::new(
-                    done,
-                    #ctor_call,
-                ))
+                #destructure
+                #ctor_call
             }
         }
     }
@@ -935,10 +946,9 @@ struct MemberFn {
     f: syn::ImplItemFn,
 }
 
-/// Walk the parent chain of `meta` up to the root, returning per-ancestor
-/// (Rust type, constructor params) ordered from root to parent (self
-/// excluded).
-fn ancestor_chain(meta: &LayerMeta) -> Vec<(Type, Vec<(Ident, Type)>)> {
+/// Walk the parent chain of `meta` up to the root, returning the ancestor
+/// Rust types ordered from root to parent (self excluded).
+fn ancestor_chain(meta: &LayerMeta) -> Vec<Type> {
     // Stop at the first unresolvable ancestor. A real build always resolves
     // (structs expand before impls), so this only guards the IDE's on-demand
     // expansion: panicking here holds the lock and poisons the registry,
@@ -956,14 +966,7 @@ fn ancestor_chain(meta: &LayerMeta) -> Vec<(Type, Vec<(Ident, Type)>)> {
         let Some(pm) = reg.get(&last.to_string()) else {
             break;
         };
-        let mut params = vec![];
-        for (n, t) in &pm.ctor_params {
-            let Ok(t) = syn::parse_str::<Type>(t) else {
-                break;
-            };
-            params.push((Ident::new(n, Span::call_site()), t));
-        }
-        out.push((ty, params));
+        out.push(ty);
         cur = pm.parent_ty.clone();
     }
     out.reverse();
@@ -984,7 +987,6 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
             js_name: self_ty.to_string(),
             parent_ty: None,
             fields: vec![],
-            ctor_params: vec![],
         });
 
     let mut i = i.clone();
@@ -1031,34 +1033,12 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         )
     })?;
 
-    // Publish this layer's constructor params so child layers can build the
-    // concatenated chain signature and compute their argument offset.
-    {
-        let mut reg = layer_registry().lock().unwrap();
-        if let Some(m) = reg.get_mut(&self_ty.to_string()) {
-            m.ctor_params = ctor_build
-                .params
-                .iter()
-                .map(|(n, t)| (n.to_string(), t.to_token_stream().to_string()))
-                .collect();
-        }
-    }
-
-    let ancestors_data = ancestor_chain(&meta);
-    let ancestors: Vec<Type> = ancestors_data.iter().map(|(t, _)| t.clone()).collect();
-    let ancestor_params: Vec<(Ident, Type)> = ancestors_data
-        .iter()
-        .flat_map(|(_, p)| p.iter().cloned())
-        .collect();
-    // The TypeScript constructor signature is the whole chain's params,
-    // root-first; the JS argument list has the same layout, so this layer's
-    // own params start at `ancestor_params.len()`.
-    let ts_params: Vec<(Ident, Type)> = ancestor_params
-        .iter()
-        .cloned()
-        .chain(ctor_build.params.clone())
-        .collect();
-    let arg_offset = ancestor_params.len();
+    // The build signature's real parameters are the whole chain's
+    // constructor arguments, ancestors' first. They feed both the TS
+    // constructor signature and `LayerBuild::Args`.
+    let ts_params: Vec<(Ident, Type)> = ctor_build.params();
+    let full_params_ty: Vec<Type> = ts_params.iter().map(|(_, t)| t.clone()).collect();
+    let ancestors: Vec<Type> = ancestor_chain(&meta);
     napi_fns.push(member_napi_fn(
         &ctor_f,
         MemberKind::Constructor,
@@ -1115,7 +1095,7 @@ fn expand_impl(i: &ItemImpl) -> syn::Result<TokenStream2> {
         &parent_ty,
         &ctor_name_of(&ctor_f),
         &ctor_build,
-        arg_offset,
+        &full_params_ty,
         &fields,
         &members,
         &consts,

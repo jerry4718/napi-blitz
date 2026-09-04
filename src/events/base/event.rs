@@ -8,8 +8,12 @@
 
 use std::cell::RefCell;
 
-use napi::{Env, Result, bindgen_prelude::Object};
+use napi::{
+    Env, Result,
+    bindgen_prelude::{FnArgs, Object},
+};
 use napi_helpers::any_value::AnyValue;
+use napi_inherit::layer::{Constructed, RootLayer, Super};
 use napi_inherit_proc::layer;
 
 /// A reference to the event's target (or current target).
@@ -113,16 +117,20 @@ impl EventLayer {
 
     /// `new Event(type)`.
     #[layer(constructor)]
-    fn build(type_: String) -> Self {
-        Self {
-            type_,
-            bubbles: false,
-            cancelable: false,
-            composed: false,
-            time_stamp: 0.0,
-            is_trusted: false,
-            state: EventState::default(),
-        }
+    fn build(type_: String, sup: Super<RootLayer>) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from(()))?;
+        Ok(Constructed::new(
+            done,
+            Self {
+                type_,
+                bubbles: false,
+                cancelable: false,
+                composed: false,
+                time_stamp: 0.0,
+                is_trusted: false,
+                state: EventState::default(),
+            },
+        ))
     }
 
     #[layer(getter)]
@@ -188,7 +196,15 @@ impl EventLayer {
 pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
     use napi_inherit::layer::LayerChain;
     let chain = LayerChain {
-        own: EventLayer::build(type_.into()),
+        own: EventLayer {
+            type_: type_.into(),
+            bubbles: false,
+            cancelable: false,
+            composed: false,
+            time_stamp: 0.0,
+            is_trusted: false,
+            state: EventState::default(),
+        },
         parent: (),
     };
     napi_inherit::class::new_from_chain::<EventLayer>(env, chain)

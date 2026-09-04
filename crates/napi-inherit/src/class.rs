@@ -11,20 +11,23 @@ use napi::{
     Env, Error, JsError, JsValue, Property, PropertyAttributes, Result, Status,
     bindgen_prelude::{
         FnArgs, FromNapiValue, Function, FunctionCallContext, JsObjectValue, Object, This,
-        ToNapiValue, TupleFromSliceValues,
+        ToNapiValue,
     },
     check_status, sys,
 };
 
 use crate::{
-    layer::{EmitOwn, ExtendLayer, LayerChain},
+    layer::{EmitOwn, ExtendLayer, LayerBuild, LayerChain},
     own::attach_registry,
     registry,
 };
 
 /// Build and register a layer's JS class. Idempotent: repeated calls for an
 /// already-registered class are no-ops.
-pub fn build_class<T: ExtendLayer>(env: &Env) -> Result<()> {
+pub fn build_class<T: ExtendLayer>(env: &Env) -> Result<()>
+where
+    <T as LayerBuild>::Args: FromNapiValue,
+{
     if registry::contains(TypeId::of::<T>()) {
         return Ok(());
     }
@@ -37,7 +40,10 @@ pub fn build_class<T: ExtendLayer>(env: &Env) -> Result<()> {
     Ok(())
 }
 
-fn create_constructor<T: ExtendLayer>(env: &Env) -> Result<Object<'_>> {
+fn create_constructor<T: ExtendLayer>(env: &Env) -> Result<Object<'_>>
+where
+    <T as LayerBuild>::Args: FromNapiValue,
+{
     let env_raw = env.raw();
     let mut raw = ptr::null_mut();
     check_status!(unsafe {
@@ -195,7 +201,10 @@ where
 unsafe extern "C" fn constructor_callback<T: ExtendLayer>(
     env: sys::napi_env,
     info: sys::napi_callback_info,
-) -> sys::napi_value {
+) -> sys::napi_value
+where
+    <T as LayerBuild>::Args: FromNapiValue,
+{
     match construct::<T>(env, info) {
         // Returning undefined lets `new` fall back to the engine-created `this`.
         Ok(()) => ptr::null_mut(),
@@ -206,7 +215,10 @@ unsafe extern "C" fn constructor_callback<T: ExtendLayer>(
     }
 }
 
-fn construct<T: ExtendLayer>(env_raw: sys::napi_env, info: sys::napi_callback_info) -> Result<()> {
+fn construct<T: ExtendLayer>(env_raw: sys::napi_env, info: sys::napi_callback_info) -> Result<()>
+where
+    <T as LayerBuild>::Args: FromNapiValue,
+{
     let mut new_target = ptr::null_mut();
     check_status!(unsafe { sys::napi_get_new_target(env_raw, info, &mut new_target) })?;
     if new_target.is_null() {
@@ -262,8 +274,15 @@ fn construct<T: ExtendLayer>(env_raw: sys::napi_env, info: sys::napi_callback_in
     let env = Env::from(env_raw);
     let mut this_obj = unsafe { Object::from_napi_value(env_raw, this) }?;
     attach_registry::<T>(&mut this_obj)?;
-    let args =
-        unsafe { <T::Args as TupleFromSliceValues>::from_slice_values(env_raw, &argv[..argc]) }?;
+    // Pack the raw JS args into a JS array, then parse it back into the
+    // layer's `Args` tuple. This is the same round-trip napi itself uses for
+    // tuple arguments: `()` (a parameterless layer) parses as `Undefined`.
+    let mut args_array = ptr::null_mut();
+    check_status!(unsafe { sys::napi_create_array_with_length(env_raw, argc, &mut args_array) })?;
+    for (i, v) in argv[..argc].iter().enumerate() {
+        check_status!(unsafe { sys::napi_set_element(env_raw, args_array, i as u32, *v) })?;
+    }
+    let args = unsafe { <T::Args as FromNapiValue>::from_napi_value(env_raw, args_array) }?;
     T::emit_own(&env, &this_obj, FnArgs::from(args))
 }
 

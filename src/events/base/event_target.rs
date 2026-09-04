@@ -12,6 +12,7 @@ use napi::{
     bindgen_prelude::{FnArgs, FromNapiValue, FunctionRef, JsValue, Object, Unknown},
 };
 use napi_helpers::any_value::AnyValue;
+use napi_inherit::layer::{Constructed, RootLayer, Super};
 use napi_inherit_proc::layer;
 
 use super::event::EventLayer;
@@ -34,10 +35,14 @@ pub struct EventTargetLayer {
 #[layer]
 impl EventTargetLayer {
     #[layer(constructor)]
-    fn build() -> Self {
-        Self {
-            listeners: RefCell::new(Vec::new()),
-        }
+    fn build(sup: Super<RootLayer>) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from(()))?;
+        Ok(Constructed::new(
+            done,
+            Self {
+                listeners: RefCell::new(Vec::new()),
+            },
+        ))
     }
 
     /// `target.addEventListener(type, callback, capture?)`.

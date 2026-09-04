@@ -12,7 +12,7 @@
 use std::marker::PhantomData;
 
 use crate::{own::set_own_block, registry::HasClassRef};
-use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, TupleFromSliceValues};
+use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 /// Compile-time layout of a layer's own data inside the per-instance
@@ -55,19 +55,13 @@ pub trait LayerDef: Sized + 'static {
 /// dispatches the method's typed arguments out of the raw JS slice, calls
 /// `sup`, and hands `env` / `this` to the method (which may be a JS subclass
 /// instance).
-/// Constructor argument tuple for a layer chain. `TupleFromSliceValues`
-/// parses it from the raw JS argument slice at the top-level entry; the
-/// blanket impl additionally requires `FnArgs<Self>: JsValuesTupleIntoVec`,
-/// so `sup.call` can serialize the args back to raw JS values when the
-/// parent constructor runs on the JS side.
-pub trait LayerArgs: TupleFromSliceValues {}
+/// Constructor argument tuple for a layer chain. `JsValuesTupleIntoVec`
+/// serializes it back to raw JS values. napi's blanket
+/// `impl<T: ToNapiValue> JsValuesTupleIntoVec for T` makes the empty tuple
+/// (a parameterless layer) valid because `()` is `ToNapiValue`.
+pub trait LayerArgs: JsValuesTupleIntoVec {}
 
-impl<T> LayerArgs for T
-where
-    T: TupleFromSliceValues,
-    FnArgs<T>: JsValuesTupleIntoVec,
-{
-}
+impl<T> LayerArgs for T where T: JsValuesTupleIntoVec {}
 
 pub trait LayerBuild: LayerDef + Sized + 'static {
     type Args: LayerArgs;

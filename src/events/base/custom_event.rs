@@ -4,7 +4,9 @@
 //! Event properties are inherited via the prototype chain.
 
 use napi::Result;
+use napi::bindgen_prelude::FnArgs;
 use napi_helpers::any_value::AnyValue;
+use napi_inherit::layer::{Constructed, Super};
 use napi_inherit_proc::layer;
 
 /// Own block of the `CustomEvent` class.
@@ -17,10 +19,18 @@ pub struct CustomEventLayer {
 impl CustomEventLayer {
     /// `new CustomEvent(type, detail)`.
     #[layer(constructor)]
-    fn build(detail: Option<AnyValue>) -> Result<Self> {
-        Ok(Self {
-            detail: detail.unwrap_or(AnyValue::Null),
-        })
+    fn build(
+        type_: String,
+        detail: Option<AnyValue>,
+        sup: Super<crate::event::EventLayer>,
+    ) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from((type_,)))?;
+        Ok(Constructed::new(
+            done,
+            Self {
+                detail: detail.unwrap_or(AnyValue::Null),
+            },
+        ))
     }
 
     #[layer(getter)]

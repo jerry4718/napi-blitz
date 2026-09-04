@@ -8,8 +8,8 @@
 //! super.
 
 use napi::{
-    Env, Error, JsValue, Result, Status,
-    bindgen_prelude::{FromNapiValue, JsObjectValue, Object, Unknown},
+    Env, Error, Result, Status,
+    bindgen_prelude::{FnArgs, JsObjectValue, Object},
 };
 use std::{
     any::TypeId,
@@ -29,17 +29,6 @@ use napi_inherit::{
 /// Backing store for the static `counter` accessor pair.
 static SHARED_COUNTER: AtomicU32 = AtomicU32::new(10);
 
-fn arg_u32(env: &Env, args: &[Unknown], idx: usize) -> Result<u32> {
-    let Some(v) = args.get(idx) else {
-        return Err(Error::new(
-            Status::GenericFailure,
-            format!("missing arg {idx}"),
-        ));
-    };
-    let n = unsafe { f64::from_napi_value(env.raw(), JsValue::raw(v)) }?;
-    Ok(n as u32)
-}
-
 // ── InheritBase ──────────────────────────────────────────────────────────
 
 pub struct BaseLayer {
@@ -49,14 +38,15 @@ pub struct BaseLayer {
 impl LayerComposed for BaseLayer {
     type Parent = RootLayer;
     const CLASS_NAME: &'static str = "InheritBase";
+    type Args = (u32,);
 
     fn build<'env>(
-        env: &'env Env,
-        args: &[Unknown<'env>],
+        _env: &'env Env,
+        args: FnArgs<(u32,)>,
         sup: Super<'_, 'env, RootLayer>,
     ) -> Result<Constructed<Self>> {
-        let base_value = arg_u32(env, args, 0)?;
-        let done = sup.call(&[])?;
+        let (base_value,) = args.data;
+        let done = sup.call(FnArgs::from(()))?;
         Ok(Constructed::new(done, Self { base_value }))
     }
 
@@ -168,14 +158,15 @@ pub struct MidLayer {
 impl LayerComposed for MidLayer {
     type Parent = BaseLayer;
     const CLASS_NAME: &'static str = "InheritMid";
+    type Args = (u32, u32);
 
     fn build<'env>(
-        env: &'env Env,
-        args: &[Unknown<'env>],
+        _env: &'env Env,
+        args: FnArgs<(u32, u32)>,
         sup: Super<'_, 'env, BaseLayer>,
     ) -> Result<Constructed<Self>> {
-        let mid_value = arg_u32(env, args, 1)?;
-        let done = sup.call(args)?;
+        let (base_arg, mid_value) = args.data;
+        let done = sup.call(FnArgs::from((base_arg,)))?;
         let this = done.this();
         let base_seen_after_super = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
         Ok(Constructed::new(
@@ -215,14 +206,15 @@ pub struct LeafLayer {
 impl LayerComposed for LeafLayer {
     type Parent = MidLayer;
     const CLASS_NAME: &'static str = "InheritLeaf";
+    type Args = (u32, u32, u32);
 
     fn build<'env>(
-        env: &'env Env,
-        args: &[Unknown<'env>],
+        _env: &'env Env,
+        args: FnArgs<(u32, u32, u32)>,
         sup: Super<'_, 'env, MidLayer>,
     ) -> Result<Constructed<Self>> {
-        let leaf_value = arg_u32(env, args, 2)?;
-        let done = sup.call(args)?;
+        let (base_arg, mid_arg, leaf_value) = args.data;
+        let done = sup.call(FnArgs::from((base_arg, mid_arg)))?;
         let this = done.this();
         let mid_seen_after_super = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
         if leaf_value > 100 {

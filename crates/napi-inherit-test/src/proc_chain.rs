@@ -1,9 +1,10 @@
-use napi::bindgen_prelude::Object;
+use napi::bindgen_prelude::{FnArgs, Object};
 use napi::{Error, Result, Status};
 use napi_derive::napi;
 
 use napi_inherit::{
     from_chain,
+    layer::{Constructed, RootLayer, Super},
     own::{with_own, with_own_mut},
 };
 
@@ -28,8 +29,9 @@ impl BaseLayer {
     const BASE_CONST: u32 = 1;
 
     #[layer(constructor)]
-    fn build(base_value: u32) -> Self {
-        Self { base_value }
+    fn build(base_value: u32, sup: Super<RootLayer>) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from(()))?;
+        Ok(Constructed::new(done, Self { base_value }))
     }
 
     #[layer]
@@ -150,12 +152,17 @@ impl MidLayer {
     const MID_CONST: u32 = 2;
 
     #[layer(constructor)]
-    fn build<'env>(this: &'env Object<'env>, mid_value: u32) -> Result<Self> {
+    fn build(base_value: u32, mid_value: u32, sup: Super<BaseLayer>) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from((base_value,)))?;
+        let this = done.this();
         let base_seen_after_super = with_own::<BaseLayer, _>(this, |d| d.base_value)?;
-        Ok(Self {
-            mid_value,
-            base_seen_after_super,
-        })
+        Ok(Constructed::new(
+            done,
+            Self {
+                mid_value,
+                base_seen_after_super,
+            },
+        ))
     }
 
     #[layer]
@@ -182,15 +189,25 @@ impl LeafLayer {
     const LEAF_CONST: u32 = 3;
 
     #[layer(constructor)]
-    fn build<'env>(this: &'env Object<'env>, leaf_value: u32) -> Result<Self> {
+    fn build(
+        base_value: u32,
+        mid_value: u32,
+        leaf_value: u32,
+        sup: Super<MidLayer>,
+    ) -> Result<Constructed<Self>> {
+        let done = sup.call(FnArgs::from((base_value, mid_value)))?;
+        let this = done.this();
         let mid_seen_after_super = with_own::<MidLayer, _>(this, |d| d.mid_value)?;
         if leaf_value > 100 {
             return Err(Error::new(Status::GenericFailure, "leaf_value too large"));
         }
-        Ok(Self {
-            leaf_value,
-            mid_seen_after_super,
-        })
+        Ok(Constructed::new(
+            done,
+            Self {
+                leaf_value,
+                mid_seen_after_super,
+            },
+        ))
     }
 
     #[layer]
