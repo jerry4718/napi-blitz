@@ -14,9 +14,9 @@
 //! are stored and dispatched in `event_target`.
 
 mod event;
-mod event_target;
-mod message_event;
 mod custom_event;
+mod message_event;
+mod event_target;
 
 pub use custom_event::*;
 pub use event::*;
