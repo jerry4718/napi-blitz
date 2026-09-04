@@ -16,6 +16,7 @@ use napi_helpers::native_log;
 
 #[layer]
 pub struct GenSourceLayer {
+    #[allow(unused)]
     pub label: String,
     pub items: RefCell<Vec<u32>>,
 }
