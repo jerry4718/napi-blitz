@@ -2,7 +2,7 @@
 
 import test from "ava";
 
-import {Comment, Element, HTMLDocument, HTMLElement, Node, Text,} from './_shim.ts';
+import {Comment, Element, HTMLBodyElement, HTMLDocument, HTMLElement, Node, Text,} from './_shim.ts';
 
 test("HTMLDocument has documentElement / head / body", (t) => {
   const doc: HTMLDocument = HTMLDocument.create();
@@ -214,4 +214,17 @@ test("createComment returns a Comment wrapper", (t) => {
     // eslint-disable-next-line no-console
     console.warn = origWarn;
   }
+});
+
+test("querySelector finds the body and it is the right instance", (t) => {
+  const doc = HTMLDocument.create();
+
+  const byQuery = doc.querySelector("body");
+  t.true(byQuery instanceof HTMLBodyElement);
+  t.true(doc.body instanceof HTMLBodyElement);
+
+  // The prototype chain runs HTMLBodyElement → HTMLElement → Element → Node.
+  t.true(doc.body instanceof HTMLElement);
+  t.true(doc.body instanceof Element);
+  t.true(doc.body instanceof Node);
 });

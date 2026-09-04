@@ -3,7 +3,7 @@
 //! `node_id` / `doc` pair plus a `state` block (mirroring `EventLayer`'s
 //! config/state split); derived layers inherit the tree-walking methods.
 
-use std::rc::Rc;
+use std::{any::TypeId, rc::Rc};
 
 use crate::{
     dom::shared::{doc::SharedDocument, wrap_node},
@@ -11,7 +11,7 @@ use crate::{
 };
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
-use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer, with_own};
+use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer, require, with_own};
 use napi_helpers::native_log;
 
 #[napi(js_name = "NodeTypes")]
@@ -323,4 +323,53 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         LayerRef::new(&wrap_node(&self.shared_doc, env, new_id)?, env)
     }
+}
+
+/// Event types for which `on<event>` IDL-style attributes are defined on
+/// the node prototype (mirrors `blitz-vibey-script`'s `ON_EVENT_TYPES`).
+const ON_EVENT_TYPES: &[&str] = &[
+    "click",
+    "dblclick",
+    "contextmenu",
+    "mousedown",
+    "mouseup",
+    "mousemove",
+    "mouseenter",
+    "mouseleave",
+    "mouseover",
+    "mouseout",
+    "pointerdown",
+    "pointerup",
+    "pointermove",
+    "pointercancel",
+    "pointerenter",
+    "pointerleave",
+    "pointerover",
+    "pointerout",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "touchcancel",
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "change",
+    "focus",
+    "blur",
+    "focusin",
+    "focusout",
+    "submit",
+    "scroll",
+    "wheel",
+    "load",
+];
+
+/// Define the `on<event>` IDL-style attributes on `Node.prototype`. Called
+/// once from the JS bootstrap so every node (and derived element) exposes
+/// the interaction handler attributes.
+#[napi]
+pub fn define_node_on_event_attributes(env: &Env) -> Result<()> {
+    let (_, mut proto) = require(env, TypeId::of::<NodeLayer>())?;
+    crate::events::base::define_on_event_attributes(&mut proto, ON_EVENT_TYPES)
 }

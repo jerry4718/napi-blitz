@@ -9,12 +9,12 @@ use super::EventLayer;
 use napi::{
     Env, Error, Result, Status,
     bindgen_prelude::{
-        Either, FnArgs, FromNapiValue, Function, FunctionRef, JsObjectValue, JsValue, Object,
+        Either, FnArgs, FromNapiValue, Function, FunctionRef, JsObjectValue, JsValue, Object, This,
     },
     check_status, sys,
 };
 use napi_derive::napi;
-use napi_helpers::inherits::LayerRef;
+use napi_helpers::inherits::{LayerRef, define_getter, define_setter};
 use napi_helpers::{
     JsWeakRef,
     anything::Anything,
@@ -229,6 +229,127 @@ impl EventTargetLayer {
             dispatching: Cell::new(0),
         }
     }
+
+    /// The registered `on<event>` attribute listener for `event_type`, if any.
+    pub(crate) fn attribute_listener(&self, env: &Env, event_type: &str) -> Option<Anything> {
+        let listeners = self.listeners.borrow();
+        let entry = listeners.iter().find(|l| {
+            l.event_type == event_type
+                && !l.removed
+                && matches!(l.callback, ListenerCallback::AttributeFunction(_))
+        })?;
+        let raw = entry.callback.raw_value(env).ok()?;
+        unsafe { Anything::from_napi_value(env.raw(), raw) }.ok()
+    }
+
+    /// Install `handler` as the `on<event>` attribute listener for
+    /// `event_type`. An already-installed handler has its callback swapped
+    /// in place, keeping the position it got when first installed;
+    /// otherwise a new entry goes to the tail. The JS-side registry anchor
+    /// is replaced before the listener entry is mutated.
+    pub(crate) fn set_attribute_listener(
+        &self,
+        env: &Env,
+        this: &Object,
+        event_type: &str,
+        handler: Function<FnArgs<(Anything,)>, Anything>,
+    ) -> Result<()> {
+        let spec = ListenerSpec {
+            r#type: event_type.to_string(),
+            capture: false,
+            kind: "attribute".to_string(),
+        };
+        // Collect the previous attribute callback and release its anchor
+        // before mutating the entry; JS calls never run under a borrow.
+        let old_value = {
+            let listeners = self.listeners.borrow();
+            listeners
+                .iter()
+                .find(|l| {
+                    l.event_type == event_type
+                        && !l.removed
+                        && matches!(l.callback, ListenerCallback::AttributeFunction(_))
+                })
+                .and_then(|l| l.callback.raw_value(env).ok())
+        };
+        if let Some(old) = old_value {
+            let old = unsafe { Anything::from_napi_value(env.raw(), old)? };
+            delete_js_listener(env, this, old, spec.clone())?;
+        }
+        let handler_raw = handler.raw();
+        let handler_for_js = unsafe { Anything::from_napi_value(env.raw(), handler_raw)? };
+        insert_js_listener(env, this, handler_for_js, spec.clone())?;
+        {
+            let mut listeners = self.listeners.borrow_mut();
+            if let Some(entry) = listeners.iter_mut().find(|l| {
+                l.event_type == event_type
+                    && !l.removed
+                    && matches!(l.callback, ListenerCallback::AttributeFunction(_))
+            }) {
+                entry.callback = ListenerCallback::AttributeFunction(JsWeakRef::new(
+                    &Object::from_raw(env.raw(), handler_raw),
+                    env,
+                )?);
+                return Ok(());
+            }
+            listeners.push(ListenerEntry {
+                event_type: event_type.to_string(),
+                callback: ListenerCallback::AttributeFunction(JsWeakRef::new(
+                    &Object::from_raw(env.raw(), handler_raw),
+                    env,
+                )?),
+                capture: false,
+                passive: false,
+                once: false,
+                removed: false,
+            });
+        }
+        Ok(())
+    }
+
+    /// Remove the `on<event>` attribute listener for `event_type` (the
+    /// attribute was assigned a non-callable value).
+    pub(crate) fn remove_attribute_listener(
+        &self,
+        env: &Env,
+        this: &Object,
+        event_type: &str,
+    ) -> Result<()> {
+        let spec = ListenerSpec {
+            r#type: event_type.to_string(),
+            capture: false,
+            kind: "attribute".to_string(),
+        };
+        let old_value = {
+            let listeners = self.listeners.borrow();
+            listeners
+                .iter()
+                .find(|l| {
+                    l.event_type == event_type
+                        && !l.removed
+                        && matches!(l.callback, ListenerCallback::AttributeFunction(_))
+                })
+                .and_then(|l| l.callback.raw_value(env).ok())
+        };
+        if let Some(old) = old_value {
+            let old = unsafe { Anything::from_napi_value(env.raw(), old)? };
+            delete_js_listener(env, this, old, spec)?;
+        }
+        // Tombstone, not shrink: a dispatch in progress indexes the live
+        // list, so the entry must stay in place until the outermost
+        // dispatch compacts it.
+        {
+            let mut listeners = self.listeners.borrow_mut();
+            for l in listeners.iter_mut() {
+                if l.event_type == event_type
+                    && matches!(l.callback, ListenerCallback::AttributeFunction(_))
+                {
+                    l.removed = true;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[layer(js_name = "EventTarget")]
@@ -440,53 +561,66 @@ impl EventTargetLayer {
         // New registrations appended during dispatch do not fire for the
         // current event.
         let total = self.listeners.borrow().len();
-        let mut cursor = 0;
         let mut once_fired: Vec<(sys::napi_value, &'static str)> = Vec::new();
-        loop {
-            let stop_immediate = with_own::<EventLayer, _>(&event, |d| d.state.stop_immediate)?;
-            if stop_immediate {
+        // Capture listeners fire before non-capture listeners; this is
+        // the ordering pinned by the behavior suite. Each plain function
+        // listener runs with the target as `this`.
+        for capture_pass in [true, false] {
+            let mut cursor = 0;
+            loop {
+                let stop_immediate = with_own::<EventLayer, _>(&event, |d| d.state.stop_immediate)?;
+                if stop_immediate {
+                    break;
+                }
+                let next = {
+                    let listeners = self.listeners.borrow();
+                    (cursor..total).find(|&j| {
+                        let l = &listeners[j];
+                        !l.removed && l.capture == capture_pass && l.event_type == event_type
+                    })
+                };
+                let Some(idx) = next else { break };
+                let (once, callback_kind, callback) = {
+                    let listeners = self.listeners.borrow();
+                    (
+                        listeners[idx].once,
+                        matches!(listeners[idx].callback, ListenerCallback::HandlerObject(_)),
+                        listeners[idx].callback.raw_value(env)?,
+                    )
+                };
+                // A once listener is removed *before* its callback runs
+                // (Chrome-verified): a re-registration of the same callback from
+                // inside the callback then finds the slot removed, passes the
+                // duplicate check, and takes effect for the next event.
+                if once {
+                    self.listeners.borrow_mut()[idx].removed = true;
+                    let kind = {
+                        let listeners = self.listeners.borrow();
+                        listeners[idx].callback.kind()
+                    };
+                    once_fired.push((callback, kind));
+                }
+                if callback_kind {
+                    let object = Object::from_raw(env.raw(), callback);
+                    let handle_event: Function<FnArgs<(Anything,)>, Anything> =
+                        object.get_named_property("handleEvent")?;
+                    let _ = handle_event.apply(object, FnArgs::from((event_value.clone(),)));
+                } else {
+                    let function = unsafe {
+                        Function::<FnArgs<(Anything,)>, Anything>::from_napi_value(
+                            env.raw(),
+                            callback,
+                        )?
+                    };
+                    let _ = function.apply(*this, FnArgs::from((event_value.clone(),)));
+                }
+                cursor = idx + 1;
+            }
+            // stopImmediatePropagation from the capture pass halts the
+            // non-capture pass as well.
+            if with_own::<EventLayer, _>(&event, |d| d.state.stop_immediate)? {
                 break;
             }
-            let next = {
-                let listeners = self.listeners.borrow();
-                (cursor..total).find(|&j| {
-                    let l = &listeners[j];
-                    !l.removed && !l.capture && l.event_type == event_type
-                })
-            };
-            let Some(idx) = next else { break };
-            let (once, callback_kind, callback) = {
-                let listeners = self.listeners.borrow();
-                (
-                    listeners[idx].once,
-                    matches!(listeners[idx].callback, ListenerCallback::HandlerObject(_)),
-                    listeners[idx].callback.raw_value(env)?,
-                )
-            };
-            // A once listener is removed *before* its callback runs
-            // (Chrome-verified): a re-registration of the same callback from
-            // inside the callback then finds the slot removed, passes the
-            // duplicate check, and takes effect for the next event.
-            if once {
-                self.listeners.borrow_mut()[idx].removed = true;
-                let kind = {
-                    let listeners = self.listeners.borrow();
-                    listeners[idx].callback.kind()
-                };
-                once_fired.push((callback, kind));
-            }
-            if callback_kind {
-                let object = Object::from_raw(env.raw(), callback);
-                let handle_event: Function<FnArgs<(Anything,)>, Anything> =
-                    object.get_named_property("handleEvent")?;
-                let _ = handle_event.apply(object, FnArgs::from((event_value.clone(),)));
-            } else {
-                let function = unsafe {
-                    Function::<FnArgs<(Anything,)>, Anything>::from_napi_value(env.raw(), callback)?
-                };
-                let _ = function.call(FnArgs::from((event_value.clone(),)));
-            }
-            cursor = idx + 1;
         }
 
         // Release the JS-side registry anchors of once-fired listeners;
@@ -504,4 +638,45 @@ impl EventTargetLayer {
         let canceled = with_own::<EventLayer, _>(&event, |d| d.state.canceled)?;
         Ok(!canceled)
     }
+}
+
+/// Define `on<event>` IDL-style attributes on a prototype: assigning a
+/// callable installs an attribute listener, assigning anything else removes
+/// it. The getter returns the current handler or `null`. Each class (node,
+/// window, ...) passes its own `types` list.
+pub(crate) fn define_on_event_attributes(
+    proto: &mut Object,
+    types: &'static [&'static str],
+) -> Result<()> {
+    for event_type in types {
+        let name = format!("on{event_type}");
+        define_getter(
+            proto,
+            &name,
+            move |env: Env, this: This| -> Result<Option<Anything>> {
+                with_own::<EventTargetLayer, _>(&this, |target| {
+                    target.attribute_listener(&env, event_type)
+                })
+            },
+        )?;
+        define_setter(
+            proto,
+            &name,
+            move |env: Env, this: This, value: Anything| -> Result<()> {
+                with_own::<EventTargetLayer, _>(&this, |target| match value {
+                    Anything::Function(reference) => {
+                        let handler = unsafe {
+                            Function::<FnArgs<(Anything,)>, Anything>::from_napi_value(
+                                env.raw(),
+                                reference.raw_value(&env)?,
+                            )?
+                        };
+                        target.set_attribute_listener(&env, &this, event_type, handler)
+                    }
+                    _ => target.remove_attribute_listener(&env, &this, event_type),
+                })?
+            },
+        )?;
+    }
+    Ok(())
 }

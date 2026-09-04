@@ -293,6 +293,27 @@ export interface CustomEventInit {
   composed?: boolean
 }
 
+/**
+ * Define the window-reflecting attributes on `HTMLBodyElement.prototype`.
+ * Called once from the JS bootstrap, like `defineNodeOnEventAttributes`.
+ */
+export declare function defineHtmlBodyEventAttributes(): void
+
+/**
+ * Define the `on<event>` IDL-style attributes on `Node.prototype`. Called
+ * once from the JS bootstrap so every node (and derived element) exposes
+ * the interaction handler attributes.
+ */
+export declare function defineNodeOnEventAttributes(): void
+
+/**
+ * Define the `on<event>` IDL-style attributes on `Window.prototype`. The
+ * `WindowLayer` chain is `EventTarget`-rooted, so the attributes read and
+ * write the window's own attribute listeners; called once from the JS
+ * bootstrap.
+ */
+export declare function defineWindowEventAttributes(): void
+
 /** Options shared by all dialog methods. */
 export interface DialogOptions {
   /** Dialog title. */
@@ -766,6 +787,11 @@ export declare class FontFaceSetClass extends EventTarget {
   [Symbol.iterator](): IterableIterator<Anything>
 }
 
+/** Own block of the `HTMLBodyElement` class. */
+export declare class HTMLBodyElementClass extends HTMLElement {
+  constructor()
+}
+
 /** Own block of the `HTMLDocument` class. */
 export declare class HTMLDocumentClass extends Document {
   constructor()
@@ -1128,6 +1154,11 @@ export type FontFaceSet =
   InstanceType<typeof FontFaceSetClass>;
 
 export declare const FontFaceSet: ClassType<typeof FontFaceSetClass>;
+
+export type HTMLBodyElement =
+  InstanceType<typeof HTMLBodyElementClass>;
+
+export declare const HTMLBodyElement: ClassType<typeof HTMLBodyElementClass>;
 
 export type HTMLDocument =
   InstanceType<typeof HTMLDocumentClass>;

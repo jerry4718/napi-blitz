@@ -31,3 +31,17 @@ mod.setPumpAppLoop(pumpAppLoop);
 // The JS-side listener registry is the strong holder of every listener
 // callback, anchored by each target's own lifetime (see ./listener-registry).
 mod.setListenerOps(ListenerOps);
+
+// `on<event>` IDL-style attributes live on `Node.prototype`, defined from
+// Rust once native classes are registered.
+mod.defineNodeOnEventAttributes();
+
+// `<body>` forwards window event handlers to the Window's attribute
+// listener; the reflecting `on<event>` attributes are defined on its own
+// prototype.
+mod.defineHtmlBodyEventAttributes();
+
+// `Window` is EventTarget-rooted (not a Node), so its window event
+// handlers and bubbled interaction events get their own `on<event>`
+// attributes on `Window.prototype`.
+mod.defineWindowEventAttributes();

@@ -37,9 +37,10 @@ use napi::{
 };
 use napi_helpers::{
     discard_err,
-    inherits::{Constructed, LayerRef, Super, proc::layer},
+    inherits::{Constructed, LayerRef, Super, proc::layer, require},
 };
 use std::{
+    any::TypeId,
     cell::{Ref, RefCell},
     rc::Rc,
     sync::Arc,
@@ -395,4 +396,70 @@ impl WindowLayer {
 #[cfg(feature = "native-window")]
 pub(crate) fn make_window_document(shared_doc: &Rc<SharedDocument>) -> Box<WindowDocument> {
     Box::new(WindowDocument::new(Rc::clone(shared_doc)))
+}
+
+/// Event types for which `on<event>` IDL-style attributes are defined on
+/// the `Window` prototype: the window event handlers plus the interaction
+/// events that bubble out of the document (mirrors
+/// `blitz-vibey-script`'s `WINDOW_EVENT_TYPES`).
+const WINDOW_EVENT_TYPES: &[&str] = &[
+    "afterprint",
+    "beforeprint",
+    "beforeunload",
+    "blur",
+    "error",
+    "focus",
+    "hashchange",
+    "languagechange",
+    "load",
+    "message",
+    "messageerror",
+    "offline",
+    "online",
+    "pagehide",
+    "pageshow",
+    "popstate",
+    "rejectionhandled",
+    "resize",
+    "scroll",
+    "storage",
+    "unhandledrejection",
+    "unload",
+    "click",
+    "dblclick",
+    "contextmenu",
+    "mousedown",
+    "mouseup",
+    "mousemove",
+    "mouseover",
+    "mouseout",
+    "pointerdown",
+    "pointerup",
+    "pointermove",
+    "pointercancel",
+    "pointerover",
+    "pointerout",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "touchcancel",
+    "keydown",
+    "keyup",
+    "keypress",
+    "input",
+    "change",
+    "focusin",
+    "focusout",
+    "submit",
+    "wheel",
+];
+
+/// Define the `on<event>` IDL-style attributes on `Window.prototype`. The
+/// `WindowLayer` chain is `EventTarget`-rooted, so the attributes read and
+/// write the window's own attribute listeners; called once from the JS
+/// bootstrap.
+#[napi]
+pub fn define_window_event_attributes(env: &Env) -> Result<()> {
+    let (_, mut proto) = require(env, TypeId::of::<WindowLayer>())?;
+    crate::events::base::define_on_event_attributes(&mut proto, WINDOW_EVENT_TYPES)
 }

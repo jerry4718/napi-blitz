@@ -279,12 +279,12 @@ test("removeEventListener accepts the options object", (t) => {
   t.is(calls, 0);
 });
 
-test("capture listeners are not invoked on the plain target dispatch", (t) => {
+test("capture listeners fire on the plain target dispatch", (t) => {
   const et = new EventTarget();
   let calls = 0;
   et.addEventListener("foo", () => calls++, true);
   et.dispatchEvent(new Event("foo"));
-  t.is(calls, 0);
+  t.is(calls, 1);
 });
 
 test("adding the same listener twice does not duplicate", (t) => {

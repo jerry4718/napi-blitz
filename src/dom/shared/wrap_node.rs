@@ -2,9 +2,10 @@
 
 use crate::{
     dom::{
-        CharacterDataLayer, CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer,
-        HTMLElementLayer, HTMLHtmlElementLayer, HTMLInputElementLayer, HTMLTextAreaElementLayer,
-        NodeLayer, TextLayer, layers::element::ElementState, shared::doc::SharedDocument,
+        CharacterDataLayer, CommentLayer, DocumentLayer, ElementLayer, HTMLBodyElementLayer,
+        HTMLDocumentLayer, HTMLElementLayer, HTMLHtmlElementLayer, HTMLInputElementLayer,
+        HTMLTextAreaElementLayer, NodeLayer, TextLayer, layers::element::ElementState,
+        shared::doc::SharedDocument,
     },
     events::base::EventTargetLayer,
 };
@@ -115,6 +116,19 @@ pub fn wrap_node<'a>(
                 },
                 HTMLElementLayer {},
                 HTMLHtmlElementLayer {},
+            )?,
+            Some(local_name!("body")) => from_chain!(
+                (HTMLBodyElementLayer, env),
+                ..base_layer,
+                ElementLayer {
+                    node_id,
+                    shared_doc: shared_doc.clone(),
+                    style_proxy: RefCell::new(None),
+                    attributes_proxy: RefCell::new(None),
+                    state: ElementState::default(),
+                },
+                HTMLElementLayer {},
+                HTMLBodyElementLayer {},
             )?,
             Some(local_name!("input")) => from_chain!(
                 (HTMLInputElementLayer, env),
