@@ -48,7 +48,8 @@ test("event chain: bubble + stopPropagation", (t) => {
   });
 
   const event = new UIEvent(
-    {type: "click", bubbles: true, cancelable: true},
+    "click",
+    {bubbles: true, cancelable: true}
   );
   bubbleDispatch(inner, event);
 
@@ -70,7 +71,8 @@ test("event chain: full bubble when no stop", (t) => {
   inner.addEventListener("click", () => calls.push("inner"));
 
   const event = new UIEvent(
-    {type: "click", bubbles: true, cancelable: true},
+    "click",
+    {bubbles: true, cancelable: true}
   );
   bubbleDispatch(inner, event);
 
@@ -85,9 +87,11 @@ test("event chain: preventDefault is reported", (t) => {
 
   el.addEventListener("click", (e) => e.preventDefault());
 
-  const event = new UIEvent(
-    {type: "click", bubbles: true, cancelable: true},
-  );
+  const event = new UIEvent("click",
+    {
+      bubbles: true,
+      cancelable: true,
+    });
   el.dispatchEvent(event);
   t.true(event.defaultPrevented);
 });
@@ -104,7 +108,8 @@ test("event.target stays pinned to the originating node", (t) => {
   });
 
   const event = new UIEvent(
-    {type: "click", bubbles: true, cancelable: true},
+    "click",
+    {bubbles: true, cancelable: true}
   );
   // Set target before dispatching, mirroring what Rust does via
   // __setLazyTarget / Object.defineProperty.

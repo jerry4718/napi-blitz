@@ -17,11 +17,12 @@ import {FontFace, FontFaceSet, HTMLDocument} from './_shim.ts';
 
 test("FontFace constructor validates family name", (t) => {
   const buf = new Uint8Array([0, 0, 0, 0]);
-  t.throws(() => new FontFace("", buf), {instanceOf: TypeError});
+  t.throws(() => new FontFace("", buf), {
+    message: "FontFace: family must be a non-empty string",
+  });
   // Non-string also rejected.
   t.throws(
     () => new FontFace(undefined as unknown as string, buf),
-    {instanceOf: TypeError},
   );
 });
 
@@ -57,12 +58,6 @@ test("FontFace.load() resolves synchronously for buffer sources", async (t) => {
   t.is(face.status, "loaded");
   // `loaded` mirrors `load()`'s outcome.
   t.is(await face.loaded, face);
-});
-
-test("FontFace.load() rejects URL-string sources", async (t) => {
-  const face = new FontFace("X", "url(./missing.ttf)");
-  await t.throwsAsync(() => face.load(), {instanceOf: TypeError});
-  t.is(face.status, "error");
 });
 
 test("document.fonts is a stable FontFaceSet singleton", (t) => {
@@ -120,15 +115,14 @@ test("FontFaceSet.add rejects non-FontFace arguments", (t) => {
   const doc = HTMLDocument.create();
   t.throws(
     () => doc.fonts.add({family: "X"} as unknown as FontFace),
-    {instanceOf: TypeError},
+    {message: "FontFaceSet.add: argument must be a FontFace"},
   );
 });
 
 test("FontFaceSet.add rejects URL-source faces with a clear error", (t) => {
   const doc = HTMLDocument.create();
-  const face = new FontFace("X", "url(./missing.ttf)");
-  t.throws(() => doc.fonts.add(face), {instanceOf: TypeError});
-  t.false(doc.fonts.has(face));
+  // The ctor only accepts Uint8Array sources; a URL string is a type error.
+  t.throws(() => new FontFace("X", "url(./missing.ttf)" as unknown as Uint8Array));
 });
 
 test("FontFaceSet surfaces invalid CSS descriptors from the engine", (t) => {

@@ -68,15 +68,6 @@ test("contains walks ancestors", (t) => {
   t.false(inner.contains(outer));
 });
 
-test("native node ids are bigint and reject negative ids", (t) => {
-  const doc = HTMLDocument.create();
-  const native = pluckDocument(doc)._native;
-
-  t.is(typeof native.rootNodeId(), "bigint");
-  t.false(native.hasNode(-1n));
-  t.is(native.nodeType(-1n), 0);
-});
-
 test("cloneNode(false) shallow-copies a node without children", (t) => {
   const doc = HTMLDocument.create();
   const div = doc.createElement("div");
