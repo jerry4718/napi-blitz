@@ -22,13 +22,9 @@ use blitz::{
 use fontique::Blob;
 use napi::{Env, JsValue, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{
-    JsWeakRef,
-    anything::{Anything, OtherRef},
-};
+use napi_helpers::{JsWeakRef, anything::OtherRef};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
-    collections::HashMap,
     rc::Rc,
     sync::Arc,
     task::Context as TaskContext,
@@ -62,11 +58,11 @@ pub struct SharedDocument {
     /// The document's `FontFaceSet`, retained strongly: created at
     /// document initialization, returned by the `fonts` getter.
     fonts: RefCell<Option<OtherRef>>,
-    /// Cached `style` proxies per node, so `el.style` is identity-stable.
-    style_proxies: RefCell<HashMap<NodeId, Anything>>,
-    /// Cached `attributes` proxies per node, so `el.attributes` is
-    /// identity-stable.
-    attributes_proxies: RefCell<HashMap<NodeId, Anything>>,
+    /// Whether a live window is currently attached. Gates NodeCache
+    /// strength: JS wrappers are pinned by the cache only while the
+    /// window is live; once it tears down the whole tree's wrappers are
+    /// released to the GC.
+    window_live: Cell<bool>,
     /// The napi env captured at document creation; blitz's
     /// `EventHandler` callbacks do not carry an `Env`.
     env: Cell<Option<Env>>,
@@ -84,10 +80,9 @@ impl SharedDocument {
             js_weak: RefCell::new(None),
             js_window_ref: RefCell::new(None),
             fonts: RefCell::new(None),
-            style_proxies: RefCell::new(HashMap::new()),
-            attributes_proxies: RefCell::new(HashMap::new()),
             env: Cell::new(None),
             attached: Cell::new(false),
+            window_live: Cell::new(false),
         }
     }
 
@@ -168,22 +163,28 @@ impl SharedDocument {
         self.fonts.borrow()
     }
 
-    /// The cached `style` proxy for `node_id`, if built.
-    pub fn style_proxy(&self, node_id: NodeId) -> Option<Anything> {
-        self.style_proxies.borrow().get(&node_id).cloned()
+    /// Pin the whole cached tree for a live window: JS wrappers of
+    /// in-document nodes are held strongly so listeners registered on
+    /// them survive, and the strength predicate for future wraps turns on.
+    pub fn attach_window(&self, env: &Env) -> Result<()> {
+        self.window_live.set(true);
+        let root_id = self.base().root_node().id;
+        self.make_subtree_strong(root_id, env)
     }
 
-    pub fn set_style_proxy(&self, node_id: NodeId, proxy: Anything) {
-        self.style_proxies.borrow_mut().insert(node_id, proxy);
+    /// Release the whole cached tree after the window tore down: every
+    /// entry goes weak, wrappers the JS side no longer holds are collected
+    /// by the GC, and the strength predicate for future wraps turns off.
+    pub fn detach_window(&self, env: &Env) -> Result<()> {
+        self.window_live.set(false);
+        let root_id = self.base().root_node().id;
+        self.make_subtree_weak(root_id, env)
     }
 
-    /// The cached `attributes` proxy for `node_id`, if built.
-    pub fn attributes_proxy(&self, node_id: NodeId) -> Option<Anything> {
-        self.attributes_proxies.borrow().get(&node_id).cloned()
-    }
-
-    pub fn set_attributes_proxy(&self, node_id: NodeId, proxy: Anything) {
-        self.attributes_proxies.borrow_mut().insert(node_id, proxy);
+    /// Strength predicate for caching a JS wrapper: wrappers are pinned
+    /// only while a window is live and the node is in the document tree.
+    pub fn cache_strength(&self, node_id: NodeId) -> bool {
+        self.window_live.get() && self.is_in_document(node_id)
     }
 }
 
@@ -227,14 +228,17 @@ impl SharedDocument {
         Ok(())
     }
 
-    /// Switch a subtree to strong refs if the parent is in the document.
+    /// Switch a subtree to strong refs, but only while a live window owns
+    /// the document and the parent is in the document tree. Without a
+    /// live window the wrappers stay weak and are collected together with
+    /// the JS handles; `attach_window` pins the whole tree on promotion.
     pub fn make_in_document_subtree_strong(
         &self,
         parent_id: NodeId,
         child_id: NodeId,
         env: &Env,
     ) -> Result<()> {
-        if self.is_in_document(parent_id) {
+        if self.window_live.get() && self.is_in_document(parent_id) {
             self.make_subtree_strong(child_id, env)?;
         }
         Ok(())

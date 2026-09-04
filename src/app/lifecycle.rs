@@ -332,6 +332,15 @@ impl Lifecycle {
             };
             self.state.borrow_mut().windows.insert(window_id, entry);
 
+            // Pin the document's cached wrappers for the window's lifetime
+            // (see `SharedDocument::attach_window`). Pure napi refcount
+            // work with no JS re-entry, so it cannot observe an
+            // outstanding state borrow.
+            discard_err!(
+                shared_doc.attach_window(&self.env),
+                "attach window to document"
+            );
+
             // Resolve outside the state borrow: build the `Window` layer
             // chain (a pure napi operation) and register the window ref
             // for lifecycle dispatch.
@@ -481,6 +490,12 @@ impl Lifecycle {
         let mut state = self.state.borrow_mut();
         state.windows.remove(&window_id).map(|mut entry| {
             entry.close();
+            // Release the document's cached wrappers: pure napi refcount
+            // work with no JS re-entry, so the state borrow may be held.
+            discard_err!(
+                entry.shared_doc.detach_window(&self.env),
+                "detach window from document"
+            );
             Rc::clone(&entry.shared_doc)
         })
     }

@@ -21,12 +21,16 @@ use napi::{
 
 use crate::layer::{ExtendLayer, OwnBlock};
 
+/// One independently borrowed slot per real layer in the chain, indexed at
+/// compile time by `OwnBlock::IDX`.
+type OwnSlots = Box<[RefCell<Option<Box<dyn Any>>>]>;
+
 /// The per-instance own-data store. One slice slot per real layer in the
 /// chain (RootLayer takes none); `IDX` addresses a layer's slot directly, so
 /// there is no bounds check or growth logic - the slice is sized to the leaf
 /// layer's `DEPTH` at attach time.
 pub struct OwnDataRegistry {
-    slots: Box<[RefCell<Option<Box<dyn Any>>>]>,
+    slots: OwnSlots,
 }
 
 impl OwnDataRegistry {

@@ -35,11 +35,16 @@ pub struct ElementState {}
 
 /// Own block of the `Element` class. Carries its own `node_id`/`doc` copy
 /// (they never change once assigned) so the members here don't need to
-/// re-materialize the parent `NodeLayer` slot on every call.
+/// re-materialize the parent `NodeLayer` slot on every call. The style and
+/// attributes proxies live here so their lifetime is the wrapper's own:
+/// no document-level cache pins them, and identity is stable for as long
+/// as the wrapper is alive.
 #[layer]
 pub struct ElementLayer {
     pub(crate) node_id: NodeId,
     pub(crate) shared_doc: Rc<SharedDocument>,
+    pub(crate) style_proxy: RefCell<Option<Anything>>,
+    pub(crate) attributes_proxy: RefCell<Option<Anything>>,
     #[allow(dead_code)]
     pub(crate) state: ElementState,
 }
@@ -416,11 +421,11 @@ impl ElementLayer {
     }
 
     /// `element.style` — the CSSOM `CSSStyleDeclaration` Proxy over the
-    /// inline style block. The proxy is cached per element, so repeated
+    /// inline style block. The proxy is cached on the wrapper, so repeated
     /// reads return the same object.
     #[layer(getter)]
     fn style(&self, env: &Env) -> Result<Anything> {
-        if let Some(proxy) = self.shared_doc.style_proxy(self.node_id) {
+        if let Some(proxy) = self.style_proxy.borrow().clone() {
             return Ok(proxy);
         }
         let handler = from_chain!(
@@ -432,15 +437,15 @@ impl ElementLayer {
             },
         )?;
         let proxy = new_proxy(env, &handler)?;
-        self.shared_doc.set_style_proxy(self.node_id, proxy.clone());
+        *self.style_proxy.borrow_mut() = Some(proxy.clone());
         Ok(proxy)
     }
 
     /// `element.attributes` — the NamedNodeMap-ish Proxy over the content
-    /// attributes. Cached like `style`.
+    /// attributes. Cached on the wrapper like `style`.
     #[layer(getter)]
     fn attributes(&self, env: &Env) -> Result<Anything> {
-        if let Some(proxy) = self.shared_doc.attributes_proxy(self.node_id) {
+        if let Some(proxy) = self.attributes_proxy.borrow().clone() {
             return Ok(proxy);
         }
         let handler = from_chain!(
@@ -451,8 +456,7 @@ impl ElementLayer {
             },
         )?;
         let proxy = new_proxy(env, &handler)?;
-        self.shared_doc
-            .set_attributes_proxy(self.node_id, proxy.clone());
+        *self.attributes_proxy.borrow_mut() = Some(proxy.clone());
         Ok(proxy)
     }
 

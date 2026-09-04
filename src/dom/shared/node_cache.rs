@@ -162,6 +162,12 @@ impl Finalize for NodeFinalizer {
         #[cfg(debug_assertions)]
         let doc_id = doc_mut.id();
 
+        #[cfg(debug_assertions)]
+        println!(
+            "[finalize] doc_id={doc_id} node_id={} NodeFinalizer::finalize",
+            self.node_id
+        );
+
         let Some(hint_node) = doc_mut.get_node_mut(self.node_id) else {
             #[cfg(debug_assertions)]
             println!(

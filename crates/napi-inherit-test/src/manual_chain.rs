@@ -195,7 +195,7 @@ impl LayerComposed for MidLayer {
         ))
     }
 
-    fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
+    fn define_members(env: &Env, _proto: &mut Object, ctor: &mut Object) -> Result<()> {
         define_static_method(env, ctor, "midDescribe", |ctx| {
             let that: Object = ctx.get(0)?;
             let mid = with_own::<MidLayer, _>(&that, |d| d.mid_value)?;
@@ -254,7 +254,7 @@ impl LayerComposed for LeafLayer {
         ))
     }
 
-    fn define_members(env: &Env, proto: &mut Object, ctor: &mut Object) -> Result<()> {
+    fn define_members(env: &Env, _proto: &mut Object, ctor: &mut Object) -> Result<()> {
         define_static_method(env, ctor, "leafShout", |ctx| {
             let that: Object = ctx.get(0)?;
             let leaf = with_own::<LeafLayer, _>(&that, |d| d.leaf_value)?;

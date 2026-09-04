@@ -14,7 +14,7 @@ use blitz::{
 };
 use napi::{Env, Error, Status, bindgen_prelude::Object};
 use napi_helpers::inherits::{from_chain, layer_chain};
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 /// Return the cached JS wrapper for `node_id`, or build the matching
 /// `#[layer]` chain via `new_from_chain` and cache it.
@@ -64,7 +64,11 @@ pub fn wrap_node<'a>(
         },
     );
     // 3. Document node: resolve to the JS Document object, creating and
-    //    registering it on first access.
+    //    registering it on first access. The root wrapper is cached with
+    //    the current cache strength: weak while no window is live, so a
+    //    document whose JS handles are all dropped can be collected as a
+    //    whole (the wrapper's own block carries the last `Rc` to the
+    //    shared state).
     if let NodeKind::Document = node_kind {
         if let Some(existing) = shared_doc
             .js_weak()
@@ -75,7 +79,7 @@ pub fn wrap_node<'a>(
                 node_id,
                 &existing,
                 env,
-                true,
+                shared_doc.cache_strength(node_id),
                 Rc::downgrade(shared_doc),
             )?;
             return Ok(existing);
@@ -93,7 +97,7 @@ pub fn wrap_node<'a>(
             node_id,
             &document,
             env,
-            true,
+            shared_doc.cache_strength(node_id),
             Rc::downgrade(shared_doc),
         )?;
         return Ok(document);
@@ -107,6 +111,8 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
+                    style_proxy: RefCell::new(None),
+                    attributes_proxy: RefCell::new(None),
                     state: ElementState::default(),
                 },
                 HTMLElementLayer {},
@@ -118,6 +124,8 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
+                    style_proxy: RefCell::new(None),
+                    attributes_proxy: RefCell::new(None),
                     state: ElementState::default(),
                 },
                 HTMLElementLayer {},
@@ -132,6 +140,8 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
+                    style_proxy: RefCell::new(None),
+                    attributes_proxy: RefCell::new(None),
                     state: ElementState::default(),
                 },
                 HTMLElementLayer {},
@@ -146,6 +156,8 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
+                    style_proxy: RefCell::new(None),
+                    attributes_proxy: RefCell::new(None),
                     state: ElementState::default(),
                 },
                 HTMLElementLayer {},
@@ -177,9 +189,10 @@ pub fn wrap_node<'a>(
         }
     };
 
-    // 5. Determine initial reference strength: strong if the node is
-    //    currently in the document tree, weak otherwise.
-    let strong = shared_doc.is_in_document(node_id);
+    // 5. Determine the reference strength from the window-live gate:
+    //    wrappers of in-document nodes are pinned only while a window is
+    //    attached and live.
+    let strong = shared_doc.cache_strength(node_id);
 
     // 6. Cache the JS wrapper with the determined strength.
     shared_doc.node_cache_mut().insert(

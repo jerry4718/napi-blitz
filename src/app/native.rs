@@ -41,6 +41,7 @@ use napi::{
     check_status, sys,
 };
 use napi_helpers::{
+    JsWeakRef,
     anything::Anything,
     inherits::{Constructed, LayerRef, Super, from_chain, proc::layer, with_own},
 };
@@ -81,9 +82,10 @@ pub struct BlitzAppLayer {
     event_loop: RefCell<EventLoop>,
     lifecycle: Rc<Lifecycle>,
     /// Loop object returned by the JS `pumpAppLoop` for the latest
-    /// `pumpLoop` call, kept for the `pumping` getter. `Anything` retains
-    /// it by reference and releases itself on drop.
-    pumping_loop: RefCell<Option<Anything>>,
+    /// `pumpLoop` call, kept weakly for the `pumping` getter: the handle
+    /// closure holds the app, so a strong reference here would pin the
+    /// app through its own block after the loop ends.
+    pumping_loop: RefCell<Option<JsWeakRef>>,
 }
 
 #[layer(js_name = "BlitzApp")]
@@ -194,19 +196,19 @@ impl BlitzAppLayer {
     }
 
     /// Whether a pump loop is currently running, read from the loop object
-    /// the JS side returned for the latest `pumpLoop` call.
+    /// the JS side returned for the latest `pumpLoop` call. The handle is
+    /// held weakly, so a collected handle reports `false`.
     #[layer(getter)]
     fn pumping(&self, env: &Env) -> Result<bool> {
-        let loop_obj = self.pumping_loop.borrow().clone();
-        let Some(loop_obj) = loop_obj else {
+        let Some(loop_obj) = self
+            .pumping_loop
+            .borrow()
+            .as_ref()
+            .and_then(|weak| weak.get_value(env))
+        else {
             return Ok(false);
         };
-        let (Anything::Object(handle) | Anything::Function(handle)) = loop_obj else {
-            return Err(Error::from_reason("pumpAppLoop did not return an object"));
-        };
-        let raw = unsafe { handle.raw_value(env)? };
-        let obj = unsafe { Object::from_napi_value(env.raw(), raw)? };
-        obj.get_named_property::<bool>("pumping")
+        loop_obj.get_named_property::<bool>("pumping")
     }
 
     /// Start the async pump loop. The loop itself lives in JS (the bundle
@@ -216,7 +218,12 @@ impl BlitzAppLayer {
     #[layer(js_name = "pumpLoop")]
     fn pump_loop(&self, this: &Object, env: &Env, options: Option<Object>) -> Result<Anything> {
         let loop_obj = Self::call_pump_app_loop(env, this, options)?;
-        *self.pumping_loop.borrow_mut() = Some(loop_obj.clone());
+        let raw = match &loop_obj {
+            Anything::Object(r) | Anything::Function(r) => unsafe { r.raw_value(env)? },
+            _ => return Err(Error::from_reason("pumpAppLoop did not return an object")),
+        };
+        let handle = unsafe { Object::from_napi_value(env.raw(), raw)? };
+        *self.pumping_loop.borrow_mut() = Some(JsWeakRef::new(&handle, env)?);
         Ok(loop_obj)
     }
 }
