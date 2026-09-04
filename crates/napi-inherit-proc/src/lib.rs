@@ -572,18 +572,33 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
     // object, so the body can reach any layer's own slot through
     // `with_own`/`with_own_mut` (the current layer's data is already handed to
     // the method as `&self`). `this` never participates in the JS args.
+    //
+    // A parameter named `env` of type `&Env` is filled by the runtime with the
+    // current napi environment, so a getter/method can create JS values or
+    // call back into JS without a global env. It also never participates in
+    // the JS args.
     let mut normal: Vec<(usize, Type)> = vec![];
     let mut call: Vec<TokenStream2> = vec![];
     let mut has_this = false;
+    let mut has_env = false;
     for a in &f.sig.inputs {
         let FnArg::Typed(pat) = a else { continue };
         let is_this = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "this")
             && type_last_ident(&pat.ty)
                 .map(|i| i.to_string() == "Object")
                 .unwrap_or(false);
+        let is_env = matches!(&*pat.pat, syn::Pat::Ident(pi) if pi.ident == "env")
+            && type_last_ident(&pat.ty)
+                .map(|i| i.to_string() == "Env")
+                .unwrap_or(false);
         if is_this {
             has_this = true;
             call.push(quote! { &this });
+        } else if is_env {
+            has_env = true;
+            // The closure param `env` is an `Env` value; user methods declare
+            // `env: &Env`, so hand over a reference.
+            call.push(quote! { &env });
         } else {
             let i = normal.len();
             normal.push((i, (*pat.ty).clone()));
@@ -595,7 +610,20 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         .iter()
         .map(|(i, ty)| {
             let bind = format_ident!("a{}", i);
-            quote! { let #bind: #ty = ctx.get(#i)?; }
+            let is_option = type_last_ident(ty)
+                .map(|i| i.to_string() == "Option")
+                .unwrap_or(false);
+            if is_option {
+                quote! {
+                    let #bind: #ty = if #i < ctx.length() {
+                        ctx.get(#i)?
+                    } else {
+                        None
+                    };
+                }
+            } else {
+                quote! { let #bind: #ty = ctx.get(#i)?; }
+            }
         })
         .collect::<Vec<_>>();
 
@@ -615,7 +643,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
         MemberKind::Getter => {
             if f.sig.receiver().is_some() {
                 quote! {
-                    napi_inherit::class::define_getter(proto, #js, |_env, this| {
+                    napi_inherit::class::define_getter(proto, #js, |env, this| {
                         napi_inherit::own::with_own::<#self_ty, _>(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
                     })?;
                 }
@@ -626,13 +654,13 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                     quote! { Ok(#self_ty::#name(#(#call),*)) }
                 };
                 quote! {
-                    napi_inherit::class::define_static_getter(ctor, #js, |_env| {
+                    napi_inherit::class::define_static_getter(ctor, #js, |env| {
                         #static_call
                     })?;
                 }
             } else {
                 quote! {
-                    napi_inherit::class::define_getter(proto, #js, |_env, this| {
+                    napi_inherit::class::define_getter(proto, #js, |env, this| {
                         #self_ty::#name(#(#call),*)
                     })?;
                 }
@@ -647,10 +675,15 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 )
                 .into_compile_error();
             };
+            let env_arg = if has_env {
+                quote! { &env, }
+            } else {
+                quote! {}
+            };
             if f.sig.receiver().is_some() {
                 quote! {
-                    napi_inherit::class::define_setter(proto, #js, |_env, this, value: #value_ty| {
-                        napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, value))#result_tail
+                    napi_inherit::class::define_setter(proto, #js, |env, this, value: #value_ty| {
+                        napi_inherit::own::with_own_mut::<#self_ty, _>(&this, |d| #self_ty::#name(d, #env_arg value))#result_tail
                     })?;
                 }
             } else if !has_this {
@@ -658,23 +691,23 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 // closure returns it as-is (no `?` - that would unwrap to
                 // `()` and break the closure's `Result<()>` type).
                 let static_call = if ret_is_result {
-                    quote! { #self_ty::#name(value) }
+                    quote! { #self_ty::#name(#env_arg value) }
                 } else {
-                    quote! { Ok(#self_ty::#name(value)) }
+                    quote! { Ok(#self_ty::#name(#env_arg value)) }
                 };
                 quote! {
-                    napi_inherit::class::define_static_setter(ctor, #js, |_env, value: #value_ty| {
+                    napi_inherit::class::define_static_setter(ctor, #js, |env, value: #value_ty| {
                         #static_call
                     })?;
                 }
             } else {
                 let call = if ret_is_result {
-                    quote! { #self_ty::#name(&this, value) }
+                    quote! { #self_ty::#name(&this, #env_arg value) }
                 } else {
-                    quote! { Ok(#self_ty::#name(&this, value)) }
+                    quote! { Ok(#self_ty::#name(&this, #env_arg value)) }
                 };
                 quote! {
-                    napi_inherit::class::define_setter(proto, #js, |_env, this, value: #value_ty| {
+                    napi_inherit::class::define_setter(proto, #js, |env, this, value: #value_ty| {
                         #call
                     })?;
                 }
@@ -690,6 +723,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 };
                 quote! {
                     napi_inherit::class::define_static_method(env, ctor, #js, |ctx| {
+                        let env = *ctx.env;
                         #(#arg_binds)*
                         #static_call
                     })?;
@@ -707,6 +741,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 };
                 quote! {
                     napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                        let env = *ctx.env;
                         let this: napi::bindgen_prelude::Object = ctx.this()?;
                         #(#arg_binds)*
                         #slot(&this, |d| #self_ty::#name(d, #(#call),*))#result_tail
@@ -719,6 +754,7 @@ fn member_define_tokens(self_ty: &Ident, f: &syn::ImplItemFn, kind: MemberKind) 
                 // so same-slot mutable access is fine.
                 quote! {
                     napi_inherit::class::define_method(env, proto, #js, |ctx| {
+                        let env = *ctx.env;
                         let this: napi::bindgen_prelude::Object = ctx.this()?;
                         #(#arg_binds)*
                         #self_ty::#name(#(#call),*)
@@ -776,10 +812,28 @@ fn gen_extend_layer_impl(
     // JS argument list; the ancestors (already built via `sup.call`) resolve
     // their own prefix. `env` / `this` are forwarded only if the user's build
     // declared them.
+    //
+    // A parameter whose type is `Option<...>` is allowed to be absent: the
+    // bound falls back to `None` when the argument is missing (the argument
+    // list is short), otherwise it is parsed as usual (which maps JS
+    // null/undefined to `None` too).
     let arg_parses = build.params.iter().enumerate().map(|(i, (_, ty))| {
         let bind = format_ident!("p{}", i);
         let idx = arg_offset + i;
-        quote! { let #bind: #ty = napi_inherit::own::arg_from_napi(env, args, #idx)?; }
+        let is_option = type_last_ident(ty)
+            .map(|i| i.to_string() == "Option")
+            .unwrap_or(false);
+        if is_option {
+            quote! {
+                let #bind: #ty = if #idx < args.len() {
+                    napi_inherit::own::arg_from_napi(env, args, #idx)?
+                } else {
+                    None
+                };
+            }
+        } else {
+            quote! { let #bind: #ty = napi_inherit::own::arg_from_napi(env, args, #idx)?; }
+        }
     });
     let mut user_args: Vec<TokenStream2> = vec![];
     if build.has_env {
