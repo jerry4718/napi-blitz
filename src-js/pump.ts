@@ -3,13 +3,14 @@
 // `BlitzApp` itself lives entirely on the native side; the async pump loop
 // (timed cadence anchored to `performance.now()`, aborts, the `pump:*`
 // event stream) is the one piece that depends on the JS event loop, so it
-// stays here as a top-level function.
+// lives here as `pumpAppLoop`, which the native `BlitzApp.pumpLoop`
+// forwards to.
 
 import type {BlitzApp, PumpResult} from "./native";
 import {Event} from "./native";
 
 /**
- * Options for `startPumpLoop`. All durations are in milliseconds.
+ * Options for `BlitzApp.pumpLoop`. All durations are in milliseconds.
  */
 export interface PumpOptions {
   /**
@@ -88,24 +89,27 @@ export class PumpErrorEvent extends Event {
 }
 
 /**
- * Handle returned by `startPumpLoop`: `done` settles when the loop ends —
- * it resolves with a `PumpEnd` describing how it ended, or rejects with the
- * thrown error (also broadcast as `pump:error`). The rejection is consumed
- * internally, so awaiting it from top-level setup and ignoring it
+ * Handle returned by `BlitzApp.pumpLoop`: `done` settles when the loop
+ * ends — it resolves with a `PumpEnd` describing how it ended, or rejects
+ * with the thrown error (also broadcast as `pump:error`). The rejection is
+ * consumed internally, so awaiting it from top-level setup and ignoring it
  * fire-and-forget are both safe — no unhandled rejection either way.
  */
 export interface PumpHandle {
+  /** Whether the loop is still running. */
+  readonly pumping: boolean;
   done: Promise<PumpEnd>;
   stop: (reason?: unknown) => void;
 }
 
-/** Apps with an active loop, so a second `startPumpLoop` rejects. */
+/** Apps with an active loop, so a second `pumpLoop` call rejects. */
 const running = new WeakSet<BlitzApp>();
 
 /**
- * Start a background pump loop that keeps driving the event loop until
- * the native side reports exit (all windows closed), `signal` aborts, or
- * `handle.stop()` is called.
+ * Run the async pump loop on `app`: keep driving the event loop until the
+ * native side reports exit (all windows closed), `signal` aborts, or
+ * `handle.stop()` is called. Returns the loop handle, whose `pumping`
+ * accessor the native side reads for `BlitzApp.pumping`.
  *
  * The loop targets a stable cadence of `targetPeriod` ms per iteration,
  * anchored to an absolute `performance.now()` timeline: each pump may
@@ -119,18 +123,20 @@ const running = new WeakSet<BlitzApp>();
  * throws. Start the loop from top-level setup, not from inside an event
  * handler — pumping from within a pump re-enters the native loop.
  */
-export function startPumpLoop(
+export function pumpAppLoop(
   app: BlitzApp,
   options: PumpOptions = {},
 ): PumpHandle {
   if (running.has(app)) {
     throw new Error("pumpLoop: a pump loop is already running");
   }
+  // The native proxy passes an absent `options` as `null`, which a
+  // parameter default does not absorb.
   const {
     targetPeriod = 16.67,
     timeout = targetPeriod,
     signal,
-  } = options;
+  } = options ?? {};
 
   // Single stop source: an external `signal` and `handle.stop()` both
   // converge on this controller, the only signal the loop checks.
@@ -140,10 +146,13 @@ export function startPumpLoop(
     else signal.addEventListener("abort", () => controller.abort(signal.reason), {once: true});
   }
 
+  // Loop state shared with `runLoop`, so the handle's `pumping` accessor
+  // tracks the loop's liveness.
+  const state = {pumping: true};
   running.add(app);
   app.dispatchEvent(new PumpStartEvent());
 
-  const done = runLoop(app, targetPeriod, timeout, controller.signal);
+  const done = runLoop(app, targetPeriod, timeout, controller.signal, state);
 
   // Consume the rejection so a fire-and-forget caller never hits an
   // unhandled rejection; the rejection itself is preserved for awaiters,
@@ -153,6 +162,9 @@ export function startPumpLoop(
   });
 
   return {
+    get pumping() {
+      return state.pumping;
+    },
     done,
     stop: (reason?: unknown) => controller.abort(new PumpStopRequest(reason)),
   };
@@ -163,6 +175,7 @@ async function runLoop(
   targetPeriod: number,
   timeout: number,
   signal: AbortSignal,
+  state: {pumping: boolean},
 ): Promise<PumpEnd> {
   let end: PumpEnd = {kind: "exit"};
   try {
@@ -196,6 +209,7 @@ async function runLoop(
       next = (diff <= 0 ? now : next) + targetPeriod;
     }
   } finally {
+    state.pumping = false;
     running.delete(app);
     app.dispatchEvent(new PumpEndEvent(end));
   }

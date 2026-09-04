@@ -35,7 +35,9 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use blitz::shell::{BlitzShellProxy, EventLoop, create_default_event_loop};
 use napi::{
     Env, Error, Result,
-    bindgen_prelude::{JsValue, Object, PromiseRaw, Undefined},
+    bindgen_prelude::{
+        FnArgs, FromNapiValue, Function, JsObjectValue, JsValue, Object, PromiseRaw, Undefined,
+    },
     check_status, sys,
 };
 use napi_helpers::{
@@ -55,11 +57,33 @@ pub struct PumpResult {
     pub code: Option<i32>,
 }
 
+thread_local! {
+    // The JS `pumpAppLoop(app, options)` function, registered once by the
+    // JS bundle and consumed for the process's whole lifetime.
+    static PUMP_APP_LOOP: RefCell<Option<Anything>> = const { RefCell::new(None) };
+}
+
+/// Register the JS-side `pumpAppLoop(app, options)` function that runs the
+/// async pump loop, so `BlitzApp.pumpLoop` can forward to it.
+#[napi]
+pub fn set_pump_app_loop(env: &Env, pump_app_loop: Object) -> Result<()> {
+    let function = unsafe { Anything::from_napi_value(env.raw(), JsValue::raw(&pump_app_loop))? };
+    if !matches!(function, Anything::Function(_)) {
+        return Err(Error::from_reason("setPumpAppLoop: expected a Function"));
+    }
+    PUMP_APP_LOOP.with(|slot| *slot.borrow_mut() = Some(function));
+    Ok(())
+}
+
 /// Own block of the `BlitzApp` class.
 #[layer]
 pub struct BlitzAppLayer {
     event_loop: RefCell<EventLoop>,
     lifecycle: Rc<Lifecycle>,
+    /// Loop object returned by the JS `pumpAppLoop` for the latest
+    /// `pumpLoop` call, kept for the `pumping` getter. `Anything` retains
+    /// it by reference and releases itself on drop.
+    pumping_loop: RefCell<Option<Anything>>,
 }
 
 #[layer(js_name = "BlitzApp")]
@@ -87,6 +111,7 @@ impl BlitzAppLayer {
             BlitzAppLayer {
                 event_loop: RefCell::new(event_loop),
                 lifecycle: Rc::clone(&lifecycle),
+                pumping_loop: RefCell::new(None),
             },
         )?;
         lifecycle.set_app_ref(app)?;
@@ -167,9 +192,54 @@ impl BlitzAppLayer {
     pub fn pump_app_events(&self, millis: f64) -> PumpResult {
         self.pump_app_events_inner(millis)
     }
+
+    /// Whether a pump loop is currently running, read from the loop object
+    /// the JS side returned for the latest `pumpLoop` call.
+    #[layer(getter)]
+    fn pumping(&self, env: &Env) -> Result<bool> {
+        let loop_obj = self.pumping_loop.borrow().clone();
+        let Some(loop_obj) = loop_obj else {
+            return Ok(false);
+        };
+        let (Anything::Object(handle) | Anything::Function(handle)) = loop_obj else {
+            return Err(Error::from_reason("pumpAppLoop did not return an object"));
+        };
+        let raw = unsafe { handle.raw_value(env)? };
+        let obj = unsafe { Object::from_napi_value(env.raw(), raw)? };
+        obj.get_named_property::<bool>("pumping")
+    }
+
+    /// Start the async pump loop. The loop itself lives in JS (the bundle
+    /// registers `pumpAppLoop`), so this only forwards to it and keeps the
+    /// returned loop object for the `pumping` getter.
+    /// @deprecated
+    #[layer(js_name = "pumpLoop")]
+    fn pump_loop(&self, this: &Object, env: &Env, options: Option<Object>) -> Result<Anything> {
+        let loop_obj = Self::call_pump_app_loop(env, this, options)?;
+        *self.pumping_loop.borrow_mut() = Some(loop_obj.clone());
+        Ok(loop_obj)
+    }
 }
 
 impl BlitzAppLayer {
+    /// Call the JS-registered `pumpAppLoop(app, options)`.
+    fn call_pump_app_loop(env: &Env, app: &Object, options: Option<Object>) -> Result<Anything> {
+        let function = PUMP_APP_LOOP
+            .with(|slot| slot.borrow().clone())
+            .ok_or_else(|| Error::from_reason("pumpAppLoop is not registered"))?;
+        let Anything::Function(function) = function else {
+            return Err(Error::from_reason("pumpAppLoop is not registered"));
+        };
+        let function_raw = unsafe { function.raw_value(env)? };
+        let f = unsafe {
+            Function::<FnArgs<(&Object, Option<Object>)>, Anything>::from_napi_value(
+                env.raw(),
+                function_raw,
+            )?
+        };
+        f.call(FnArgs::from((app, options)))
+    }
+
     /// Unwrap a `WindowOptions` class instance to its Rust value without
     /// going through napi-rs's borrowed-argument conversion (which
     /// requires a native-borrow scope the layer trampoline does not set).

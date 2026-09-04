@@ -77,6 +77,7 @@ export const saveFile = mod.saveFile;
 
 export type BlitzApp = types.BlitzApp;
 export const BlitzApp = mod.BlitzApp;
+export const setPumpAppLoop = mod.setPumpAppLoop;
 export type Comment = types.Comment;
 export const Comment = mod.Comment;
 export type CompositionEvent = types.CompositionEvent;

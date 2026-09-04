@@ -9,5 +9,11 @@
 // Rust side dispatches lifecycle events straight onto their layer slots.
 // The only JS-side logic left is the pump-loop driver in `./pump`.
 
+import {setPumpAppLoop} from "./native";
+import {pumpAppLoop} from "./pump";
+
+// Native `BlitzApp.pumpLoop` forwards to this function to run the loop.
+setPumpAppLoop(pumpAppLoop);
+
 export * from "./native";
 export * from "./pump";
