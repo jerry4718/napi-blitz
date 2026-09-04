@@ -8,7 +8,7 @@ use napi_helpers::{
     inherits::{Constructed, Super, proc::layer},
 };
 
-use crate::event::{EventInit, EventLayer};
+use super::{EventInit, EventLayer};
 
 /// `dictionary MessageEventInit : EventInit`.
 /// `source` and `ports` are not implemented yet.

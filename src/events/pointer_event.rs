@@ -1,11 +1,9 @@
 //! `PointerEvent` layer — extends `MouseEvent`.
 
+use crate::events::{base::EventInit, mouse_event::MouseEventLayer};
 use blitz::traits::events::BlitzPointerEvent;
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use wintertc_events::event::EventInit;
-
-use crate::events::mouse_event::MouseEventLayer;
 
 /// Own block of the `PointerEvent` class (pointer-specific fields).
 #[layer(js_name = "PointerEvent")]

@@ -8,8 +8,7 @@
 //! GC finalizer weak-references `SharedDoc`.
 
 // 4. Build the node chain by blitz node type + tag name.
-pub(crate) use crate::shared::wrap_node::wrap_node;
-use crate::{dispatch::JsEventHandler, shared::node_cache::NodeCache};
+use crate::dom::{dispatch::JsEventHandler, shared::node_cache::NodeCache, wrap_node};
 use blitz::{
     dom::{
         BULLET_FONT, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document as BlitzDocument,

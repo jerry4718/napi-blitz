@@ -1,9 +1,12 @@
 // ── wrap_node: materialize a JS wrapper for a blitz node ─────────────
 
 use crate::{
-    CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer, HTMLElementLayer,
-    HTMLInputElementLayer, HTMLTextAreaElementLayer, NodeLayer, TextLayer,
-    shared::doc::SharedDocument,
+    dom::{
+        CommentLayer, DocumentLayer, ElementLayer, HTMLDocumentLayer, HTMLElementLayer,
+        HTMLInputElementLayer, HTMLTextAreaElementLayer, NodeLayer, TextLayer,
+        layers::element::ElementState, shared::doc::SharedDocument,
+    },
+    events::base::EventTargetLayer,
 };
 use blitz::{
     dom::{NodeData, local_name, node::NodeKind},
@@ -12,7 +15,6 @@ use blitz::{
 use napi::{Env, Error, Status, bindgen_prelude::Object};
 use napi_helpers::inherits::{from_chain, layer_chain, new_from_chain};
 use std::rc::Rc;
-use wintertc_events::EventTargetLayer;
 
 /// Return the cached JS wrapper for `node_id`, or build the matching
 /// `#[layer]` chain via `new_from_chain` and cache it.
@@ -103,7 +105,7 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
-                    state: crate::layers::element::ElementState::default(),
+                    state: ElementState::default(),
                 },
                 HTMLElementLayer {},
                 HTMLInputElementLayer {
@@ -116,7 +118,7 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
-                    state: crate::layers::element::ElementState::default(),
+                    state: ElementState::default(),
                 },
                 HTMLElementLayer {},
                 HTMLTextAreaElementLayer {
@@ -129,7 +131,7 @@ pub fn wrap_node<'a>(
                 ElementLayer {
                     node_id,
                     shared_doc: shared_doc.clone(),
-                    state: crate::layers::element::ElementState::default(),
+                    state: ElementState::default(),
                 },
                 HTMLElementLayer {},
             )?,

@@ -1,11 +1,9 @@
 //! `KeyboardEvent` layer — extends `UiEvent`.
 
+use crate::events::{base::EventInit, ui_event::UiEventLayer};
 use blitz::traits::events::BlitzKeyEvent;
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use wintertc_events::event::EventInit;
-
-use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `KeyboardEvent` class.
 #[layer(js_name = "KeyboardEvent")]

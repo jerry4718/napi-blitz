@@ -5,18 +5,15 @@
 
 use std::rc::Rc;
 
+use crate::events::base::EventTargetLayer;
 use blitz::dom::{NodeData, NodeId};
 use napi::{Env, Error, Result, bindgen_prelude::Object};
 use napi_helpers::{
     anything::Anything,
     inherits::{Constructed, Super, proc::layer, with_own},
 };
-use wintertc_events::event_target::EventTargetLayer;
 
-use crate::shared::{
-    doc::{SharedDocument, wrap_node},
-    ops::to_anything,
-};
+use crate::dom::shared::{doc::SharedDocument, ops::to_anything, wrap_node};
 
 const NODE_TYPE_ELEMENT: u32 = 1;
 const NODE_TYPE_TEXT: u32 = 3;

@@ -1,8 +1,8 @@
 //! `UiEvent` layer — parent of Mouse/Wheel/Keyboard/Composition/Focus.
 
+use crate::events::base::{EventInit, EventLayer};
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use wintertc_events::event::{EventInit, EventLayer};
 
 /// Own block of the `UiEvent` class.
 #[layer(js_name = "UiEvent")]

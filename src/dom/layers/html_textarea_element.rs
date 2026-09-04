@@ -7,7 +7,7 @@ use blitz::dom::NodeId;
 use napi::{Error, Result};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::{
+use crate::dom::{
     layers::html_element::HTMLElementLayer,
     shared::{doc::SharedDocument, ops::make_qual_name},
 };
@@ -38,7 +38,7 @@ impl HTMLTextAreaElementLayer {
     fn apply_value(&self, value: String) {
         let mut base = self.shared_doc.base_mut();
         let qual = make_qual_name("value", None);
-        if !crate::shared::ops::set_detached_attribute(
+        if !crate::dom::shared::ops::set_detached_attribute(
             &mut base,
             self.node_id,
             qual.clone(),

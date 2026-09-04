@@ -1,11 +1,9 @@
 //! `WheelEvent` layer — extends `MouseEvent`.
 
+use crate::events::{base::EventInit, mouse_event::MouseEventLayer};
 use blitz::traits::events::{BlitzWheelDelta, BlitzWheelEvent};
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use wintertc_events::event::EventInit;
-
-use crate::events::mouse_event::MouseEventLayer;
 
 /// Own block of the `WheelEvent` class.
 #[layer(js_name = "WheelEvent")]

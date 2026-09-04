@@ -30,11 +30,9 @@
 //! from the immutable configuration fields, so a `state` can later be
 //! wrapped in a `RefCell`.
 
-mod dispatch;
+pub mod dispatch;
+pub mod layers;
+pub mod shared;
 
-mod layers;
-mod shared;
-
-#[allow(unused)]
 pub use layers::*;
-pub use shared::create_document;
+pub use shared::*;

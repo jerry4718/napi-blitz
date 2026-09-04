@@ -3,7 +3,7 @@
 use napi::{Error, Result};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::layers::element::ElementLayer;
+use crate::dom::layers::element::ElementLayer;
 
 /// Own block of the `HTMLElement` class.
 #[layer(js_name = "HTMLElement")]

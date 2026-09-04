@@ -1,9 +1,8 @@
 //! `InputEvent` layer — extends `Event` (mirrors the boa runtime).
 
-use crate::events::UiEventLayer;
+use crate::events::{UiEventLayer, base::EventInit};
 use napi::{Result, bindgen_prelude::FnArgs};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
-use wintertc_events::event::EventInit;
 
 /// Own block of the `InputEvent` class.
 #[layer(js_name = "InputEvent")]

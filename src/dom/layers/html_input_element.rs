@@ -7,7 +7,7 @@ use blitz::dom::{LocalName, NodeId};
 use napi::{Error, Result};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::{
+use crate::dom::{
     layers::html_element::HTMLElementLayer,
     shared::{
         doc::SharedDocument,

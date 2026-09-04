@@ -3,7 +3,6 @@ packages:
   - examples/*
   - benchmark
   - crates/napi-inherit-test
-  - crates/wintertc-events
   - __test__
 allowBuilds:
   esbuild: true

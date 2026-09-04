@@ -1,6 +1,9 @@
-pub(crate) mod doc;
-pub(crate) mod node_cache;
-pub(crate) mod ops;
+pub mod doc;
+pub mod node_cache;
+pub mod ops;
 pub(crate) mod wrap_node;
 
-pub use doc::create_document;
+pub use doc::*;
+pub use node_cache::*;
+pub use ops::*;
+pub use wrap_node::*;

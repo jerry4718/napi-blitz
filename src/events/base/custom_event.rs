@@ -11,7 +11,7 @@ use napi_helpers::{
     inherits::{Constructed, Super, proc::layer},
 };
 
-use crate::event::{EventInit, EventLayer};
+use super::{EventInit, EventLayer};
 
 /// `dictionary CustomEventInit : EventInit { any detail = null; }`
 #[napi(object)]

@@ -11,14 +11,15 @@ use napi_helpers::{
 };
 use style::properties::PropertyId;
 
-use crate::{
+use crate::dom::{
     layers::node::NodeLayer,
     shared::{
-        doc::{SharedDocument, wrap_node},
+        doc::SharedDocument,
         ops::{
             AttrInit, make_qual_name, mark_inline_style_mutated, remove_detached_attribute,
             set_detached_attribute, to_anything,
         },
+        wrap_node,
     },
 };
 
@@ -272,12 +273,12 @@ impl ElementLayer {
     }
 
     #[layer]
-    fn get_bounding_client_rect(&self) -> Option<crate::shared::ops::DomRect> {
+    fn get_bounding_client_rect(&self) -> Option<crate::dom::shared::ops::DomRect> {
         let base = self.shared_doc.base();
         let node = base.get_node(self.node_id)?;
         let pos = node.absolute_position(0.0, 0.0);
         let layout = node.final_layout();
-        Some(crate::shared::ops::DomRect {
+        Some(crate::dom::shared::ops::DomRect {
             x: pos.x as f64,
             y: pos.y as f64,
             width: layout.size.width as f64,

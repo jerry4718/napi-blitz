@@ -21,7 +21,7 @@ use std::{collections::HashMap, rc::Weak};
 use blitz::dom::{BaseDocument, NodeId};
 use napi::{Env, Result, bindgen_prelude::Object};
 
-use crate::shared::doc::SharedDocument;
+use crate::dom::shared::doc::SharedDocument;
 use napi_helpers::{Finalize, SwitchableRef};
 
 /// Switchable-reference cache: `blitz_node_id -> SwitchableRef`.

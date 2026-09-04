@@ -17,6 +17,10 @@
 
 use std::rc::{Rc, Weak};
 
+use crate::{
+    dom::shared::{SharedDocument, wrap_node},
+    events::base::{DispatchTarget, EventLayer, EventTargetLayer},
+};
 use blitz::{
     dom::{Document as BlitzDocument, EventHandler, NodeData, NodeId},
     traits::events::{DomEvent, EventState},
@@ -29,12 +33,6 @@ use napi_helpers::{
     anything::Anything,
     inherits::{with_own, with_own_mut},
 };
-use wintertc_events::{
-    event::{DispatchTarget, EventLayer},
-    event_target::EventTargetLayer,
-};
-
-use crate::shared::doc::{SharedDocument, wrap_node};
 
 const CAPTURING_PHASE: u32 = 1;
 const AT_TARGET: u32 = 2;

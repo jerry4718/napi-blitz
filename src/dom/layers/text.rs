@@ -3,7 +3,7 @@
 use napi::{Error, Result};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::layers::node::NodeLayer;
+use crate::dom::layers::node::NodeLayer;
 
 /// Own block of the `Text` class.
 #[layer(js_name = "Text")]

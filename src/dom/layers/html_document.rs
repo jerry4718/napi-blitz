@@ -4,7 +4,7 @@
 use napi::{Error, Result};
 use napi_helpers::inherits::{Constructed, Super, proc::layer};
 
-use crate::layers::document::DocumentLayer;
+use crate::dom::layers::document::DocumentLayer;
 
 /// Own block of the `HTMLDocument` class.
 #[layer(js_name = "HTMLDocument")]

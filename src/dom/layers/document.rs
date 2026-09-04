@@ -9,11 +9,12 @@ use napi_helpers::{
     inherits::{Constructed, Super, proc::layer},
 };
 
-use crate::{
+use crate::dom::{
     layers::node::NodeLayer,
     shared::{
-        doc::{SharedDocument, wrap_node},
+        doc::SharedDocument,
         ops::{AttrInit, make_qual_name, to_anything},
+        wrap_node,
     },
 };
 

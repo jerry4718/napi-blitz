@@ -1,14 +1,15 @@
 //! `MouseEvent` layer — parent of Wheel/Pointer.
 
+use crate::events::{
+    base::{DispatchTarget, EventInit},
+    ui_event::UiEventLayer,
+};
 use blitz::traits::events::{BlitzPointerEvent, MouseEventButton};
 use napi::{Env, Result, bindgen_prelude::FnArgs};
 use napi_helpers::{
     anything::Anything,
     inherits::{Constructed, Super, proc::layer},
 };
-use wintertc_events::event::{DispatchTarget, EventInit};
-
-use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `MouseEvent` class.
 #[layer(js_name = "MouseEvent")]

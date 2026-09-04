@@ -1,13 +1,14 @@
 //! `FocusEvent` layer — extends `UiEvent`.
 
+use crate::events::{
+    base::{DispatchTarget, EventInit},
+    ui_event::UiEventLayer,
+};
 use napi::{Env, Result, bindgen_prelude::FnArgs};
 use napi_helpers::{
     anything::Anything,
     inherits::{Constructed, Super, proc::layer},
 };
-use wintertc_events::event::{DispatchTarget, EventInit};
-
-use crate::events::ui_event::UiEventLayer;
 
 /// Own block of the `FocusEvent` class.
 #[layer(js_name = "FocusEvent")]

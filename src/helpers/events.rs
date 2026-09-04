@@ -6,7 +6,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    dom::{doc::SharedDoc, payload::EventPayload},
+    dom::{doc::SharedDocument, payload::EventPayload},
     global,
     helpers::{JsWeakRef, discard_err},
 };
@@ -15,12 +15,9 @@ use napi::{
     bindgen_prelude::{FnArgs, JsObjectValue, Object},
 };
 
-/// Resolve the JS Window object from `SharedDoc::js_window_ref`.
-pub(crate) fn resolve_window<'a>(doc: &Rc<SharedDoc>, env: &'a Env) -> Option<Object<'a>> {
-    doc.js_window_ref
-        .borrow()
-        .as_ref()
-        .and_then(|weak| weak.get_value(env))
+/// Resolve the JS Window object from `SharedDocument::js_window_ref`.
+pub(crate) fn resolve_window<'a>(doc: &Rc<SharedDocument>, env: &'a Env) -> Option<Object<'a>> {
+    doc.js_weak().as_ref().and_then(|weak| weak.get_value(env))
 }
 
 /// Build a JS `Event` object from a payload via the registered event
@@ -97,7 +94,7 @@ fn build_event<'a>(event_type: &str, cancelable: bool, env: &'a Env) -> Result<O
 /// `js_window_ref`. Returns whether the default was prevented; always
 /// `false` for non-cancelable events.
 pub(crate) fn dispatch_window_event(
-    doc: &Rc<SharedDoc>,
+    doc: &Rc<SharedDocument>,
     event_type: &str,
     cancelable: bool,
     env: &Env,

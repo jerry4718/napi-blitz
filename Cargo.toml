@@ -49,8 +49,6 @@ skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_rende
 napi = { workspace = true }
 napi-derive = { workspace = true }
 napi-helpers = { workspace = true }
-napi-inherit = { workspace = true }
-napi-inherit-proc = { workspace = true }
 winit = { workspace = true }
 blitz = { workspace = true }
 blitz-dom = { workspace = true }
@@ -73,7 +71,6 @@ napi-derive = "3.6.3"
 napi-helpers = { path = "crates/napi-helpers" }
 napi-inherit = { path = "crates/napi-inherit" }
 napi-inherit-proc = { path = "crates/napi-inherit-proc" }
-wintertc-events = { path = "crates/wintertc-events" }
 
 winit = "=0.31.0-beta.2"
 
