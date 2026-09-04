@@ -9,7 +9,7 @@
 // wraps via NodeCache). `EventTarget` is inherited from the Node.js
 // built-in.
 
-import {NativeNode} from "../native";
+import {NativeNode, EventTarget} from "../native"
 import type {DocumentInternals, NodeInternals} from "../internal/internal";
 import {TypedEventTarget} from "../helpers/events";
 import type {NodeEventMap} from "../events/event-maps";

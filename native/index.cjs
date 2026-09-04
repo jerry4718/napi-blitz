@@ -725,3 +725,7 @@ module.exports.registerElementConstructor = nativeBinding.registerElementConstru
 module.exports.registerEventFactory = nativeBinding.registerEventFactory
 module.exports.registerNodeConstructor = nativeBinding.registerNodeConstructor
 module.exports.saveFile = nativeBinding.saveFile
+module.exports.CustomEvent = nativeBinding.CustomEvent
+module.exports.Event = nativeBinding.Event
+module.exports.EventTarget = nativeBinding.EventTarget
+module.exports.MessageEvent = nativeBinding.MessageEvent

@@ -9,12 +9,12 @@
 use std::cell::RefCell;
 
 use napi::{
-    Env, Result, UnknownRef,
-    bindgen_prelude::{FromNapiValue, JsValue, Object, Unknown},
+    Env, Result,
+    bindgen_prelude::{Object, Unknown},
 };
 use napi_inherit_proc::layer;
 
-use super::dispatch;
+use super::dispatch::{self, StoredValue};
 
 /// A reference to the event's target (or current target).
 ///
@@ -26,12 +26,12 @@ use super::dispatch;
 pub enum DispatchTarget {
     /// No target assigned.
     None,
-    /// A direct held reference to a JS value.
-    Direct(UnknownRef),
+    /// A direct held value.
+    Direct(StoredValue),
     /// Lazily produces the target; the result is cached after first resolve.
     Callable {
         callable: Box<dyn Fn(&Env) -> Result<Unknown<'static>>>,
-        cached: RefCell<Option<UnknownRef>>,
+        cached: RefCell<Option<StoredValue>>,
     },
 }
 
@@ -43,9 +43,8 @@ impl Default for DispatchTarget {
 
 impl DispatchTarget {
     /// Hold a JS value directly.
-    pub fn from_value(env: &Env, v: Unknown<'_>) -> Result<Self> {
-        let r = unsafe { UnknownRef::from_napi_value(env.raw(), JsValue::raw(&v)) }?;
-        Ok(Self::Direct(r))
+    pub fn from_value(v: Unknown<'_>) -> Result<Self> {
+        Ok(Self::Direct(StoredValue::from_value(&v)?))
     }
 
     /// Resolve lazily via a callable; the produced value is cached.
@@ -61,18 +60,13 @@ impl DispatchTarget {
     pub fn resolve(&self, env: &Env) -> Result<Unknown<'static>> {
         match self {
             Self::None => dispatch::null_unknown(env),
-            Self::Direct(r) => {
-                let v = r.get_value(env)?;
-                dispatch::to_unknown(env, &v)
-            }
+            Self::Direct(v) => v.to_value(env),
             Self::Callable { callable, cached } => {
                 if let Some(c) = cached.borrow().as_ref() {
-                    let v = c.get_value(env)?;
-                    return dispatch::to_unknown(env, &v);
+                    return c.to_value(env);
                 }
                 let v = callable(env)?;
-                *cached.borrow_mut() =
-                    Some(unsafe { UnknownRef::from_napi_value(env.raw(), JsValue::raw(&v))? });
+                *cached.borrow_mut() = Some(StoredValue::from_value(&v)?);
                 Ok(v)
             }
         }
@@ -123,8 +117,7 @@ impl EventLayer {
 
     /// `new Event(type)`.
     #[layer(constructor)]
-    fn build(env: &Env, type_: String) -> Self {
-        crate::dispatch::set_env(*env);
+    fn build(type_: String) -> Self {
         Self {
             type_,
             bubbles: false,
@@ -148,16 +141,14 @@ impl EventLayer {
 
     /// `event.target` — resolves the target only when read.
     #[layer(getter)]
-    fn target(&self) -> Result<Unknown<'static>> {
-        let env = dispatch::env()?;
-        self.state.target.resolve(&env)
+    fn target(&self, env: &Env) -> Result<Unknown<'static>> {
+        self.state.target.resolve(env)
     }
 
     /// `event.currentTarget` — the current receiver during dispatch.
     #[layer(getter)]
-    fn current_target(&self) -> Result<Unknown<'static>> {
-        let env = dispatch::env()?;
-        self.state.current_target.resolve(&env)
+    fn current_target(&self, env: &Env) -> Result<Unknown<'static>> {
+        self.state.current_target.resolve(env)
     }
 
     #[layer(getter)]
@@ -200,9 +191,8 @@ impl EventLayer {
 /// JS `new` path).
 pub fn create(env: &Env, type_: impl Into<String>) -> Result<Object<'_>> {
     use napi_inherit::layer::LayerChain;
-    crate::dispatch::set_env(*env);
     let chain = LayerChain {
-        own: EventLayer::build(env, type_.into()),
+        own: EventLayer::build(type_.into()),
         parent: (),
     };
     napi_inherit::class::new_from_chain::<EventLayer>(env, chain)

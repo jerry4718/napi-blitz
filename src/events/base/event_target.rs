@@ -13,7 +13,7 @@ use napi::{
 };
 use napi_inherit_proc::layer;
 
-use super::{dispatch, event::EventLayer};
+use super::event::EventLayer;
 
 /// One registered listener.
 pub struct ListenerEntry {
@@ -43,17 +43,25 @@ impl EventTargetLayer {
     #[layer]
     fn add_event_listener(
         &self,
+        env: &Env,
         event_type: String,
         callback: FunctionRef<FnArgs<(Unknown<'static>,)>, Unknown<'static>>,
         capture: Option<bool>,
     ) -> Result<()> {
         let mut listeners = self.listeners.borrow_mut();
         let capture = capture.unwrap_or(false);
-        if listeners
-            .iter()
-            .any(|l| !l.removed && l.event_type == event_type && l.capture == capture)
-        {
-            return Ok(());
+        for l in listeners.iter() {
+            if l.removed || l.event_type != event_type || l.capture != capture {
+                continue;
+            }
+            // Same (type, callback, capture) triple — a duplicate registration.
+            // The callback is resolved from its reference and compared by
+            // identity.
+            let existing = l.callback.borrow_back(env)?;
+            let incoming = callback.borrow_back(env)?;
+            if env.strict_equals(existing, incoming)? {
+                return Ok(());
+            }
         }
         listeners.push(ListenerEntry {
             event_type,
@@ -88,23 +96,24 @@ impl EventTargetLayer {
     /// listeners, honouring `stopImmediatePropagation`; returns whether the
     /// default was NOT prevented.
     #[layer]
-    fn dispatch_event(&self, event: Object) -> Result<bool> {
+    fn dispatch_event(&self, env: &Env, event: Object) -> Result<bool> {
         let event_type = napi_inherit::own::with_own::<EventLayer, _>(&event, |d| d.type_name())?;
 
-        let env = dispatch::env()?;
-        let event_unknown = to_unknown(&env, &event)?;
+        let event_unknown = to_unknown(env, &event)?;
 
         {
             let listeners = self.listeners.borrow();
             for listener in listeners.iter() {
+                let stop_immediate = napi_inherit::own::with_own::<EventLayer, _>(&event, |d| {
+                    d.state.stop_immediate
+                })?;
                 if listener.removed || listener.capture || listener.event_type != event_type {
                     continue;
                 }
-                if napi_inherit::own::with_own::<EventLayer, _>(&event, |d| d.state.stop_immediate)?
-                {
+                if stop_immediate {
                     break;
                 }
-                let f = listener.callback.borrow_back(&env)?;
+                let f = listener.callback.borrow_back(env)?;
                 let _ = f.call(FnArgs::from((event_unknown.clone(),)));
             }
         }

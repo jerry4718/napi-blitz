@@ -46,6 +46,8 @@
 // windows, call `openWindow` multiple times.
 
 import {
+  Event,
+  EventTarget,
   NativeApp,
   NativeDoc,
   NativeWindow,

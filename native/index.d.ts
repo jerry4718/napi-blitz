@@ -632,3 +632,58 @@ export declare function registerNodeConstructor(nodeType: number, constructor: {
 
 /** Open a save-file dialog. Returns the chosen path or `null`. */
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
+/** Own block of the `CustomEvent` class. */
+export declare class CustomEvent extends Event {
+  get detail(): unknown
+  /** `new CustomEvent(type, detail)`. */
+  constructor(type: string, detail?: unknown | undefined | null)
+}
+
+/** Own block of the `Event` class. */
+export declare class Event {
+  readonly bubbles: boolean
+  readonly cancelable: boolean
+  readonly composed: boolean
+  readonly timeStamp: number
+  readonly isTrusted: boolean
+  get type(): string
+  /** `event.target` — resolves the target only when read. */
+  get target(): unknown
+  /** `event.currentTarget` — the current receiver during dispatch. */
+  get currentTarget(): unknown
+  get eventPhase(): number
+  get defaultPrevented(): boolean
+  stopPropagation(): void
+  stopImmediatePropagation(): void
+  preventDefault(): void
+  /**
+   * `event.composedPath()`. Placeholder: the dispatch chain is populated
+   * by the dispatch side.
+   */
+  composedPath(): Array<unknown>
+  /** `new Event(type)`. */
+  constructor(type: string)
+}
+
+/** Own block of the `EventTarget` class. */
+export declare class EventTarget {
+  /** `target.addEventListener(type, callback, capture?)`. */
+  addEventListener(eventType: string, callback: (arg0: unknown) => unknown, capture?: boolean | undefined | null): void
+  /** `target.removeEventListener(type, callback, capture?)`. */
+  removeEventListener(eventType: string, callback: (arg0: unknown) => unknown, capture?: boolean | undefined | null): void
+  /**
+   * `target.dispatchEvent(event) -> boolean`. Invokes the matching
+   * listeners, honouring `stopImmediatePropagation`; returns whether the
+   * default was NOT prevented.
+   */
+  dispatchEvent(event: object): boolean
+  constructor()
+}
+
+/** Own block of the `MessageEvent` class. */
+export declare class MessageEvent extends Event {
+  get data(): unknown
+  get origin(): string
+  /** `new MessageEvent(type, data, origin)`. */
+  constructor(type: string, data?: unknown | undefined | null, origin?: string | undefined | null)
+}

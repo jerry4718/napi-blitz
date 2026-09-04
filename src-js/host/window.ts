@@ -29,7 +29,7 @@
 import type {BlitzApp} from "./app";
 import type {HTMLDocument} from "../document/html-document";
 import type {MonitorInfo, VideoModeInfo, WindowHandle} from "../native";
-import {NativeWindow} from "../native";
+import {NativeWindow, EventTarget} from "../native";
 import {TypedEventTarget} from "../helpers/events";
 import type {WindowEventMap} from "../events/event-maps";
 
