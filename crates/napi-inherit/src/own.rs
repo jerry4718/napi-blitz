@@ -16,10 +16,18 @@ use std::cell::RefCell;
 
 use napi::{
     Error, Result, Status,
-    bindgen_prelude::{JsObjectValue, Object},
+    bindgen_prelude::{JsObjectValue, Object, Property, PropertyAttributes},
 };
 
 use crate::layer::{ExtendLayer, OwnBlock};
+
+/// Key under which every layer instance stores a self-reference. A
+/// receiver-passing proxy (e.g. Vue reactivity's
+/// `Reflect.get(target, key, receiver)`) forwards property reads to the
+/// target's own value, so reading this key *through* a proxy yields the
+/// raw instance; accessors unwrap that instead of the receiver. Read only
+/// on the slow path, after a direct unwrap of the receiver failed.
+const REAL_INSTANCE_KEY: &str = "__napi_blitz_real_instance";
 
 /// One independently borrowed slot per real layer in the chain, indexed at
 /// compile time by `OwnBlock::IDX`.
@@ -105,29 +113,54 @@ fn slot_error<T: ExtendLayer + OwnBlock>(reason: &str) -> Error {
 /// same registry through [`own_registry`].
 pub fn attach_registry<T: ExtendLayer + OwnBlock>(this: &mut Object) -> Result<()> {
     let registry = OwnDataRegistry::new::<T>();
-    this.wrap(registry, None)
+    this.wrap(registry, None)?;
+    // Self-reference for the receiver re-resolution in `with_registry`.
+    // Empty attribute bits: not writable, not enumerable, not configurable.
+    let prop = Property::new()
+        .with_utf8_name(REAL_INSTANCE_KEY)?
+        .with_value(this)
+        .with_property_attributes(PropertyAttributes::empty());
+    this.define_properties(&[prop])
 }
 
-/// Borrow the instance's `OwnDataRegistry`. Shared access is enough: each
-/// slot is interior-mutable through its own `RefCell`.
+/// Run `f` with the instance's `OwnDataRegistry`. Shared access is enough:
+/// each slot is interior-mutable through its own `RefCell`.
+///
+/// Fast path: unwrap the receiver directly - the common case, where the
+/// receiver is the raw instance, costs the same as the pre-proxy design.
+/// Slow path (unwrap failed, so the receiver is not the raw instance -
+/// e.g. a Vue reactivity proxy): resolve the raw instance through its
+/// self-reference key and unwrap that instead.
 #[inline]
-fn own_registry<'a>(this: &'a Object<'_>) -> Result<&'a OwnDataRegistry> {
-    this.unwrap::<OwnDataRegistry>()
-        .map(|r| r as &OwnDataRegistry)
-        .map_err(|_| {
-            Error::new(
-                Status::GenericFailure,
-                "instance has no OwnDataRegistry attached",
-            )
-        })
+fn with_registry<R>(this: &Object, f: impl FnOnce(&OwnDataRegistry) -> Result<R>) -> Result<R> {
+    if let Ok(registry) = this.unwrap::<OwnDataRegistry>() {
+        return f(registry);
+    }
+    match this.get_named_property::<Option<Object>>(REAL_INSTANCE_KEY) {
+        Ok(Some(real)) => {
+            let registry = real
+                .unwrap::<OwnDataRegistry>()
+                .map_err(|_| no_registry_error())?;
+            f(registry)
+        }
+        _ => Err(no_registry_error()),
+    }
+}
+
+fn no_registry_error() -> Error {
+    Error::new(
+        Status::GenericFailure,
+        "instance has no OwnDataRegistry attached",
+    )
 }
 
 /// Write a layer's data into its slot.
 #[inline]
 pub fn set_own_block<T: ExtendLayer + OwnBlock>(this: &Object, data: T) -> Result<()> {
-    let registry = own_registry(this)?;
-    registry.set_slot_for::<T>(data);
-    Ok(())
+    with_registry(this, |registry| {
+        registry.set_slot_for::<T>(data);
+        Ok(())
+    })
 }
 
 /// Read a layer's own block by shared reference.
@@ -136,8 +169,7 @@ pub fn with_own<T, R>(this: &Object, f: impl FnOnce(&T) -> R) -> Result<R>
 where
     T: ExtendLayer + OwnBlock,
 {
-    let registry = own_registry(this)?;
-    registry.with::<T, R>(f)
+    with_registry(this, |registry| registry.with::<T, R>(f))
 }
 
 /// Mutate a layer's own block in place through the callback. The `&mut T`
@@ -148,6 +180,5 @@ pub fn with_own_mut<T, R>(this: &Object, f: impl FnOnce(&mut T) -> R) -> Result<
 where
     T: ExtendLayer + OwnBlock,
 {
-    let registry = own_registry(this)?;
-    registry.with_mut::<T, R>(f)
+    with_registry(this, |registry| registry.with_mut::<T, R>(f))
 }
