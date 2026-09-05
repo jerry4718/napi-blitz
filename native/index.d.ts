@@ -410,6 +410,22 @@ export declare function pickFolder(options?: DialogOptions | undefined | null, p
 /** Open a multi-folder picker. Returns an array of paths (may be empty). */
 export declare function pickFolders(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<Array<string>>
 
+/**
+ * How layer accessors resolve their own-data registry from the (possibly
+ * proxied) receiver. Written once: `setProxyCompat` rejects later calls.
+ */
+export declare const enum ProxyCompatMode {
+  /** Unwrap the receiver directly; fails on a proxied receiver. */
+  Off = 'off',
+  /** Always resolve through the instance's self-reference key first. */
+  On = 'on',
+  /**
+   * Unwrap the receiver directly, falling back to the key when that
+   * fails (the receiver is not the raw instance).
+   */
+  Auto = 'auto'
+}
+
 /** Result of one `pumpAppEvents` call. */
 export interface PumpResult {
   /** The loop is still running. Caller should pump again later. */
@@ -432,6 +448,12 @@ export interface RegisterFontOptions {
 export declare function saveFile(options?: DialogOptions | undefined | null, parent?: WindowHandle | undefined | null): Promise<string | null>
 
 export declare function setListenerOps(ops: ListenerOps): void
+
+/**
+ * Set the global proxy-compat mode for layer accessors. Succeeds once;
+ * later calls error with the mode already in effect.
+ */
+export declare function setProxyCompat(mode: ProxyCompatMode | 'on' | 'off' | 'auto'): void
 
 /**
  * Register the JS-side `pumpAppLoop(app, options)` function that runs the

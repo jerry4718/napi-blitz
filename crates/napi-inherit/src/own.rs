@@ -13,6 +13,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::sync::OnceLock;
 
 use napi::{
     Error, Result, Status,
@@ -20,6 +21,29 @@ use napi::{
 };
 
 use crate::layer::{ExtendLayer, OwnBlock};
+
+/// How layer accessors resolve the instance's own-data registry from the
+/// (possibly proxied) receiver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProxyCompatMode {
+    /// Unwrap the receiver directly; fails on a proxied receiver.
+    Off,
+    /// Always resolve through the instance's self-reference key first.
+    On,
+    /// Unwrap the receiver directly, falling back to the key when that
+    /// fails (the receiver is not the raw instance).
+    Auto,
+}
+
+/// Global proxy-compat mode for layer accessors, written once at startup
+/// via [`set_proxy_compat`]; reads are lock-free.
+pub static PROXY_COMPAT: OnceLock<ProxyCompatMode> = OnceLock::new();
+
+/// Set [`PROXY_COMPAT`]. Succeeds once; later calls fail with the mode
+/// already in effect.
+pub fn set_proxy_compat(mode: ProxyCompatMode) -> std::result::Result<(), ProxyCompatMode> {
+    PROXY_COMPAT.set(mode)
+}
 
 /// Key under which every layer instance stores a self-reference. A
 /// receiver-passing proxy (e.g. Vue reactivity's
@@ -114,36 +138,61 @@ fn slot_error<T: ExtendLayer + OwnBlock>(reason: &str) -> Error {
 pub fn attach_registry<T: ExtendLayer + OwnBlock>(this: &mut Object) -> Result<()> {
     let registry = OwnDataRegistry::new::<T>();
     this.wrap(registry, None)?;
-    // Self-reference for the receiver re-resolution in `with_registry`.
-    // Empty attribute bits: not writable, not enumerable, not configurable.
-    let prop = Property::new()
-        .with_utf8_name(REAL_INSTANCE_KEY)?
-        .with_value(this)
-        .with_property_attributes(PropertyAttributes::empty());
-    this.define_properties(&[prop])
+    if PROXY_COMPAT
+        .get()
+        .is_some_and(|mode| *mode != ProxyCompatMode::Off)
+    {
+        // Self-reference for the receiver re-resolution in `with_registry`.
+        // Empty attribute bits: not writable, not enumerable, not configurable.
+        let prop = Property::new()
+            .with_utf8_name(REAL_INSTANCE_KEY)?
+            .with_value(this)
+            .with_property_attributes(PropertyAttributes::empty());
+        this.define_properties(&[prop])?;
+    }
+    Ok(())
 }
 
 /// Run `f` with the instance's `OwnDataRegistry`. Shared access is enough:
-/// each slot is interior-mutable through its own `RefCell`.
-///
-/// Fast path: unwrap the receiver directly - the common case, where the
-/// receiver is the raw instance, costs the same as the pre-proxy design.
-/// Slow path (unwrap failed, so the receiver is not the raw instance -
-/// e.g. a Vue reactivity proxy): resolve the raw instance through its
-/// self-reference key and unwrap that instead.
+/// each slot is interior-mutable through its own `RefCell`. The resolution
+/// path is fixed by the global [`PROXY_COMPAT`] mode, not chosen per call:
+/// `Off` unwraps the receiver directly, `On` resolves through the
+/// self-reference key, `Auto` tries the direct unwrap first and falls back
+/// to the key when the receiver is not the raw instance.
 #[inline]
 fn with_registry<R>(this: &Object, f: impl FnOnce(&OwnDataRegistry) -> Result<R>) -> Result<R> {
-    if let Ok(registry) = this.unwrap::<OwnDataRegistry>() {
-        return f(registry);
-    }
-    match this.get_named_property::<Option<Object>>(REAL_INSTANCE_KEY) {
-        Ok(Some(real)) => {
+    match PROXY_COMPAT.get().unwrap_or(&ProxyCompatMode::Off) {
+        ProxyCompatMode::Off => {
+            let registry = this
+                .unwrap::<OwnDataRegistry>()
+                .map_err(|_| no_registry_error())?;
+            f(registry)
+        }
+        ProxyCompatMode::On => {
+            let real = this
+                .get_named_property::<Option<Object>>(REAL_INSTANCE_KEY)
+                .ok()
+                .flatten()
+                .unwrap_or(*this);
             let registry = real
                 .unwrap::<OwnDataRegistry>()
                 .map_err(|_| no_registry_error())?;
             f(registry)
         }
-        _ => Err(no_registry_error()),
+        ProxyCompatMode::Auto => {
+            if let Ok(registry) = this.unwrap::<OwnDataRegistry>() {
+                return f(registry);
+            }
+            let real = this
+                .get_named_property::<Option<Object>>(REAL_INSTANCE_KEY)
+                .ok()
+                .flatten()
+                .unwrap_or(*this);
+            let registry = real
+                .unwrap::<OwnDataRegistry>()
+                .map_err(|_| no_registry_error())?;
+            f(registry)
+        }
     }
 }
 

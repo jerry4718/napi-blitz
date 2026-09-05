@@ -12,6 +12,8 @@
 #[macro_use]
 extern crate napi_derive;
 
+mod config;
+
 mod helpers;
 
 mod events;

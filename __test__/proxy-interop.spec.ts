@@ -5,13 +5,15 @@
 // — passes the *proxy* as the receiver, so a native layer accessor
 // receives the proxy as `this`, and its `napi_unwrap` would fail.
 //
-// Regression guard: every layer instance carries a self-reference data
-// property, so accessors re-resolve the raw instance through a proxied
-// receiver before unwrapping (`crates/napi-inherit/src/own.rs`).
+// The global proxy-compat mode (`setProxyCompat`, written once) decides
+// how accessors resolve the registry: `off` keeps the pre-proxy behavior,
+// `on`/`auto` resolve through the instance's self-reference key
+// (`crates/napi-inherit/src/own.rs`). Tests below run in file order, so
+// the "unset" case executes before the mode is written.
 
 import test from "ava";
 
-import {HTMLDocument} from "./_shim.ts";
+import {HTMLDocument, setProxyCompat} from "./_shim.ts";
 
 // The exact receiver-passing shape of Vue's `MutableReactiveHandler`:
 // accessor properties run with `this` = the proxy.
@@ -26,7 +28,27 @@ function vueLikeProxy<T extends object>(target: T): T {
   });
 }
 
-test("layer accessors survive a receiver-passing proxy", (t) => {
+test("unset mode: a receiver-passing proxy still throws", (t) => {
+  const doc = HTMLDocument.create();
+  const el = doc.createElement("div");
+  const proxied = vueLikeProxy(el);
+
+  t.throws(
+    () => {
+      void proxied.scrollTop;
+    },
+    {message: /OwnDataRegistry/},
+    "default is `off`: the receiver stays a proxy and the unwrap fails",
+  );
+});
+
+test("setProxyCompat(\"on\"): proxy resolves through the self-reference key", (t) => {
+  t.notThrows(() => {
+    setProxyCompat("on");
+  }, "first write succeeds");
+
+  // The self-reference key is attached at construction time, so the mode
+  // must be in effect before the instances are created.
   const doc = HTMLDocument.create();
   const el = doc.createElement("div");
   const proxied = vueLikeProxy(el);
@@ -34,13 +56,12 @@ test("layer accessors survive a receiver-passing proxy", (t) => {
   t.notThrows(() => {
     void proxied.scrollTop;
   }, "the registry is resolved through the proxy to the raw instance");
-});
 
-test("the same accessor works on the raw instance", (t) => {
-  const doc = HTMLDocument.create();
-  const el = doc.createElement("div");
-
-  t.notThrows(() => {
-    void el.scrollTop;
-  });
+  t.throws(
+    () => {
+      setProxyCompat("auto");
+    },
+    {message: /already set to On/},
+    "the mode is written once",
+  );
 });
