@@ -44,8 +44,8 @@ impl DocumentLayer {
         let state = self.shared.base();
         match state.query_selector(&selector) {
             Ok(Some(id)) => Ok(Some(LayerRef::new(
-                &wrap_node(&self.shared, env, id)?,
                 env,
+                &wrap_node(&self.shared, env, id)?,
             )?)),
             Ok(None) => Ok(None),
             Err(err) => Err(Error::from_reason(format!("query_selector: {err:?}"))),
@@ -63,7 +63,7 @@ impl DocumentLayer {
             Ok(ids) => {
                 let mut result = Vec::new();
                 for id in ids {
-                    result.push(LayerRef::new(&wrap_node(&self.shared, env, id)?, env)?);
+                    result.push(LayerRef::new(env, &wrap_node(&self.shared, env, id)?)?);
                 }
                 Ok(result)
             }
@@ -74,7 +74,7 @@ impl DocumentLayer {
     #[layer]
     fn get_element_by_id(&self, id: String, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let node_id = self.shared.base().get_element_by_id(&id)?;
-        LayerRef::new(&wrap_node(&self.shared, env, node_id).ok()?, env).ok()
+        LayerRef::new(env, &wrap_node(&self.shared, env, node_id).ok()?).ok()
     }
 
     #[layer]
@@ -85,7 +85,7 @@ impl DocumentLayer {
         let root = doc.base().root_node().id;
         let ids = doc.dfs(root, |n| name == "*" || is_element_with_tag(n, &name));
         ids.into_iter()
-            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(env, &wrap_node(&doc, env, id).ok()?).ok())
             .collect()
     }
 
@@ -103,7 +103,7 @@ impl DocumentLayer {
                 .unwrap_or(false)
         });
         ids.into_iter()
-            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(env, &wrap_node(&doc, env, id).ok()?).ok())
             .collect()
     }
 
@@ -130,7 +130,7 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared, env, node_id)?)
     }
 
     #[layer]
@@ -141,7 +141,7 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared, env, node_id)?)
     }
 
     #[layer]
@@ -152,25 +152,25 @@ impl DocumentLayer {
         drop(mutator);
         drop(state);
         self.shared.mark_host_dirty();
-        LayerRef::new(&wrap_node(&self.shared, env, node_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared, env, node_id)?)
     }
 
     #[layer(getter)]
     fn document_element(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "html"))?;
-        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(env, &wrap_node(&self.shared, env, id).ok()?).ok()
     }
 
     #[layer(getter)]
     fn head(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "head"))?;
-        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(env, &wrap_node(&self.shared, env, id).ok()?).ok()
     }
 
     #[layer(getter)]
     fn body(&self, env: &Env) -> Option<LayerRef<ElementLayer>> {
         let id = self.shared.find_first(|n| is_element_with_tag(n, "body"))?;
-        LayerRef::new(&wrap_node(&self.shared, env, id).ok()?, env).ok()
+        LayerRef::new(env, &wrap_node(&self.shared, env, id).ok()?).ok()
     }
 
     #[layer(getter)]

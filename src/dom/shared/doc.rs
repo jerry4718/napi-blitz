@@ -136,7 +136,7 @@ impl SharedDocument {
     /// Register the JS Document object. Documents start unattached, so
     /// the reference is created weak; `attach_window` promotes it.
     pub fn set_document_ref(&self, env: &Env, document: &Object) -> Result<()> {
-        *self.document_ref.borrow_mut() = Some(ToggleRef::new_weak(document, env)?);
+        *self.document_ref.borrow_mut() = Some(ToggleRef::new_weak(env, document)?);
         Ok(())
     }
 
@@ -148,7 +148,7 @@ impl SharedDocument {
     /// Register the JS Window object, retained weakly; the lifecycle
     /// dispatch resolves the window through this.
     pub fn set_window_ref(&self, env: &Env, window: &Object) -> Result<()> {
-        *self.js_window_ref.borrow_mut() = Some(WeakRef::new(window, env)?);
+        *self.js_window_ref.borrow_mut() = Some(WeakRef::new(env, window)?);
         Ok(())
     }
 
@@ -159,7 +159,8 @@ impl SharedDocument {
 
     /// Retain the document's `FontFaceSet`.
     pub fn set_fonts(&self, env: &Env, fonts: &Object) -> Result<()> {
-        *self.fonts.borrow_mut() = Some(unsafe { OtherRef::new(env.raw(), JsValue::raw(fonts))? });
+        *self.fonts.borrow_mut() =
+            Some(unsafe { OtherRef::from_raw(env.raw(), JsValue::raw(fonts))? });
         Ok(())
     }
 

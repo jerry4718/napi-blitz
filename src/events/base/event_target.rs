@@ -125,7 +125,6 @@ pub enum ListenerCallback {
     /// `addEventListener(type, listenerObject)` — invoke `handleEvent`.
     HandlerObject(WeakRef),
     /// An `on<event>` attribute handler, always a function.
-    #[allow(dead_code)]
     AttributeFunction(WeakRef),
 }
 
@@ -286,18 +285,16 @@ impl EventTargetLayer {
                     && !l.removed
                     && matches!(l.callback, ListenerCallback::AttributeFunction(_))
             }) {
-                entry.callback = ListenerCallback::AttributeFunction(WeakRef::new(
-                    &Object::from_raw(env.raw(), handler_raw),
-                    env,
-                )?);
+                entry.callback = ListenerCallback::AttributeFunction(unsafe {
+                    WeakRef::from_raw(env.raw(), handler_raw)?
+                });
                 return Ok(());
             }
             listeners.push(ListenerEntry {
                 event_type: event_type.to_string(),
-                callback: ListenerCallback::AttributeFunction(WeakRef::new(
-                    &Object::from_raw(env.raw(), handler_raw),
-                    env,
-                )?),
+                callback: ListenerCallback::AttributeFunction(unsafe {
+                    WeakRef::from_raw(env.raw(), handler_raw)?
+                }),
                 capture: false,
                 passive: false,
                 once: false,
@@ -380,9 +377,9 @@ impl EventTargetLayer {
         options: Option<Either<AddEventListenerOptions, bool>>,
     ) -> Result<()> {
         let callback_value = match &callback {
-            Anything::Function(reference) | Anything::Object(reference) => unsafe {
+            Anything::Function(reference) | Anything::Object(reference) => {
                 reference.raw_value(env)?
-            },
+            }
             _ => {
                 return Err(Error::new(
                     Status::FunctionExpected,
@@ -391,14 +388,12 @@ impl EventTargetLayer {
             }
         };
         let callback = match callback {
-            Anything::Function(_) => ListenerCallback::Function(WeakRef::new(
-                &Object::from_raw(env.raw(), callback_value),
-                env,
-            )?),
-            Anything::Object(_) => ListenerCallback::HandlerObject(WeakRef::new(
-                &Object::from_raw(env.raw(), callback_value),
-                env,
-            )?),
+            Anything::Function(_) => {
+                ListenerCallback::Function(unsafe { WeakRef::from_raw(env.raw(), callback_value)? })
+            }
+            Anything::Object(_) => ListenerCallback::HandlerObject(unsafe {
+                WeakRef::from_raw(env.raw(), callback_value)?
+            }),
             _ => {
                 return Err(Error::new(
                     Status::InvalidArg,
@@ -487,9 +482,7 @@ impl EventTargetLayer {
         options: Option<Either<EventListenerOptions, bool>>,
     ) -> Result<()> {
         let callback_value = match callback {
-            Anything::Function(callback) | Anything::Object(callback) => unsafe {
-                callback.raw_value(env)?
-            },
+            Anything::Function(callback) | Anything::Object(callback) => callback.raw_value(env)?,
             _ => {
                 return Err(Error::new(
                     Status::InvalidArg,

@@ -135,7 +135,7 @@ impl Lifecycle {
     /// app-level lifecycle events (`window:open`, `window:close`,
     /// `window:closed`) to it.
     pub(crate) fn set_app_ref(&self, app: Object) -> Result<()> {
-        *self.js_app_ref.borrow_mut() = Some(WeakRef::new(&app, &self.env)?);
+        *self.js_app_ref.borrow_mut() = Some(WeakRef::new(&self.env, &app)?);
         Ok(())
     }
 

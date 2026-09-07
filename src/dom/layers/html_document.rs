@@ -29,7 +29,7 @@ impl HTMLDocumentLayer {
     #[layer]
     fn create(env: &Env, config: Option<DocHandleConfig>) -> Result<LayerRef<HTMLDocumentLayer>> {
         let document = create_document(env, config)?;
-        LayerRef::new(&document, env)
+        LayerRef::new(env, &document)
     }
 
     /// `document.fonts` — the document's `FontFaceSet`, created when the
@@ -40,9 +40,8 @@ impl HTMLDocumentLayer {
         let fonts = shared.fonts().clone();
         match fonts {
             Some(r) => {
-                let raw = unsafe { r.raw_value(env)? };
-                let obj = Object::from_raw(env.raw(), raw);
-                Ok(Some(LayerRef::new(&obj, env)?))
+                let raw = r.raw_value(env)?;
+                Ok(Some(unsafe { LayerRef::from_raw(env.raw(), raw)? }))
             }
             None => Ok(None),
         }

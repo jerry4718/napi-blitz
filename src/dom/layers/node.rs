@@ -73,7 +73,7 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, parent_id)?;
-        Ok(Some(LayerRef::new(&node, env)?))
+        Ok(Some(LayerRef::new(env, &node)?))
     }
 
     #[layer(getter)]
@@ -87,7 +87,7 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, child_id)?;
-        Ok(Some(LayerRef::new(&node, env)?))
+        Ok(Some(LayerRef::new(env, &node)?))
     }
 
     #[layer(getter)]
@@ -101,7 +101,7 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, child_id)?;
-        Ok(Some(LayerRef::new(&node, env)?))
+        Ok(Some(LayerRef::new(env, &node)?))
     }
 
     #[layer(getter)]
@@ -115,7 +115,7 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, sibling_id)?;
-        Ok(Some(LayerRef::new(&node, env)?))
+        Ok(Some(LayerRef::new(env, &node)?))
     }
 
     #[layer(getter)]
@@ -129,7 +129,7 @@ impl NodeLayer {
             return Ok(None);
         };
         let node = wrap_node(&self.shared_doc, env, sibling_id)?;
-        Ok(Some(LayerRef::new(&node, env)?))
+        Ok(Some(LayerRef::new(env, &node)?))
     }
 
     #[layer(getter)]
@@ -142,7 +142,7 @@ impl NodeLayer {
             .unwrap_or_default();
         let mut out = Vec::with_capacity(children.len());
         for id in children {
-            out.push(LayerRef::new(&wrap_node(&self.shared_doc, env, id)?, env)?);
+            out.push(LayerRef::new(env, &wrap_node(&self.shared_doc, env, id)?)?);
         }
         Ok(out)
     }
@@ -212,7 +212,7 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, child_id, env)?;
-        LayerRef::new(&wrap_node(&self.shared_doc, env, child_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared_doc, env, child_id)?)
     }
 
     #[layer]
@@ -242,7 +242,7 @@ impl NodeLayer {
         self.shared_doc.mark_host_dirty();
         self.shared_doc
             .make_in_document_subtree_strong(self.node_id, node_id, env)?;
-        LayerRef::new(&wrap_node(&self.shared_doc, env, node_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared_doc, env, node_id)?)
     }
 
     /// `parent.removeChild(child)` — detach `child` and return it.
@@ -259,7 +259,7 @@ impl NodeLayer {
         drop(mutator);
         drop(base);
         self.shared_doc.mark_host_dirty();
-        LayerRef::new(&child, env)
+        LayerRef::new(env, &child)
     }
 
     #[layer]
@@ -299,7 +299,7 @@ impl NodeLayer {
         // The new node is now in document -> strong.
         self.shared_doc
             .make_in_document_subtree_strong(node_id, node_id, env)?;
-        LayerRef::new(&wrap_node(&self.shared_doc, env, node_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared_doc, env, node_id)?)
     }
 
     #[layer]
@@ -314,14 +314,14 @@ impl NodeLayer {
         } else {
             let mut base = self.shared_doc.base_mut();
             let Some(data) = base.get_node(self.node_id).map(|node| node.data.clone()) else {
-                return LayerRef::new(&wrap_node(&self.shared_doc, env, self.node_id)?, env);
+                return LayerRef::new(env, &wrap_node(&self.shared_doc, env, self.node_id)?);
             };
             let clone_id = base.create_node(data);
             drop(base);
             clone_id
         };
         self.shared_doc.mark_host_dirty();
-        LayerRef::new(&wrap_node(&self.shared_doc, env, new_id)?, env)
+        LayerRef::new(env, &wrap_node(&self.shared_doc, env, new_id)?)
     }
 }
 

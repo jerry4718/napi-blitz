@@ -204,7 +204,7 @@ impl ElementLayer {
                         .is_element_with_tag_name(&blitz::dom::LocalName::from(name.as_str())))
         });
         ids.into_iter()
-            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(env, &wrap_node(&doc, env, id).ok()?).ok())
             .collect()
     }
 
@@ -225,7 +225,7 @@ impl ElementLayer {
                     .unwrap_or(false)
         });
         ids.into_iter()
-            .filter_map(|id| LayerRef::new(&wrap_node(&doc, env, id).ok()?, env).ok())
+            .filter_map(|id| LayerRef::new(env, &wrap_node(&doc, env, id).ok()?).ok())
             .collect()
     }
 
@@ -274,8 +274,8 @@ impl ElementLayer {
         };
         match result_id {
             Some(id) => Ok(Some(LayerRef::new(
-                &wrap_node(&self.shared_doc, env, id)?,
                 env,
+                &wrap_node(&self.shared_doc, env, id)?,
             )?)),
             None => Ok(None),
         }
@@ -307,7 +307,7 @@ impl ElementLayer {
         };
         let mut out = Vec::new();
         for id in ids {
-            out.push(LayerRef::new(&wrap_node(&self.shared_doc, env, id)?, env)?);
+            out.push(LayerRef::new(env, &wrap_node(&self.shared_doc, env, id)?)?);
         }
         Ok(out)
     }

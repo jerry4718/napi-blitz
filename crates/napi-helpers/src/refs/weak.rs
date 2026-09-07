@@ -5,7 +5,7 @@
 //! [`RefInner`].
 
 use crate::{Finalize, refs::RefInner};
-use napi::{Env, Result, bindgen_prelude::Object};
+use napi::{Env, Result, bindgen_prelude::Object, sys};
 
 /// A weak reference to a JS object.
 ///
@@ -18,10 +18,27 @@ pub struct WeakRef {
 
 impl WeakRef {
     /// Create a weak reference to `obj`.
-    pub fn new(obj: &Object, env: &Env) -> Result<Self> {
+    pub fn new(env: &Env, obj: &Object) -> Result<Self> {
         Ok(Self {
             inner: RefInner::new(env, obj)?,
         })
+    }
+
+    /// Create a weak reference from raw handles.
+    ///
+    /// # Safety
+    ///
+    /// `env` must be a valid `napi_env` from the current native call, and
+    /// `value` must be a valid JS value belonging to that environment.
+    pub unsafe fn from_raw(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+        Ok(Self {
+            inner: unsafe { RefInner::from_raw(env, value)? },
+        })
+    }
+
+    /// Retrieve the referenced value as a raw handle.
+    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
+        self.inner.raw_value(env)
     }
 
     /// Try to retrieve the JS object. Returns `None` if it has been

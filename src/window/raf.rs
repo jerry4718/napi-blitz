@@ -86,7 +86,7 @@ impl RafQueue {
             let Anything::Function(reference) = value else {
                 continue;
             };
-            let raw = match unsafe { reference.raw_value(env) } {
+            let raw = match reference.raw_value(env) {
                 Ok(raw) => raw,
                 Err(err) => {
                     native_log!("raf: dropping callback: {err}");

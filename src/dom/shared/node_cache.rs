@@ -59,9 +59,9 @@ impl NodeCache {
         shared_doc: Weak<SharedDocument>,
     ) -> Result<()> {
         let toggle_ref = if strong {
-            ToggleRef::new_strong(obj, env)?
+            ToggleRef::new_strong(env, obj)?
         } else {
-            ToggleRef::new_weak(obj, env)?
+            ToggleRef::new_weak(env, obj)?
         };
         toggle_ref.add_finalizer(
             env,

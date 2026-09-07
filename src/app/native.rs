@@ -117,7 +117,7 @@ impl BlitzAppLayer {
             },
         )?;
         lifecycle.set_app_ref(app)?;
-        LayerRef::new(&app, env)
+        LayerRef::new(env, &app)
     }
 
     /// Open a new window for an existing `HTMLDocument`.
@@ -219,11 +219,11 @@ impl BlitzAppLayer {
     fn pump_loop(&self, this: &Object, env: &Env, options: Option<Object>) -> Result<Anything> {
         let loop_obj = Self::call_pump_app_loop(env, this, options)?;
         let raw = match &loop_obj {
-            Anything::Object(r) | Anything::Function(r) => unsafe { r.raw_value(env)? },
+            Anything::Object(r) | Anything::Function(r) => r.raw_value(env)?,
             _ => return Err(Error::from_reason("pumpAppLoop did not return an object")),
         };
         let handle = unsafe { Object::from_napi_value(env.raw(), raw)? };
-        *self.pumping_loop.borrow_mut() = Some(WeakRef::new(&handle, env)?);
+        *self.pumping_loop.borrow_mut() = Some(WeakRef::new(env, &handle)?);
         Ok(loop_obj)
     }
 }
@@ -237,7 +237,7 @@ impl BlitzAppLayer {
         let Anything::Function(function) = function else {
             return Err(Error::from_reason("pumpAppLoop is not registered"));
         };
-        let function_raw = unsafe { function.raw_value(env)? };
+        let function_raw = function.raw_value(env)?;
         let f = unsafe {
             Function::<FnArgs<(&Object, Option<Object>)>, Anything>::from_napi_value(
                 env.raw(),

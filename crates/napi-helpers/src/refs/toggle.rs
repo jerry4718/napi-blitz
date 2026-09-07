@@ -5,7 +5,7 @@
 //! discriminates the current strength: a strong (`RefInner<false>`) or weak
 //! (`RefInner<true>`) reference.
 
-use napi::{Env, Result, bindgen_prelude::Object};
+use napi::{Env, Result, bindgen_prelude::Object, sys};
 
 use crate::{Finalize, refs::RefInner};
 
@@ -32,7 +32,7 @@ pub struct ToggleRef {
 impl ToggleRef {
     /// Create a strong reference (refcount 1): the target cannot be
     /// garbage-collected until switched weak.
-    pub fn new_strong(obj: &Object, env: &Env) -> Result<Self> {
+    pub fn new_strong(env: &Env, obj: &Object) -> Result<Self> {
         Ok(Self {
             inner: Some(ToggleInner::Strong(RefInner::new(env, obj)?)),
         })
@@ -40,10 +40,41 @@ impl ToggleRef {
 
     /// Create a weak reference (refcount 0): the target may be collected;
     /// probe with [`ToggleRef::get_value`].
-    pub fn new_weak(obj: &Object, env: &Env) -> Result<Self> {
+    pub fn new_weak(env: &Env, obj: &Object) -> Result<Self> {
         Ok(Self {
             inner: Some(ToggleInner::Weak(RefInner::new(env, obj)?)),
         })
+    }
+
+    /// Create a reference from raw handles with the strength selected by
+    /// `strong`.
+    ///
+    /// # Safety
+    ///
+    /// `env` must be a valid `napi_env` from the current native call, and
+    /// `value` must be a valid JS value belonging to that environment.
+    pub unsafe fn from_raw(
+        env: sys::napi_env,
+        value: sys::napi_value,
+        strong: bool,
+    ) -> Result<Self> {
+        let inner = if strong {
+            ToggleInner::Strong(unsafe { RefInner::from_raw(env, value)? })
+        } else {
+            ToggleInner::Weak(unsafe { RefInner::from_raw(env, value)? })
+        };
+        Ok(Self { inner: Some(inner) })
+    }
+
+    /// Retrieve the referenced value as a raw handle.
+    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
+        match self.inner.as_ref() {
+            Some(ToggleInner::Strong(inner)) => inner.raw_value(env),
+            Some(ToggleInner::Weak(inner)) => inner.raw_value(env),
+            None => unreachable!(
+                "ToggleRef inner must stay Some; a None here means its strength-switch state was corrupted"
+            ),
+        }
     }
 
     /// Whether the reference is currently strong.

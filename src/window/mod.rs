@@ -108,7 +108,7 @@ impl WindowLayer {
             .as_ref()
             .and_then(|r| r.get_value(env))
             .ok_or_else(|| Error::from_reason("document is gone"))?;
-        LayerRef::new(&obj, env)
+        LayerRef::new(env, &obj)
     }
 
     /// Whether `close()` has run for this window.
@@ -193,7 +193,7 @@ impl WindowLayer {
         // window's lifetime.
         let node_id = new_shared.base().root_node().id;
         let document = wrap_node(&new_shared, env, node_id)?;
-        let fresh_document = LayerRef::new(&document, env)?;
+        let fresh_document = LayerRef::new(env, &document)?;
         self.shared_doc = Rc::clone(&new_shared);
         new_shared.set_window_ref(env, this)?;
         new_shared.attach_window(env)?;

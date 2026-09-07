@@ -108,7 +108,7 @@ impl CharacterDataLayer {
                 let id = n.id;
                 drop(base);
                 let node = wrap_node(&self.shared_doc, env, id)?;
-                return Ok(Some(LayerRef::new(&node, env)?));
+                return Ok(Some(LayerRef::new(env, &node)?));
             }
             cursor = if forward { n.forward(1) } else { n.backward(1) };
         }

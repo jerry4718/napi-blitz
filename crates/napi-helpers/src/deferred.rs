@@ -21,7 +21,7 @@ impl Deferred {
         let mut promise = ptr::null_mut();
         check_status!(unsafe { sys::napi_create_promise(env.raw(), &mut deferred, &mut promise) })?;
         Ok(Self {
-            promise: unsafe { OtherRef::new(env.raw(), promise)? },
+            promise: unsafe { OtherRef::from_raw(env.raw(), promise)? },
             deferred: Cell::new(Some(deferred)),
         })
     }

@@ -99,6 +99,17 @@ impl OwnDataRegistry {
             .ok_or_else(|| slot_error::<T>("type mismatch"))?;
         Ok(f(data))
     }
+
+    /// Whether `T`'s slot exists, has been constructed, and holds the right
+    /// type - the same three conditions `with` succeeds under, without
+    /// producing the `&T`.
+    #[inline]
+    fn has<T: ExtendLayer + OwnBlock>(&self) -> bool {
+        let Ok(slot) = self.slot_for::<T>() else {
+            return false;
+        };
+        matches!(&*slot.borrow(), Some(any) if any.is::<T>())
+    }
 }
 
 fn slot_error<T: ExtendLayer + OwnBlock>(reason: &str) -> Error {
@@ -193,4 +204,12 @@ where
     T: ExtendLayer + OwnBlock,
 {
     with_registry(this, |registry| registry.with_mut::<T, R>(f))
+}
+
+/// Whether `this` carries `T`'s own block. `false` when the instance has no
+/// registry at all or the slot for `T` is absent, unconstructed, or of the
+/// wrong type.
+#[inline]
+pub fn has_own<T: ExtendLayer + OwnBlock>(this: &Object) -> bool {
+    with_registry(this, |registry| Ok(registry.has::<T>())).unwrap_or(false)
 }

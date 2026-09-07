@@ -124,7 +124,7 @@ impl JsEventHandler {
             with_own_mut::<EventLayer, _>(&event_obj, |d| {
                 d.state_mut().target = DispatchTarget::from_callable(Box::new(move |env| {
                     let node = wrap_node(&doc_clone, env, target_nid)?;
-                    LayerRef::new(&node, env)
+                    LayerRef::new(env, &node)
                 }));
             })?;
         }
@@ -234,7 +234,7 @@ impl JsEventHandler {
                 s.phase = phase;
                 s.current_target = DispatchTarget::from_callable(Box::new(move |env| {
                     let node = wrap_node(&doc_clone, env, node_id)?;
-                    LayerRef::new(&node, env)
+                    LayerRef::new(env, &node)
                 }));
             });
         }
@@ -263,7 +263,7 @@ impl JsEventHandler {
         if let Err(e) = with_own_mut::<EventLayer, _>(event, |d| -> Result<()> {
             let s = d.state_mut();
             s.phase = phase;
-            s.current_target = DispatchTarget::Direct(LayerRef::new(window, env)?);
+            s.current_target = DispatchTarget::Direct(LayerRef::new(env, window)?);
             Ok(())
         }) {
             native_log!("napi-blitz-dom: set window currentTarget failed: {e}");

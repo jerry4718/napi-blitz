@@ -7,11 +7,14 @@
 
 use std::{cell::RefCell, ptr, sync::Arc};
 
+use super::font_face::FontFaceLayer;
+use crate::events::base::EventTargetLayer;
 use napi::{
     Env, Error, JsValue, Result, Status,
     bindgen_prelude::{Object, ToNapiValue},
     check_status, sys,
 };
+use napi_helpers::inherits::has_own;
 use napi_helpers::{
     Deferred,
     anything::{Anything, OtherRef},
@@ -22,9 +25,6 @@ use parley::{
     FontContext,
     fontique::{Blob, FontInfoOverride, FontStyle, FontWeight, FontWidth},
 };
-
-use super::font_face::FontFaceLayer;
-use crate::events::base::EventTargetLayer;
 
 fn parse_descriptor<T>(
     label: &str,
@@ -84,18 +84,14 @@ impl FontFaceSetLayer {
     /// font cache. Returns the set (per spec).
     #[layer]
     fn add(&mut self, env: &Env, this: &Object, face: Object) -> Result<Anything> {
-        let set_value = || -> Result<Anything> {
-            Ok(Anything::Object(unsafe {
-                OtherRef::new(env.raw(), JsValue::raw(this))?
-            }))
-        };
-        if with_own::<FontFaceLayer, _>(&face, |_| ()).is_err() {
+        let set_value = || Ok(Anything::Object(OtherRef::new(env, this)?));
+        if !has_own::<FontFaceLayer>(&face) {
             return Err(Error::new(
                 Status::InvalidArg,
                 "FontFaceSet.add: argument must be a FontFace",
             ));
         }
-        let face_raw = JsValue::raw(&face);
+        let face_raw = face.raw();
         if self.has_face(env, face_raw)? {
             return set_value();
         }
@@ -132,7 +128,7 @@ impl FontFaceSetLayer {
 
         self.faces
             .borrow_mut()
-            .push(unsafe { OtherRef::new(env.raw(), face_raw)? });
+            .push(unsafe { OtherRef::from_raw(env.raw(), face_raw)? });
         set_value()
     }
 
@@ -144,7 +140,8 @@ impl FontFaceSetLayer {
         let raw = JsValue::raw(&face);
         let mut faces = self.faces.borrow_mut();
         let Some(index) = faces.iter().position(|stored| {
-            unsafe { stored.raw_value(env) }
+            stored
+                .raw_value(env)
                 .ok()
                 .and_then(|value| same_js_value(env, raw, value).ok())
                 .unwrap_or(false)
@@ -182,7 +179,7 @@ impl FontFaceSetLayer {
                 "FontFaceSet.forEach: callback must be a Function",
             ));
         };
-        let callback_raw = unsafe { callback.raw_value(env)? };
+        let callback_raw = callback.raw_value(env)?;
         let recv_raw = unsafe {
             ToNapiValue::to_napi_value(env.raw(), this_arg.unwrap_or(Anything::Undefined))?
         };
@@ -190,7 +187,7 @@ impl FontFaceSetLayer {
         // Snapshot: a callback may mutate the set during iteration.
         let snapshot = self.faces.borrow().clone();
         for stored in &snapshot {
-            let face_raw = unsafe { stored.raw_value(env)? };
+            let face_raw = stored.raw_value(env)?;
             let argv = [face_raw, face_raw, set_raw];
             check_status!(unsafe {
                 sys::napi_call_function(
@@ -290,7 +287,7 @@ impl FontFaceSetLayer {
     fn has_face(&self, env: &Env, raw: sys::napi_value) -> Result<bool> {
         let faces = self.faces.borrow();
         for stored in faces.iter() {
-            let value = unsafe { stored.raw_value(env)? };
+            let value = stored.raw_value(env)?;
             if same_js_value(env, raw, value)? {
                 return Ok(true);
             }

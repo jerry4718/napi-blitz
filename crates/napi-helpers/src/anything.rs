@@ -4,7 +4,7 @@ use std::{ptr, rc::Rc};
 
 use napi::{
     Env, Result, ValueType,
-    bindgen_prelude::{BigInt, FromNapiValue, Null, ToNapiValue, Unknown},
+    bindgen_prelude::{BigInt, FromNapiValue, Null, Object, ToNapiValue},
     check_status, sys, type_of,
 };
 
@@ -23,38 +23,29 @@ pub struct OtherRef {
     inner: Rc<RefInner>,
 }
 
-#[allow(unused)]
-#[derive(Clone)]
-pub struct OtherValue {
-    inner: Rc<RefInner>,
-    value: sys::napi_value,
-}
-
 impl OtherRef {
-    /// Create a strong reference to `value`.
+    /// Create a strong reference to `obj`.
+    pub fn new(env: &Env, obj: &Object) -> Result<Self> {
+        Ok(Self {
+            inner: Rc::new(RefInner::new(env, obj)?),
+        })
+    }
+
+    /// Create a strong reference from raw handles.
     ///
     /// # Safety
     ///
     /// `env` must be a valid `napi_env` from the current native call, and
     /// `value` must be a valid JS value belonging to that environment.
-    pub unsafe fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+    pub unsafe fn from_raw(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
         Ok(Self {
             inner: Rc::new(unsafe { RefInner::from_raw(env, value)? }),
         })
     }
 
-    /// Retrieve the referenced value.
-    ///
-    /// # Safety
-    ///
-    /// `env` must be the same environment the reference was created with.
-    pub unsafe fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
+    /// Retrieve the referenced value as a raw handle.
+    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
         self.inner.raw_value(env)
-    }
-
-    /// Retrieve the referenced value.
-    pub fn unknown_value<'e>(&self, env: &'e Env) -> Result<Unknown<'e>> {
-        unsafe { Unknown::from_napi_value(env.raw(), self.raw_value(env)?) }
     }
 }
 
@@ -97,10 +88,12 @@ impl FromNapiValue for Anything {
             }?)),
             ValueType::Null => Ok(Self::Null),
             ValueType::Undefined => Ok(Self::Undefined),
-            ValueType::Function => Ok(Self::Function(unsafe { OtherRef::new(env, napi_val)? })),
+            ValueType::Function => Ok(Self::Function(unsafe {
+                OtherRef::from_raw(env, napi_val)?
+            })),
             // Everything else (objects, symbols, ...) is retained
             // by reference so the value survives the call.
-            _ => Ok(Self::Object(unsafe { OtherRef::new(env, napi_val)? })),
+            _ => Ok(Self::Object(unsafe { OtherRef::from_raw(env, napi_val)? })),
         }
     }
 }
@@ -121,7 +114,7 @@ impl ToNapiValue for Anything {
             }
             Self::Object(r) | Self::Function(r) => {
                 let env = Env::from_raw(env);
-                Ok(unsafe { r.raw_value(&env)? })
+                Ok(r.raw_value(&env)?)
             }
         }
     }

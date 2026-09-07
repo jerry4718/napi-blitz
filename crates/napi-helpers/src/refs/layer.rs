@@ -45,14 +45,28 @@ impl<L: ExtendLayer> Clone for LayerRef<L> {
 
 impl<L: ExtendLayer> LayerRef<L> {
     /// Create a strong reference to `obj`.
-    pub fn new(obj: &Object, env: &Env) -> Result<Self> {
+    pub fn new(env: &Env, obj: &Object) -> Result<Self> {
         Ok(Self {
             inner: Rc::new(RefInner::new(env, obj)?),
             _marker: PhantomData,
         })
     }
 
-    fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
+    /// Create a strong reference from raw handles.
+    ///
+    /// # Safety
+    ///
+    /// `env` must be a valid `napi_env` from the current native call, and
+    /// `value` must be a valid JS value belonging to that environment.
+    pub unsafe fn from_raw(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
+        Ok(Self {
+            inner: Rc::new(unsafe { RefInner::from_raw(env, value)? }),
+            _marker: PhantomData,
+        })
+    }
+
+    /// Retrieve the referenced value as a raw handle.
+    pub fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
         self.inner.raw_value(env)
     }
 }
@@ -65,9 +79,6 @@ impl<L: ExtendLayer> ToNapiValue for LayerRef<L> {
 
 impl<L: ExtendLayer> FromNapiValue for LayerRef<L> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> Result<Self> {
-        Ok(Self {
-            inner: Rc::new(unsafe { RefInner::from_raw(env, napi_val)? }),
-            _marker: PhantomData,
-        })
+        unsafe { Self::from_raw(env, napi_val) }
     }
 }
