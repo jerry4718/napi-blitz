@@ -16,7 +16,7 @@ use napi::{
 use napi_derive::napi;
 use napi_helpers::inherits::{LayerRef, define_getter, define_setter};
 use napi_helpers::{
-    JsWeakRef,
+    WeakRef,
     anything::Anything,
     inherits::{Constructed, RootLayer, Super, proc::layer, with_own},
 };
@@ -121,16 +121,16 @@ pub struct AddEventListenerOptions {
 /// target's own lifetime.
 pub enum ListenerCallback {
     /// `addEventListener(type, fn)`.
-    Function(JsWeakRef),
+    Function(WeakRef),
     /// `addEventListener(type, listenerObject)` — invoke `handleEvent`.
-    HandlerObject(JsWeakRef),
+    HandlerObject(WeakRef),
     /// An `on<event>` attribute handler, always a function.
     #[allow(dead_code)]
-    AttributeFunction(JsWeakRef),
+    AttributeFunction(WeakRef),
 }
 
 impl ListenerCallback {
-    fn weak(&self) -> &JsWeakRef {
+    fn weak(&self) -> &WeakRef {
         match self {
             Self::Function(callback)
             | Self::HandlerObject(callback)
@@ -286,7 +286,7 @@ impl EventTargetLayer {
                     && !l.removed
                     && matches!(l.callback, ListenerCallback::AttributeFunction(_))
             }) {
-                entry.callback = ListenerCallback::AttributeFunction(JsWeakRef::new(
+                entry.callback = ListenerCallback::AttributeFunction(WeakRef::new(
                     &Object::from_raw(env.raw(), handler_raw),
                     env,
                 )?);
@@ -294,7 +294,7 @@ impl EventTargetLayer {
             }
             listeners.push(ListenerEntry {
                 event_type: event_type.to_string(),
-                callback: ListenerCallback::AttributeFunction(JsWeakRef::new(
+                callback: ListenerCallback::AttributeFunction(WeakRef::new(
                     &Object::from_raw(env.raw(), handler_raw),
                     env,
                 )?),
@@ -391,11 +391,11 @@ impl EventTargetLayer {
             }
         };
         let callback = match callback {
-            Anything::Function(_) => ListenerCallback::Function(JsWeakRef::new(
+            Anything::Function(_) => ListenerCallback::Function(WeakRef::new(
                 &Object::from_raw(env.raw(), callback_value),
                 env,
             )?),
-            Anything::Object(_) => ListenerCallback::HandlerObject(JsWeakRef::new(
+            Anything::Object(_) => ListenerCallback::HandlerObject(WeakRef::new(
                 &Object::from_raw(env.raw(), callback_value),
                 env,
             )?),

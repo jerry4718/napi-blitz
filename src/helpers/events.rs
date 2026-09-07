@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
 use napi_helpers::{
-    JsWeakRef,
+    WeakRef,
     inherits::{from_chain, with_own},
 };
 
@@ -63,7 +63,7 @@ pub(crate) fn dispatch_window_event(
 /// the app-level weak ref. Returns whether a listener called
 /// `preventDefault`.
 pub(crate) fn dispatch_app_event(
-    app_ref: &Rc<RefCell<Option<JsWeakRef>>>,
+    app_ref: &Rc<RefCell<Option<WeakRef>>>,
     event_type: &str,
     cancelable: bool,
     env: &Env,

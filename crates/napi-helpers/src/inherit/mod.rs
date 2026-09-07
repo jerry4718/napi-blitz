@@ -16,15 +16,11 @@
 
 mod class;
 mod layer;
-mod layer_ref;
 mod macros;
 mod own;
 mod registry;
 
-pub use napi_inherit_proc as proc;
-
 pub use class::*;
 pub use layer::*;
-pub use layer_ref::*;
 pub use own::*;
 pub use registry::*;

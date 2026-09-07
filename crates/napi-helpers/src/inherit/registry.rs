@@ -18,8 +18,10 @@ use napi::{
     bindgen_prelude::{FromNapiValue, Object, ObjectRef},
 };
 
-use crate::class::build_class;
-use crate::layer::{ExtendLayer, LayerAccessors, LayerBuild, RootLayer};
+use super::{
+    class::build_class,
+    layer::{ExtendLayer, LayerAccessors, LayerBuild, RootLayer},
+};
 
 /// Resolve a layer's (constructor, prototype) handles. `RootLayer` has no
 /// JS class, so it resolves to `None` - the only `None` there is. Every

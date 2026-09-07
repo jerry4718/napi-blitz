@@ -1,7 +1,8 @@
-//! NodeCache - switchable-reference cache of JS Node objects, keyed by blitz node id.
+//! NodeCache - cache of JS Node objects backed by [`ToggleRef`], keyed by
+//! blitz node id.
 //!
-//! The cache stores [`SwitchableRef`] handles. Each entry's refcount can be
-//! toggled between strong (1, prevents GC) and weak (0, allows GC):
+//! Each entry can be switched between strong (prevents GC) and weak (allows
+//! GC):
 //!
 //! - **In-document nodes**: strong. The JS object stays alive so event
 //!   listeners registered on it are never lost.
@@ -22,11 +23,11 @@ use blitz::dom::{BaseDocument, NodeId};
 use napi::{Env, Result, bindgen_prelude::Object};
 
 use crate::dom::shared::doc::SharedDocument;
-use napi_helpers::{Finalize, SwitchableRef};
+use napi_helpers::{Finalize, ToggleRef};
 
-/// Switchable-reference cache: `blitz_node_id -> SwitchableRef`.
+/// Cache of JS Node objects: `blitz_node_id -> ToggleRef`.
 pub struct NodeCache {
-    entries: HashMap<NodeId, SwitchableRef>,
+    entries: HashMap<NodeId, ToggleRef>,
 }
 
 impl NodeCache {
@@ -57,15 +58,19 @@ impl NodeCache {
         strong: bool,
         shared_doc: Weak<SharedDocument>,
     ) -> Result<()> {
-        let switchable_ref = SwitchableRef::new(obj, env, strong)?;
-        switchable_ref.add_finalizer(
+        let toggle_ref = if strong {
+            ToggleRef::new_strong(obj, env)?
+        } else {
+            ToggleRef::new_weak(obj, env)?
+        };
+        toggle_ref.add_finalizer(
             env,
             NodeFinalizer {
                 node_id,
                 shared_doc,
             },
         )?;
-        self.entries.insert(node_id, switchable_ref);
+        self.entries.insert(node_id, toggle_ref);
         Ok(())
     }
 
@@ -152,8 +157,8 @@ impl Finalize for NodeFinalizer {
     fn finalize(&self, env: Env) {
         // The finalizer only fires in weak mode, which means the node was
         // detached from the document. Try to upgrade the weak ref to the
-        // SharedDocument. If the document has already been dropped, its NodeCache
-        // and SwitchableRefs were dropped too.
+        // SharedDocument. If the document has already been dropped, its
+        // NodeCache and the ToggleRefs it held were dropped too.
         let Some(doc_rc) = self.shared_doc.upgrade() else {
             #[cfg(debug_assertions)]
             println!("[finalize] node_id={} doc_rc was None", self.node_id);

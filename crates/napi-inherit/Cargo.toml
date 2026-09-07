@@ -1,8 +1,0 @@
-[package]
-name = "napi-inherit"
-version = "0.3.222"
-edition = "2024"
-
-[dependencies]
-napi = { workspace = true, features = ["napi6"] }
-napi-inherit-proc = { workspace = true }

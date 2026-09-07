@@ -6,7 +6,7 @@
 #[macro_export]
 macro_rules! from_chain {
     (($for:ty, $env:expr), $($tt:tt)+) => {
-        $crate::new_from_chain::<$for>($env, $crate::layer_chain!($($tt)+))
+        $crate::inherits::new_from_chain::<$for>($env, $crate::layer_chain!($($tt)+))
     };
 }
 
@@ -35,12 +35,12 @@ macro_rules! from_chain {
 macro_rules! layer_chain {
     (.. $base:expr $(, $own:expr)* $(,)?) => {{
         let __layer_chain_acc = $base;
-        $( let __layer_chain_acc = $crate::LayerChain { own: $own, parent: __layer_chain_acc }; )*
+        $( let __layer_chain_acc = $crate::inherits::LayerChain { own: $own, parent: __layer_chain_acc }; )*
         __layer_chain_acc
     }};
     ($($own:expr),+ $(,)?) => {{
         let __layer_chain_acc = ();
-        $( let __layer_chain_acc = $crate::LayerChain { own: $own, parent: __layer_chain_acc }; )+
+        $( let __layer_chain_acc = $crate::inherits::LayerChain { own: $own, parent: __layer_chain_acc }; )+
         __layer_chain_acc
     }};
 }

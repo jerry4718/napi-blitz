@@ -7,9 +7,8 @@
 use std::cell::Cell;
 
 use napi::{
-    Env, Error, JsValue, Result, Status,
+    Env, Error, Result, Status,
     bindgen_prelude::{FnArgs, Object, Uint8Array},
-    sys,
 };
 use napi_helpers::{
     Deferred,
@@ -203,7 +202,7 @@ impl FontFaceLayer {
     fn load(&self, env: &Env, this: &Object) -> Result<Anything> {
         if self.face_status.get() != FaceStatus::Loaded {
             self.face_status.set(FaceStatus::Loaded);
-            self.loaded_promise.resolve(env, JsValue::raw(this))?;
+            self.loaded_promise.resolve(env, this)?;
         }
         Ok(self.loaded_promise.value())
     }
@@ -216,7 +215,7 @@ impl FontFaceLayer {
     }
 
     /// Force the loaded state and resolve `loaded` (used by `add`).
-    pub(crate) fn mark_loaded(&self, env: &Env, face: sys::napi_value) -> Result<()> {
+    pub(crate) fn mark_loaded(&self, env: &Env, face: &Object) -> Result<()> {
         if self.face_status.get() != FaceStatus::Loaded {
             self.face_status.set(FaceStatus::Loaded);
             self.loaded_promise.resolve(env, face)?;

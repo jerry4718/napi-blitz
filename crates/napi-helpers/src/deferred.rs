@@ -3,7 +3,7 @@
 
 use std::{cell::Cell, ptr};
 
-use napi::{Env, Error, JsError, Result, bindgen_prelude::ToNapiValue, check_status, sys};
+use napi::{Env, Error, Result, bindgen_prelude::ToNapiValue, check_status, sys};
 
 use crate::anything::{Anything, OtherRef};
 
@@ -31,15 +31,13 @@ impl Deferred {
         Anything::Object(self.promise.clone())
     }
 
-    /// Settle the promise with a JS value (`raw`).
-    ///
-    /// `raw` is a `napi_value` handle from a trusted caller; it is only
-    /// forwarded to the napi layer, not dereferenced here.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn resolve(&self, env: &Env, raw: sys::napi_value) -> Result<()> {
+    /// Settle the promise with a JS value encoded from `value` via
+    /// `ToNapiValue`.
+    pub fn resolve<T: ToNapiValue>(&self, env: &Env, value: T) -> Result<()> {
         let Some(deferred) = self.deferred.take() else {
             return Ok(());
         };
+        let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), value)? };
         check_status!(unsafe { sys::napi_resolve_deferred(env.raw(), deferred, raw) })
     }
 
@@ -48,7 +46,7 @@ impl Deferred {
         let Some(deferred) = self.deferred.take() else {
             return Ok(());
         };
-        let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), JsError::from(error))? };
+        let raw = unsafe { ToNapiValue::to_napi_value(env.raw(), error)? };
         check_status!(unsafe { sys::napi_reject_deferred(env.raw(), deferred, raw) })
     }
 }

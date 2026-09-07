@@ -8,20 +8,7 @@ use napi::{
     check_status, sys, type_of,
 };
 
-/// The shared part of a [`OtherRef`]: the `napi_ref` plus the `napi_env`
-/// (stable for the addon's lifetime) needed to delete it.
-struct RefInner {
-    inner: sys::napi_ref,
-    env: sys::napi_env,
-}
-
-impl Drop for RefInner {
-    fn drop(&mut self) {
-        if !self.inner.is_null() {
-            let _ = unsafe { sys::napi_delete_reference(self.env, self.inner) };
-        }
-    }
-}
+use crate::refs::RefInner;
 
 /// A strong napi reference to a JS object that deletes the underlying
 /// `napi_ref` when the last clone is dropped.
@@ -51,13 +38,8 @@ impl OtherRef {
     /// `env` must be a valid `napi_env` from the current native call, and
     /// `value` must be a valid JS value belonging to that environment.
     pub unsafe fn new(env: sys::napi_env, value: sys::napi_value) -> Result<Self> {
-        let mut inner = ptr::null_mut();
-        check_status!(
-            unsafe { sys::napi_create_reference(env, value, 1, &mut inner) },
-            "RefValue: failed to create reference"
-        )?;
         Ok(Self {
-            inner: Rc::new(RefInner { inner, env }),
+            inner: Rc::new(unsafe { RefInner::from_raw(env, value)? }),
         })
     }
 
@@ -67,12 +49,7 @@ impl OtherRef {
     ///
     /// `env` must be the same environment the reference was created with.
     pub unsafe fn raw_value(&self, env: &Env) -> Result<sys::napi_value> {
-        let mut value = ptr::null_mut();
-        check_status!(
-            unsafe { sys::napi_get_reference_value(env.raw(), self.inner.inner, &mut value) },
-            "RefValue: failed to get reference value"
-        )?;
-        Ok(value)
+        self.inner.raw_value(env)
     }
 
     /// Retrieve the referenced value.

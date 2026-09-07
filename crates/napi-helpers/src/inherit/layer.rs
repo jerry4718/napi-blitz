@@ -13,7 +13,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{own::set_own_block, registry::HasClassRef};
+use super::{own::set_own_block, registry::HasClassRef};
 use napi::bindgen_prelude::{FnArgs, JsValuesTupleIntoVec, ToNapiValue};
 use napi::{Env, Result, bindgen_prelude::Object};
 

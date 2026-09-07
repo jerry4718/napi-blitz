@@ -19,7 +19,7 @@ use napi::{
     bindgen_prelude::{BigInt, JsObjectValue, Object, Property, PropertyAttributes},
 };
 
-use crate::layer::{ExtendLayer, OwnBlock};
+use super::layer::{ExtendLayer, OwnBlock};
 
 /// Key under which every layer instance stores the heap address of its
 /// `OwnDataRegistry` as a JS BigInt. A receiver-passing proxy (Vue

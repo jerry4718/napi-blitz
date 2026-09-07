@@ -16,7 +16,7 @@ use napi::{
     check_status, sys,
 };
 
-use crate::{
+use super::{
     layer::{EmitOwn, ExtendLayer, LayerAccessors, LayerArgs, LayerBuild, LayerChain},
     own::attach_registry,
     registry,

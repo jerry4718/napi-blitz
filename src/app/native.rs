@@ -41,7 +41,7 @@ use napi::{
     check_status, sys,
 };
 use napi_helpers::{
-    JsWeakRef,
+    WeakRef,
     anything::Anything,
     inherits::{Constructed, LayerRef, Super, from_chain, proc::layer, with_own},
 };
@@ -85,7 +85,7 @@ pub struct BlitzAppLayer {
     /// `pumpLoop` call, kept weakly for the `pumping` getter: the handle
     /// closure holds the app, so a strong reference here would pin the
     /// app through its own block after the loop ends.
-    pumping_loop: RefCell<Option<JsWeakRef>>,
+    pumping_loop: RefCell<Option<WeakRef>>,
 }
 
 #[layer(js_name = "BlitzApp")]
@@ -223,7 +223,7 @@ impl BlitzAppLayer {
             _ => return Err(Error::from_reason("pumpAppLoop did not return an object")),
         };
         let handle = unsafe { Object::from_napi_value(env.raw(), raw)? };
-        *self.pumping_loop.borrow_mut() = Some(JsWeakRef::new(&handle, env)?);
+        *self.pumping_loop.borrow_mut() = Some(WeakRef::new(&handle, env)?);
         Ok(loop_obj)
     }
 }

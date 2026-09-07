@@ -125,7 +125,7 @@ impl FontFaceSetLayer {
         }
         with_own::<FontFaceLayer, _>(&face, |f| {
             discard_err!(
-                f.mark_loaded(env, face_raw),
+                f.mark_loaded(env, &face),
                 "FontFaceSet.add: mark face loaded"
             );
         })?;
@@ -255,9 +255,8 @@ impl FontFaceSetLayer {
                 ready_promise: Deferred::new(env)?,
             },
         )?;
-        let raw = JsValue::raw(&set);
         with_own::<FontFaceSetLayer, _>(&set, |d| {
-            discard_err!(d.ready_promise.resolve(env, raw), "resolve ready promise");
+            discard_err!(d.ready_promise.resolve(env, set), "resolve ready promise");
         })?;
         Ok(set)
     }

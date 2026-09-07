@@ -40,13 +40,11 @@
 
 use blitz::shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use napi::{
-    Env, Error, JsValue, Result,
-    bindgen_prelude::{FromNapiValue, Object, PromiseRaw, ToNapiValue, Undefined},
-    check_status, sys,
+    Env, Error, Result,
+    bindgen_prelude::{Object, PromiseRaw, ToNapiValue, Undefined},
 };
 use napi_helpers::{
-    JsWeakRef, anything::Anything, deferred::Deferred, discard_err, inherits::from_chain,
-    native_log,
+    WeakRef, anything::Anything, deferred::Deferred, discard_err, inherits::from_chain, native_log,
 };
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
@@ -86,7 +84,7 @@ pub(crate) struct Lifecycle {
     /// Weak ref to the JS `BlitzApp` object, for dispatching app-level
     /// lifecycle events (`window:open`, `window:close`, `window:closed`).
     /// Set by `set_app_ref`; absent until JS opts in.
-    js_app_ref: Rc<RefCell<Option<JsWeakRef>>>,
+    js_app_ref: Rc<RefCell<Option<WeakRef>>>,
     /// True once at least one window has ever been opened. Without this,
     /// calling `pump_app_events` before any `open_window` would wrongly
     /// synthesize an exit on the very first pump.
@@ -137,7 +135,7 @@ impl Lifecycle {
     /// app-level lifecycle events (`window:open`, `window:close`,
     /// `window:closed`) to it.
     pub(crate) fn set_app_ref(&self, app: Object) -> Result<()> {
-        *self.js_app_ref.borrow_mut() = Some(JsWeakRef::new(&app, &self.env)?);
+        *self.js_app_ref.borrow_mut() = Some(WeakRef::new(&app, &self.env)?);
         Ok(())
     }
 
@@ -356,7 +354,7 @@ impl Lifecycle {
             // Resolve outside the state borrow: build the `Window` layer
             // chain (a pure napi operation) and register the window ref
             // for lifecycle dispatch.
-            let build = (|| -> Result<sys::napi_value> {
+            let build = (|| -> Result<Object> {
                 let window_obj = from_chain!(
                     (WindowLayer, &self.env),
                     EventTargetLayer::fresh(),
@@ -368,14 +366,11 @@ impl Lifecycle {
                     },
                 )?;
                 shared_doc.set_window_ref(&self.env, &window_obj)?;
-                let value = unsafe {
-                    Anything::from_napi_value(self.env.raw(), JsValue::raw(&window_obj))?
-                };
-                unsafe { Anything::to_napi_value(self.env.raw(), value) }
+                Ok(window_obj)
             })();
             match build {
-                Ok(raw) => {
-                    if let Err(e) = deferred.resolve(&self.env, raw) {
+                Ok(value) => {
+                    if let Err(e) = deferred.resolve(&self.env, value) {
                         native_log!("napi-blitz: drain_opening_windows: resolve failed: {e}");
                     }
                 }
@@ -591,14 +586,7 @@ impl Lifecycle {
             // 3. Fulfil the `close_window` promise after the
             //    notifications, so JS-side await sees the teardown
             //    fully complete.
-            let mut raw = std::ptr::null_mut();
-            if let Err(e) =
-                check_status!(unsafe { sys::napi_get_undefined(self.env.raw(), &mut raw) })
-            {
-                native_log!("napi-blitz: drain_closing_windows: get_undefined failed: {e}");
-                continue;
-            }
-            if let Err(e) = deferred.resolve(&self.env, raw) {
+            if let Err(e) = deferred.resolve(&self.env, ()) {
                 native_log!("napi-blitz: drain_closing_windows: resolve failed: {e}");
             }
         }

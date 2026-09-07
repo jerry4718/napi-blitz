@@ -1,7 +1,7 @@
 //! Per-document shared state, the blitz↔JS document adapter, and node
 //! wrapping.
 //!
-//! `SharedDocument` holds the `BaseDocument`, the switchable NodeCache, weak
+//! `SharedDocument` holds the `BaseDocument`, the NodeCache, weak
 //! refs to the JS Document/Window, and the napi env captured at creation.
 //! `wrap_node` materializes a JS wrapper for a blitz node id by building
 //! the matching `#[layer]` chain (`new_from_chain`) and caching it; the
@@ -22,7 +22,7 @@ use blitz::{
 use fontique::Blob;
 use napi::{Env, JsValue, Result, bindgen_prelude::Object};
 use napi_derive::napi;
-use napi_helpers::{JsWeakRef, SwitchableRef, anything::OtherRef};
+use napi_helpers::{ToggleRef, WeakRef, anything::OtherRef};
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     rc::Rc,
@@ -46,7 +46,7 @@ pub struct DocHandleConfig {
 pub struct SharedDocument {
     /// The document tree.
     base: RefCell<BaseDocument>,
-    /// Switchable-reference cache: blitz_node_id -> SwitchableRef.
+    /// Cache of JS Node objects: blitz_node_id -> ToggleRef.
     /// In-document nodes are strong (prevent GC); detached nodes are weak.
     node_cache: RefCell<NodeCache>,
     /// Host-dirty flag: JS mutated the DOM, window needs redraw.
@@ -56,9 +56,9 @@ pub struct SharedDocument {
     /// moment), weak after the window tears down, so the wrapper's
     /// lifetime returns to the JS side alone. Toggled only inside
     /// `attach_window` / `detach_window`.
-    document_ref: RefCell<Option<SwitchableRef>>,
+    document_ref: RefCell<Option<ToggleRef>>,
     /// Weak ref to the JS Window object, for lifecycle dispatch.
-    js_window_ref: RefCell<Option<JsWeakRef>>,
+    js_window_ref: RefCell<Option<WeakRef>>,
     /// The document's `FontFaceSet`, retained strongly: created at
     /// document initialization, returned by the `fonts` getter.
     fonts: RefCell<Option<OtherRef>>,
@@ -136,24 +136,24 @@ impl SharedDocument {
     /// Register the JS Document object. Documents start unattached, so
     /// the reference is created weak; `attach_window` promotes it.
     pub fn set_document_ref(&self, env: &Env, document: &Object) -> Result<()> {
-        *self.document_ref.borrow_mut() = Some(SwitchableRef::new(document, env, false)?);
+        *self.document_ref.borrow_mut() = Some(ToggleRef::new_weak(document, env)?);
         Ok(())
     }
 
     /// Read the two-state JS Document reference.
-    pub fn document_ref(&self) -> Ref<'_, Option<SwitchableRef>> {
+    pub fn document_ref(&self) -> Ref<'_, Option<ToggleRef>> {
         self.document_ref.borrow()
     }
 
     /// Register the JS Window object, retained weakly; the lifecycle
     /// dispatch resolves the window through this.
     pub fn set_window_ref(&self, env: &Env, window: &Object) -> Result<()> {
-        *self.js_window_ref.borrow_mut() = Some(JsWeakRef::new(window, env)?);
+        *self.js_window_ref.borrow_mut() = Some(WeakRef::new(window, env)?);
         Ok(())
     }
 
     /// Read the JS Window object's weak ref.
-    pub fn js_window_ref(&self) -> Ref<'_, Option<JsWeakRef>> {
+    pub fn js_window_ref(&self) -> Ref<'_, Option<WeakRef>> {
         self.js_window_ref.borrow()
     }
 

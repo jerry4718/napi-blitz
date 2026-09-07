@@ -3,19 +3,19 @@
 
 pub mod anything;
 pub mod deferred;
-pub mod finalize;
-pub mod js_weak_ref;
 pub mod log;
 pub mod proxy;
-pub mod switchable_ref;
 
-use napi_inherit as inherit;
+mod inherit;
+mod refs;
 
 pub mod inherits {
     pub use super::inherit::*;
+    pub use crate::from_chain;
+    pub use crate::layer_chain;
+    pub use crate::refs::LayerRef;
+    pub use napi_inherit_proc as proc;
 }
 
 pub use deferred::Deferred;
-pub use finalize::{Finalize, finalize_trampoline};
-pub use js_weak_ref::JsWeakRef;
-pub use switchable_ref::SwitchableRef;
+pub use refs::{Finalize, ToggleRef, WeakRef, finalize_trampoline};
