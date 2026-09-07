@@ -10,7 +10,7 @@ use napi_helpers::inherits::{Constructed, LayerRef, Super, proc::layer};
 
 use crate::dom::{
     layers::{element::ElementLayer, node::NodeLayer},
-    shared::{doc::SharedDocument, wrap_node},
+    shared::{doc::SharedDocument, wrap_node_ref},
 };
 
 /// Own block of the `CharacterData` class.
@@ -107,8 +107,7 @@ impl CharacterDataLayer {
             if matches!(n.data, NodeData::Element(_)) {
                 let id = n.id;
                 drop(base);
-                let node = wrap_node(&self.shared_doc, env, id)?;
-                return Ok(Some(LayerRef::new(env, &node)?));
+                return wrap_node_ref(&self.shared_doc, env, id).map(Some);
             }
             cursor = if forward { n.forward(1) } else { n.backward(1) };
         }

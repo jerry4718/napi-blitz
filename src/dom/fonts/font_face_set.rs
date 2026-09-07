@@ -14,12 +14,11 @@ use napi::{
     bindgen_prelude::{Object, ToNapiValue},
     check_status, sys,
 };
-use napi_helpers::inherits::has_own;
 use napi_helpers::{
     Deferred,
     anything::{Anything, OtherRef},
     discard_err,
-    inherits::{Constructed, Super, from_chain, proc::layer, with_own},
+    inherits::{Constructed, Super, from_chain, has_own, proc::layer, with_own},
 };
 use parley::{
     FontContext,

@@ -227,10 +227,14 @@ impl StyleHandlerLayer {
             "length" => Ok(Some(Anything::Number(
                 ElementLayer::style_property_names(&self.shared_doc, self.node_id).len() as f64,
             ))),
-            "getPropertyValue" => Ok(Some(self.cssom_method(env, CssomMethod::GetPropertyValue)?)),
-            "setProperty" => Ok(Some(self.cssom_method(env, CssomMethod::SetProperty)?)),
-            "removeProperty" => Ok(Some(self.cssom_method(env, CssomMethod::RemoveProperty)?)),
-            "item" => Ok(Some(self.cssom_method(env, CssomMethod::Item)?)),
+            "getPropertyValue" => self
+                .cssom_method(env, CssomMethod::GetPropertyValue)
+                .map(Some),
+            "setProperty" => self.cssom_method(env, CssomMethod::SetProperty).map(Some),
+            "removeProperty" => self
+                .cssom_method(env, CssomMethod::RemoveProperty)
+                .map(Some),
+            "item" => self.cssom_method(env, CssomMethod::Item).map(Some),
             _ => {
                 // Numeric string indices follow `item(n)`.
                 if name.chars().all(|c| c.is_ascii_digit()) {

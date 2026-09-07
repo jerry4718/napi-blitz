@@ -13,8 +13,8 @@ use blitz::{
     dom::{NodeData, local_name, node::NodeKind},
     traits::NodeId,
 };
-use napi::{Env, Error, Status, bindgen_prelude::Object};
-use napi_helpers::inherits::{from_chain, layer_chain};
+use napi::{Env, Error, Result, Status, bindgen_prelude::Object};
+use napi_helpers::inherits::{ExtendLayer, LayerRef, from_chain, layer_chain};
 use std::{cell::RefCell, rc::Rc};
 
 /// Return the cached JS wrapper for `node_id`, or build the matching
@@ -216,4 +216,18 @@ pub fn wrap_node<'a>(
     )?;
 
     Ok(js_node)
+}
+
+/// Wrap the node and hold a strong `LayerRef<L>` to it - the combined form
+/// of [`wrap_node`] and `LayerRef::new`, used by every accessor that hands
+/// out a layer instance.
+pub fn wrap_node_ref<L>(
+    shared_doc: &Rc<SharedDocument>,
+    env: &Env,
+    node_id: NodeId,
+) -> Result<LayerRef<L>>
+where
+    L: ExtendLayer,
+{
+    wrap_node(shared_doc, env, node_id).and_then(|obj| LayerRef::new(env, &obj))
 }
