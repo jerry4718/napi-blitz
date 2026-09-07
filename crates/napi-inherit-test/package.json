@@ -1,6 +1,6 @@
 {
   "name": "napi-inherit-test",
-  "version": "0.3.222",
+  "version": "0.3.223",
   "private": true,
   "type": "module",
   "scripts": {

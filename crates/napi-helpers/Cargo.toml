@@ -1,6 +1,6 @@
 [package]
 name = "napi-helpers"
-version = "0.3.222"
+version = "0.3.223"
 edition = "2024"
 
 [lib]
