@@ -13,45 +13,22 @@
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::sync::OnceLock;
 
 use napi::{
-    Error, Result, Status,
-    bindgen_prelude::{JsObjectValue, Object, Property, PropertyAttributes},
+    Env, Error, Result, Status,
+    bindgen_prelude::{BigInt, JsObjectValue, Object, Property, PropertyAttributes},
 };
 
 use crate::layer::{ExtendLayer, OwnBlock};
 
-/// How layer accessors resolve the instance's own-data registry from the
-/// (possibly proxied) receiver.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProxyCompatMode {
-    /// Unwrap the receiver directly; fails on a proxied receiver.
-    Off,
-    /// Always resolve through the instance's self-reference key first.
-    On,
-    /// Unwrap the receiver directly, falling back to the key when that
-    /// fails (the receiver is not the raw instance).
-    Auto,
-}
-
-/// Global proxy-compat mode for layer accessors, written once at startup
-/// via [`set_proxy_compat`]; reads are lock-free.
-pub static PROXY_COMPAT: OnceLock<ProxyCompatMode> = OnceLock::new();
-
-/// Set [`PROXY_COMPAT`]. Succeeds once; later calls fail with the mode
-/// already in effect.
-pub fn set_proxy_compat(mode: ProxyCompatMode) -> std::result::Result<(), ProxyCompatMode> {
-    PROXY_COMPAT.set(mode)
-}
-
-/// Key under which every layer instance stores a self-reference. A
-/// receiver-passing proxy (e.g. Vue reactivity's
-/// `Reflect.get(target, key, receiver)`) forwards property reads to the
-/// target's own value, so reading this key *through* a proxy yields the
-/// raw instance; accessors unwrap that instead of the receiver. Read only
-/// on the slow path, after a direct unwrap of the receiver failed.
-const REAL_INSTANCE_KEY: &str = "__napi_blitz_real_instance";
+/// Key under which every layer instance stores the heap address of its
+/// `OwnDataRegistry` as a JS BigInt. A receiver-passing proxy (Vue
+/// reactivity, ...) forwards property reads of scalar values unchanged -
+/// the reactive wrappers only touch objects - so accessors can read the
+/// raw address through any proxy and unwrap that instead of the receiver.
+/// Read only on the slow path, after a direct unwrap of the receiver
+/// failed.
+const REGISTRY_PTR_KEY: &str = "__napi_blitz_registry";
 
 /// One independently borrowed slot per real layer in the chain, indexed at
 /// compile time by `OwnBlock::IDX`.
@@ -135,65 +112,51 @@ fn slot_error<T: ExtendLayer + OwnBlock>(reason: &str) -> Error {
 /// chain ending at `T`. Called once at the entry of each instantiation path
 /// (JS `new`, Rust data chain) - the recursive layer code then reaches the
 /// same registry through [`own_registry`].
-pub fn attach_registry<T: ExtendLayer + OwnBlock>(this: &mut Object) -> Result<()> {
+pub fn attach_registry<T: ExtendLayer + OwnBlock>(env: &Env, this: &mut Object) -> Result<()> {
     let registry = OwnDataRegistry::new::<T>();
     this.wrap(registry, None)?;
-    if PROXY_COMPAT
-        .get()
-        .is_some_and(|mode| *mode != ProxyCompatMode::Off)
-    {
-        // Self-reference for the receiver re-resolution in `with_registry`.
-        // Empty attribute bits: not writable, not enumerable, not configurable.
-        let prop = Property::new()
-            .with_utf8_name(REAL_INSTANCE_KEY)?
-            .with_value(this)
-            .with_property_attributes(PropertyAttributes::empty());
-        this.define_properties(&[prop])?;
-    }
-    Ok(())
+    // Expose the registry's heap address on the instance for
+    // `with_registry`'s slow path. Empty attribute bits: not writable,
+    // not enumerable, not configurable.
+    let ptr = &*(this
+        .unwrap::<OwnDataRegistry>()
+        .map_err(|_| no_registry_error())?) as *const OwnDataRegistry as usize;
+    let prop = Property::new()
+        .with_utf8_name(REGISTRY_PTR_KEY)?
+        .with_napi_value(env, ptr)?
+        .with_property_attributes(PropertyAttributes::empty());
+    this.define_properties(&[prop])
 }
 
 /// Run `f` with the instance's `OwnDataRegistry`. Shared access is enough:
-/// each slot is interior-mutable through its own `RefCell`. The resolution
-/// path is fixed by the global [`PROXY_COMPAT`] mode, not chosen per call:
-/// `Off` unwraps the receiver directly, `On` resolves through the
-/// self-reference key, `Auto` tries the direct unwrap first and falls back
-/// to the key when the receiver is not the raw instance.
+/// each slot is interior-mutable through its own `RefCell`. Fast path:
+/// unwrap the receiver directly - the common case, where the receiver is
+/// the raw instance. Slow path (unwrap failed, so the receiver is not the
+/// raw instance - e.g. a proxied element): read the registry address
+/// through the scalar key and unwrap the pointer directly.
 #[inline]
 fn with_registry<R>(this: &Object, f: impl FnOnce(&OwnDataRegistry) -> Result<R>) -> Result<R> {
-    match PROXY_COMPAT.get().unwrap_or(&ProxyCompatMode::Off) {
-        ProxyCompatMode::Off => {
-            let registry = this
-                .unwrap::<OwnDataRegistry>()
-                .map_err(|_| no_registry_error())?;
-            f(registry)
-        }
-        ProxyCompatMode::On => {
-            let real = this
-                .get_named_property::<Option<Object>>(REAL_INSTANCE_KEY)
-                .ok()
-                .flatten()
-                .unwrap_or(*this);
-            let registry = real
-                .unwrap::<OwnDataRegistry>()
-                .map_err(|_| no_registry_error())?;
-            f(registry)
-        }
-        ProxyCompatMode::Auto => {
-            if let Ok(registry) = this.unwrap::<OwnDataRegistry>() {
-                return f(registry);
-            }
-            let real = this
-                .get_named_property::<Option<Object>>(REAL_INSTANCE_KEY)
-                .ok()
-                .flatten()
-                .unwrap_or(*this);
-            let registry = real
-                .unwrap::<OwnDataRegistry>()
-                .map_err(|_| no_registry_error())?;
-            f(registry)
-        }
+    if let Ok(registry) = this.unwrap::<OwnDataRegistry>() {
+        return f(registry);
     }
+    // Receiver is not the raw instance (e.g. a proxied element): read the
+    // registry address through the scalar key (proxy traps pass scalars
+    // through unchanged) and unwrap the pointer directly.
+    let ptr = this
+        .get_named_property::<BigInt>(REGISTRY_PTR_KEY)
+        .map_err(|_| no_registry_error())
+        .and_then(|bigint| {
+            let (signed, value, lossless) = bigint.get_u64();
+            if signed || !lossless {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("corrupted value at registry pointer key `{REGISTRY_PTR_KEY}`"),
+                ));
+            }
+            Ok(value as usize)
+        })?;
+    let registry = unsafe { &*(ptr as *const OwnDataRegistry) };
+    f(registry)
 }
 
 fn no_registry_error() -> Error {

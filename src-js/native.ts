@@ -52,7 +52,6 @@ export type {
   FontFaceDescriptors,
   MessageEventInit,
   MonitorInfo,
-  ProxyCompatMode,
   PumpResult,
   RegisterFontOptions,
   StyleHandler,
@@ -75,7 +74,6 @@ export const pickFiles = mod.pickFiles;
 export const pickFolder = mod.pickFolder;
 export const pickFolders = mod.pickFolders;
 export const saveFile = mod.saveFile;
-export const setProxyCompat = mod.setProxyCompat;
 
 export type BlitzApp = types.BlitzApp;
 export const BlitzApp = mod.BlitzApp;

@@ -86,7 +86,7 @@ pub fn new_from_chain<T: ExtendLayer>(env: &Env, chain: LayerChain<T>) -> Result
     // only when the chain must be built programmatically.
     let (_, proto) = registry::require(env, TypeId::of::<T>())?;
     let mut this = object_create(env, &proto)?;
-    attach_registry::<T>(&mut this)?;
+    attach_registry::<T>(env, &mut this)?;
     T::populate_chain(env, &this, chain)?;
     Ok(this)
 }
@@ -396,7 +396,7 @@ where
 
     let env = Env::from(env_raw);
     let mut this_obj = unsafe { Object::from_napi_value(env_raw, this) }?;
-    attach_registry::<T>(&mut this_obj)?;
+    attach_registry::<T>(&env, &mut this_obj)?;
     // Size the array to the layer's `ARITY` so omitted trailing arguments
     // stay `undefined`; napi's `Option: FromNapiValue` parses those as
     // `None`.
